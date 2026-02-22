@@ -37,11 +37,34 @@ public static class WrightTycoonBuildPipeline
 
     public static void BuildMacRelease()
     {
-        BuildRelease(
-            BuildTarget.StandaloneOSX,
-            MacOutputFolder,
-            MacApplicationName,
-            "macOS release");
+        var originalBackend = PlayerSettings.GetScriptingBackend(BuildTargetGroup.Standalone);
+        var switchedToMono = false;
+
+        try
+        {
+            if (originalBackend != ScriptingImplementation.Mono2x)
+            {
+                Debug.Log("[Build] Switching Standalone scripting backend to Mono for macOS build.");
+                PlayerSettings.SetScriptingBackend(BuildTargetGroup.Standalone, ScriptingImplementation.Mono2x);
+                AssetDatabase.SaveAssets();
+                switchedToMono = true;
+            }
+
+            BuildRelease(
+                BuildTarget.StandaloneOSX,
+                MacOutputFolder,
+                MacApplicationName,
+                "macOS release");
+        }
+        finally
+        {
+            if (switchedToMono)
+            {
+                PlayerSettings.SetScriptingBackend(BuildTargetGroup.Standalone, originalBackend);
+                AssetDatabase.SaveAssets();
+                Debug.Log($"[Build] Restored Standalone scripting backend to {originalBackend}.");
+            }
+        }
     }
 
     private static void BuildRelease(
