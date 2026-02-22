@@ -14,9 +14,11 @@ using WrightTycoon.Core.Contracts;
 using WrightTycoon.Core.Data;
 using WrightTycoon.Core.Engines;
 using WrightTycoon.Core.Factories;
+using WrightTycoon.Core.GovernmentContracts;
 using WrightTycoon.Core.Physics;
 using WrightTycoon.Core.Simulation;
 using WrightTycoon.Core.Research;
+using WrightTycoon.Game.GovernmentContracts;
 using WrightTycoon.Game.UI;
 using WrightTycoon.Game.Save;
 
@@ -36,7 +38,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     [SerializeField] private double _baseDevelopmentManDays = 240d;
 
     private readonly int[] _engineCountOptions = { 1, 2, 3, 4, 5, 6 };
-    private readonly string[] _tabs = { "Engine Designer", "Airframe + Type Designer", "Research", "Factory", "Contracts", "Finance" };
+    private readonly string[] _tabs = { "Engine Designer", "Airframe + Type Designer", "Research", "Factory", "Contracts", "Government Contracts", "Finance" };
     private readonly string[] _financeSubTabs = { "Income / Expense", "Last Month Details" };
     private readonly string[] _researchSubTabs = { "Current Research", "For Approval" };
     private readonly IsaAtmosphereModel _atmosphereModel = new();
@@ -59,6 +61,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private AircraftFactory? _aircraftFactory;
     private ContractBoard? _contractBoard;
     private ContractWarehouseDeliveryService? _contractWarehouseDeliveryService;
+    private GovernmentContractBoard? _governmentContractBoard;
+    private IGovernmentContractInventoryGateway? _governmentInventoryGateway;
     private AircraftProductionFactory? _productionFactory;
     private AccountingSystem? _accountingSystem;
     private ResearchBoard? _researchBoard;
@@ -77,6 +81,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private string _enginePreviewError = string.Empty;
     private string _aircraftPreviewError = string.Empty;
     private string _contractActionMessage = string.Empty;
+    private string _governmentContractActionMessage = string.Empty;
+    private string _governmentDeliveryActionMessage = string.Empty;
     private string _factoryActionMessage = string.Empty;
     private string _researchActionMessage = string.Empty;
     private string _initError = string.Empty;
@@ -255,6 +261,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             DrawContractsTab();
         }
+        else if (_tab == 5)
+        {
+            DrawGovernmentContractsTab();
+        }
         else
         {
             DrawFinanceTab();
@@ -284,6 +294,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         else if (_tab == 4)
         {
             DrawContractsReport();
+        }
+        else if (_tab == 5)
+        {
+            DrawGovernmentContractsReport();
         }
         else
         {
@@ -368,6 +382,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _contractBoard = new ContractBoard(new ContractGenerator(), new ContractEvaluator());
         _productionFactory = new AircraftProductionFactory();
         _contractWarehouseDeliveryService = new ContractWarehouseDeliveryService(_contractBoard, _productionFactory);
+        var governmentRandom = new SystemGovernmentContractRandomProvider();
+        var governmentGenerator = new GovernmentContractGenerator(governmentRandom);
+        _governmentContractBoard = new GovernmentContractBoard(governmentGenerator, governmentRandom);
+        _governmentInventoryGateway = new FactoryGovernmentContractInventoryGateway(_productionFactory);
         _accountingSystem = new AccountingSystem(AccountingDefaults.StartingCash);
         _researchBoard = new ResearchBoard();
 
@@ -387,6 +405,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _financeSubTab = 0;
         _researchSubTab = 0;
         _contractActionMessage = string.Empty;
+        _governmentContractActionMessage = string.Empty;
+        _governmentDeliveryActionMessage = string.Empty;
         _factoryActionMessage = string.Empty;
         _researchActionMessage = string.Empty;
         _saveActionMessage = string.Empty;
@@ -394,6 +414,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _contractSpecificationFilter = ContractSpecificationFilter.All;
         _contractQuantityFilterMin = 5;
         _contractQuantityFilterMax = 500;
+
+        if (_governmentContractBoard is not null)
+        {
+            var initialGovernmentUpdate = _governmentContractBoard.ProcessMonth(_currentDate);
+            if (initialGovernmentUpdate.Events.Count > 0)
+            {
+                _governmentContractActionMessage = string.Join(" ", initialGovernmentUpdate.Events);
+            }
+        }
     }
 
     private void InitializeSaveSystem()
@@ -1905,6 +1934,282 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     }
 
 
+    private void DrawGovernmentContractsTab()
+    {
+        DrawSection("Government Contracts (M9)");
+        if (_governmentContractBoard is null || _productionFactory is null)
+        {
+            DrawError("Government contract system is not initialized.");
+            return;
+        }
+
+        GUILayout.Label("A single government contract is generated each January.");
+        GUILayout.Label("Accepting grants immediate upfront funding (75% of development cost).");
+        GUILayout.Label("Delivery contracts auto-ship monthly from warehouse stock.");
+
+        var activeContract = _governmentContractBoard.ActiveContract;
+        var activeDelivery = _governmentContractBoard.ActiveDeliveryContract;
+        GUILayout.Label($"Active Contract: {(activeContract is null ? "None" : $"{activeContract.ContractId} ({activeContract.Status})")}");
+        GUILayout.Label($"Active Delivery: {(activeDelivery is null ? "None" : activeDelivery.DeliveryId)}");
+        GUILayout.Label($"Available Designs: {FormatUiInteger(_savedAircraftDesigns.Count)}");
+        GUILayout.Label($"Warehouse Units: {FormatUiInteger(_productionFactory.WarehouseUnitsByDesign.Values.Sum())}");
+        GUILayout.Label(
+            $"Expired: {FormatUiInteger(_governmentContractBoard.ExpiredContracts.Count)} | " +
+            $"Evaluated: {FormatUiInteger(_governmentContractBoard.EvaluatedContracts.Count)} | " +
+            $"Closed Deliveries: {FormatUiInteger(_governmentContractBoard.ClosedDeliveryContracts.Count)}");
+
+        if (!string.IsNullOrWhiteSpace(_governmentContractActionMessage))
+        {
+            GUILayout.Label(_governmentContractActionMessage);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_governmentDeliveryActionMessage))
+        {
+            GUILayout.Label(_governmentDeliveryActionMessage);
+        }
+
+        if (GUILayout.Button("Go To Airframe + Type Tab", GUILayout.Height(30f)))
+        {
+            _tab = 1;
+        }
+    }
+
+    private void DrawGovernmentContractsReport()
+    {
+        DrawSection("Government Contract Board");
+        if (_governmentContractBoard is null || _productionFactory is null)
+        {
+            DrawError("Government contract system is not initialized.");
+            return;
+        }
+
+        var activeContract = _governmentContractBoard.ActiveContract;
+        if (activeContract is null)
+        {
+            GUILayout.Label("No active government contract.");
+            GUILayout.Label("A new one appears every January when no contract is active.");
+        }
+        else
+        {
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label($"{activeContract.ContractId} | Status: {activeContract.Status}");
+            GUILayout.Label($"Generated: {FormatSimulationDate(activeContract.GeneratedOn)}");
+            GUILayout.Label($"Availability Ends: {FormatSimulationDate(activeContract.AvailabilityExpiresOn)}");
+            if (activeContract.AcceptedOn.HasValue)
+            {
+                GUILayout.Label($"Accepted On: {FormatSimulationDate(activeContract.AcceptedOn.Value)}");
+            }
+
+            if (activeContract.EvaluationDueOn.HasValue)
+            {
+                GUILayout.Label($"Evaluation Due: {FormatSimulationDate(activeContract.EvaluationDueOn.Value)}");
+            }
+
+            if (activeContract.AcceptedSubmission is not null)
+            {
+                GUILayout.Label($"Selected Aircraft: {activeContract.AcceptedSubmission.DisplayName} ({activeContract.AcceptedSubmission.DesignId})");
+            }
+
+            if (activeContract.UpfrontFundingGranted > 0d)
+            {
+                DrawMetric("Upfront Funding Granted", activeContract.UpfrontFundingGranted, "0.00");
+            }
+
+            DrawGovernmentRequirements(activeContract.Requirements);
+            GUILayout.EndVertical();
+
+            if (activeContract.Status == GovernmentContractStatus.Available)
+            {
+                DrawSection("Submission Candidates");
+                var assessments = BuildGovernmentSubmissionAssessments();
+                if (assessments.Count == 0)
+                {
+                    GUILayout.Label("No saved aircraft designs available. Save aircraft in Airframe + Type tab first.");
+                }
+                else
+                {
+                    for (var index = 0; index < assessments.Count; index++)
+                    {
+                        var assessment = assessments[index];
+                        var candidate = assessment.Candidate;
+                        var compliance = assessment.Compliance;
+
+                        var previousColor = GUI.contentColor;
+                        if (!compliance.IsSelectableInUi)
+                        {
+                            GUI.contentColor = new Color(1f, 0.45f, 0.45f, 1f);
+                        }
+
+                        GUILayout.BeginVertical(GUI.skin.box);
+                        GUILayout.Label($"{candidate.DisplayName} ({candidate.DesignId})");
+                        GUILayout.Label($"Lifecycle: {candidate.LifecycleStage}");
+                        DrawMetric("Development Cost", candidate.Metrics.DevelopmentCost, "0.00");
+                        DrawMetric("Reliability", candidate.Metrics.Reliability, "0.000");
+                        DrawMetric("Range (km)", candidate.Metrics.RangeKilometers, "0.0");
+                        DrawMetric("Payload (kg)", candidate.Metrics.PayloadKilograms, "0.0");
+                        DrawMetric("Runway Length (m)", candidate.Metrics.RequiredRunwayLengthMeters, "0.0");
+
+                        GUI.enabled = compliance.IsSelectableInUi;
+                        if (GUILayout.Button("Accept Government Contract", GUILayout.Height(26f)))
+                        {
+                            var acceptance = _governmentContractBoard.TryAcceptActiveContract(_currentDate, candidate);
+                            _governmentContractActionMessage = acceptance.Message;
+
+                            if (acceptance.IsAccepted
+                                && acceptance.UpfrontFundingGranted > 0d
+                                && _accountingSystem is not null)
+                            {
+                                var fullCatalog = BuildProductionCatalog(includeOnlyResearched: false);
+                                var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
+                                    _productionFactory.WarehouseUnitsByDesign,
+                                    fullCatalog);
+                                _accountingSystem.RegisterContractIncome(
+                                    _elapsedMonths,
+                                    _currentDate,
+                                    acceptance.UpfrontFundingGranted,
+                                    inventoryByDesign);
+                                _governmentContractActionMessage =
+                                    $"{acceptance.Message} Revenue booked: {FormatCurrency(acceptance.UpfrontFundingGranted)}.";
+                            }
+
+                            GUI.enabled = true;
+                            GUI.contentColor = previousColor;
+                            GUILayout.EndVertical();
+                            break;
+                        }
+
+                        GUI.enabled = true;
+
+                        if (!compliance.IsSelectableInUi)
+                        {
+                            DrawError("Not eligible for submission.");
+                            for (var unmetIndex = 0; unmetIndex < compliance.UnmetRequirements.Count; unmetIndex++)
+                            {
+                                GUILayout.Label($"- {compliance.UnmetRequirements[unmetIndex]}");
+                            }
+                        }
+                        else
+                        {
+                            GUILayout.Label("Meets all requirements.");
+                        }
+
+                        GUILayout.EndVertical();
+                        GUI.contentColor = previousColor;
+                    }
+                }
+            }
+        }
+
+        DrawSection("Latest Evaluation");
+        if (_governmentContractBoard.EvaluatedContracts.Count == 0)
+        {
+            GUILayout.Label("No evaluated government contracts yet.");
+        }
+        else
+        {
+            var latest = _governmentContractBoard.EvaluatedContracts[^1];
+            var evaluation = latest.EvaluationResult;
+            if (evaluation is not null)
+            {
+                GUILayout.BeginVertical(GUI.skin.box);
+                GUILayout.Label($"{latest.ContractId} | {(evaluation.IsSuccess ? "SUCCESS" : "FAILED")}");
+                DrawMetric("Final Probability", evaluation.FinalProbability * 100d, "0.00");
+                DrawMetric("Random Roll", evaluation.RandomRoll * 100d, "0.00");
+                DrawMetric("Bonus Probability", evaluation.BonusProbability * 100d, "0.00");
+                for (var index = 0; index < evaluation.ParameterBonuses.Count; index++)
+                {
+                    var parameterBonus = evaluation.ParameterBonuses[index];
+                    GUILayout.Label(
+                        $"{parameterBonus.Parameter}: required {FormatUiNumber(parameterBonus.RequiredValue, "0.###")}, " +
+                        $"actual {FormatUiNumber(parameterBonus.ActualValue, "0.###")}, " +
+                        $"bonus +{FormatUiNumber(parameterBonus.BonusValue * 100d, "0.00")}%");
+                }
+
+                GUILayout.EndVertical();
+            }
+        }
+
+        DrawSection("Delivery Contracts");
+        var activeDelivery = _governmentContractBoard.ActiveDeliveryContract;
+        if (activeDelivery is null)
+        {
+            GUILayout.Label("No active government delivery contract.");
+        }
+        else
+        {
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label($"{activeDelivery.DeliveryId} | Source: {ResolveAircraftDesignName(activeDelivery.AircraftDesignId)}");
+            GUILayout.Label($"Status: {activeDelivery.Status}");
+            GUILayout.Label($"Active Window: {FormatSimulationDate(activeDelivery.StartedOn)} -> {FormatSimulationDate(activeDelivery.EndsOn)}");
+            DrawMetric("Required Units", activeDelivery.TotalUnitsRequired, "0");
+            DrawMetric("Delivered Units", activeDelivery.DeliveredUnits, "0");
+            DrawMetric("Remaining Units", activeDelivery.RemainingUnits, "0");
+            DrawMetric("Unit Price", activeDelivery.UnitPrice, "0.00");
+            DrawMetric("Total Contract Value", activeDelivery.TotalContractValue, "0.00");
+            GUILayout.EndVertical();
+        }
+
+        if (_governmentContractBoard.ClosedDeliveryContracts.Count > 0)
+        {
+            DrawSection("Closed Delivery History");
+            for (var index = _governmentContractBoard.ClosedDeliveryContracts.Count - 1; index >= 0; index--)
+            {
+                var closed = _governmentContractBoard.ClosedDeliveryContracts[index];
+                GUILayout.BeginHorizontal(GUI.skin.box);
+                GUILayout.Label(closed.DeliveryId, GUILayout.Width(220f));
+                GUILayout.Label($"Status: {closed.Status}", GUILayout.Width(130f));
+                GUILayout.Label($"{FormatUiInteger(closed.DeliveredUnits)}/{FormatUiInteger(closed.TotalUnitsRequired)} units");
+                GUILayout.EndHorizontal();
+            }
+        }
+    }
+
+    private IReadOnlyList<GovernmentContractSubmissionAssessment> BuildGovernmentSubmissionAssessments()
+    {
+        if (_governmentContractBoard is null)
+        {
+            return Array.Empty<GovernmentContractSubmissionAssessment>();
+        }
+
+        var submissions = new List<GovernmentContractSubmissionCandidate>(_savedAircraftDesigns.Count);
+        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+        {
+            var savedDesign = _savedAircraftDesigns[index];
+            var lifecycleStage = IsAircraftDesignReadyForProduction(savedDesign)
+                ? WrightTycoon.Core.GovernmentContracts.AircraftLifecycleStage.Completed
+                : WrightTycoon.Core.GovernmentContracts.AircraftLifecycleStage.InDevelopment;
+
+            try
+            {
+                var submission = GovernmentContractSubmissionCandidateFactory.FromFactoryCatalogItem(
+                    savedDesign.CatalogItem,
+                    lifecycleStage);
+                submissions.Add(submission);
+            }
+            catch (Exception ex)
+            {
+                _governmentContractActionMessage =
+                    $"Failed to evaluate '{savedDesign.Name}' for government submission: {ex.Message}";
+            }
+        }
+
+        return _governmentContractBoard.GetSubmissionAssessments(submissions);
+    }
+
+    private void DrawGovernmentRequirements(GovernmentContractRequirements requirements)
+    {
+        DrawSection("Requirements");
+        var categoryProfile = AircraftCategoryCatalog.GetProfile(requirements.RequiredAircraftType);
+        GUILayout.Label($"Aircraft Type: {categoryProfile.DisplayName}");
+        GUILayout.Label($"Maximum Speed Band: {requirements.SpeedAltitudeBand}");
+        DrawMetric("Minimum Max Speed (km/h)", requirements.MinimumMaximumSpeedMetersPerSecond * 3.6d, "0.0");
+        DrawMetric("Minimum Range (km)", requirements.MinimumRangeKilometers, "0.0");
+        DrawMetric("Minimum Payload (kg)", requirements.MinimumPayloadKilograms, "0.0");
+        DrawMetric("Minimum Reliability", requirements.MinimumReliability, "0.000");
+        DrawMetric("Minimum Crew", requirements.MinimumCrewSize, "0");
+        DrawMetric("Maximum Runway Length (m)", requirements.MaximumRequiredRunwayLengthMeters, "0.0");
+    }
+
     private void DrawResearchTab()
     {
         DrawSection("Research (M4)");
@@ -2887,6 +3192,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _contractActionMessage = $"Advanced to {FormatSimulationDate(_currentDate)}. Generated {FormatUiInteger(generated.Count)} contracts, canceled {FormatUiInteger(canceledDelta)}.";
         }
 
+        if (_governmentContractBoard is not null)
+        {
+            var governmentUpdate = _governmentContractBoard.ProcessMonth(_currentDate);
+            if (governmentUpdate.Events.Count > 0)
+            {
+                _governmentContractActionMessage = string.Join(" ", governmentUpdate.Events);
+            }
+        }
+
         if (_productionFactory is not null)
         {
             var productionCatalog = BuildProductionCatalog(includeOnlyResearched: true);
@@ -2911,6 +3225,42 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     _currentDate,
                     monthlyCosts,
                     inventoryByDesign);
+            }
+
+            if (_governmentContractBoard is not null && _governmentInventoryGateway is not null)
+            {
+                var deliveryContractBefore = _governmentContractBoard.ActiveDeliveryContract;
+                var deliveryUpdate = _governmentContractBoard.ProcessDeliveryFromInventory(_currentDate, _governmentInventoryGateway);
+
+                var bookedIncome = 0d;
+                if (deliveryContractBefore is not null && deliveryUpdate.DeliveredUnitsThisMonth > 0)
+                {
+                    bookedIncome += deliveryUpdate.DeliveredUnitsThisMonth * deliveryContractBefore.UnitPrice;
+                }
+
+                if (deliveryUpdate.CompletionBonusGranted > 0d)
+                {
+                    bookedIncome += deliveryUpdate.CompletionBonusGranted;
+                }
+
+                if (_accountingSystem is not null && bookedIncome > 0d)
+                {
+                    var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
+                        _productionFactory.WarehouseUnitsByDesign,
+                        fullCatalog);
+                    _accountingSystem.RegisterContractIncome(
+                        _elapsedMonths,
+                        _currentDate,
+                        bookedIncome,
+                        inventoryByDesign);
+                    _governmentDeliveryActionMessage = $"{deliveryUpdate.Message} Revenue booked: {FormatCurrency(bookedIncome)}.";
+                }
+                else if (deliveryContractBefore is not null
+                    || deliveryUpdate.CompletedThisMonth
+                    || deliveryUpdate.EndedThisMonth)
+                {
+                    _governmentDeliveryActionMessage = deliveryUpdate.Message;
+                }
             }
         }
 
