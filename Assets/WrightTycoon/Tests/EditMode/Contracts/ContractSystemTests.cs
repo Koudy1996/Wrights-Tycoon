@@ -1,0 +1,723 @@
+using System.Collections.Generic;
+using NUnit.Framework;
+using WrightTycoon.Core.Aircraft;
+using WrightTycoon.Core.Airframes;
+using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Categories;
+using WrightTycoon.Core.Contracts;
+using WrightTycoon.Core.Engines;
+using WrightTycoon.Core.Factories;
+using WrightTycoon.Core.Units;
+using AircraftModel = WrightTycoon.Core.Aircraft.Aircraft;
+
+namespace WrightTycoon.Core.Tests.Contracts;
+
+[TestFixture]
+public sealed class ContractSystemTests
+{
+    [Test]
+    public void Generator_CreatesValidContractBatchWithinM6Bounds()
+    {
+        var generator = new ContractGenerator(seed: 1234);
+        var contracts = generator.GenerateMonthlyContracts(monthIndex: 0);
+
+        Assert.That(contracts.Count, Is.InRange(1, 5));
+        for (var index = 0; index < contracts.Count; index++)
+        {
+            var contract = contracts[index];
+            Assert.That(contract.QuantityUnits, Is.InRange(5, 500));
+            Assert.That(contract.DeadlineMonths, Is.InRange(6, 36));
+            Assert.That(contract.Requirements.DefinedRequirementCount, Is.InRange(2, 7));
+            Assert.That(contract.Requirements.RequiredCategory.HasValue, Is.True);
+            Assert.That(contract.EstimatedMinimumUnitCost, Is.GreaterThan(0d));
+            Assert.That(contract.UnitPrice, Is.GreaterThan(contract.EstimatedMinimumUnitCost));
+            Assert.That(contract.TotalPrice, Is.GreaterThan(0d));
+
+            var profile = AircraftCategoryCatalog.GetProfile(contract.Requirements.RequiredCategory!.Value);
+            if (contract.Requirements.MaximumTotalWeightKilograms.HasValue)
+            {
+                Assert.That(contract.Requirements.MaximumTotalWeightKilograms.Value, Is.InRange(profile.MinMaximumWeightKilograms, profile.MaxMaximumWeightKilograms));
+            }
+
+            if (contract.Requirements.MinimumRangeKilometers.HasValue)
+            {
+                Assert.That(contract.Requirements.MinimumRangeKilometers.Value, Is.InRange(profile.MinRequiredRangeKilometers, profile.MaxRequiredRangeKilometers));
+            }
+
+            if (contract.Requirements.MinimumPayloadKilograms.HasValue)
+            {
+                Assert.That(contract.Requirements.MinimumPayloadKilograms.Value, Is.InRange(profile.MinRequiredPayloadKilograms, profile.MaxRequiredPayloadKilograms));
+            }
+
+            if (contract.Requirements.MinimumCrew.HasValue)
+            {
+                Assert.That(contract.Requirements.MinimumCrew.Value, Is.InRange(profile.MinCrew, profile.MaxCrew));
+            }
+
+            if (contract.Requirements.MinimumSpeed.HasValue)
+            {
+                var requiredSpeedKmh = contract.Requirements.MinimumSpeed.Value.MinimumSpeedMetersPerSecond * 3.6d;
+                Assert.That(requiredSpeedKmh, Is.InRange(profile.MinRequiredSpeedKilometersPerHour, profile.MaxRequiredSpeedKilometersPerHour));
+            }
+        }
+    }
+
+    [Test]
+    public void Generator_SpreadsRequestedCategoriesEvenlyAcrossOrderCycles()
+    {
+        var requestedCategories = new[]
+        {
+            AircraftCategory.LightSportAndRecreational,
+            AircraftCategory.LightMultiRolePiston,
+            AircraftCategory.TurbopropRegional,
+            AircraftCategory.RegionalJet,
+        };
+
+        var options = new ContractGeneratorOptions
+        {
+            MinContractsPerMonth = requestedCategories.Length,
+            MaxContractsPerMonth = requestedCategories.Length,
+            RequestedCategories = requestedCategories,
+        };
+
+        var generator = new ContractGenerator(seed: 2206, options: options);
+        var firstBatch = generator.GenerateMonthlyContracts(monthIndex: 0);
+        var secondBatch = generator.GenerateMonthlyContracts(monthIndex: 1);
+
+        AssertBatchContainsAllRequestedCategories(firstBatch, requestedCategories);
+        AssertBatchContainsAllRequestedCategories(secondBatch, requestedCategories);
+    }
+
+    [Test]
+    public void Generator_UsesSmallLargeOrderMixWithDemandBands()
+    {
+        const int sampleCount = 4000;
+        var options = new ContractGeneratorOptions
+        {
+            MinContractsPerMonth = 1,
+            MaxContractsPerMonth = 1,
+        };
+
+        var generator = new ContractGenerator(seed: 4499, options: options);
+        var smallOrders = 0;
+        var largeOrders = 0;
+
+        for (var monthIndex = 0; monthIndex < sampleCount; monthIndex++)
+        {
+            var contract = generator.GenerateMonthlyContracts(monthIndex)[0];
+            var category = contract.Requirements.RequiredCategory;
+            Assert.That(category.HasValue, Is.True);
+
+            var categoryProfile = AircraftCategoryCatalog.GetProfile(category!.Value);
+            if (contract.QuantityUnits < 100)
+            {
+                smallOrders++;
+                Assert.That(contract.QuantityUnits, Is.InRange(options.SmallOrderMinQuantityUnits, options.SmallOrderMaxQuantityUnits));
+                Assert.That(contract.AppliedMarkup, Is.EqualTo(ContractBalance.SmallOrderContractMarkup).Within(1e-9));
+                AssertRequirementBand(contract.Requirements, categoryProfile, options, expectLowBand: true);
+            }
+            else
+            {
+                largeOrders++;
+                Assert.That(contract.QuantityUnits, Is.InRange(options.LargeOrderMinQuantityUnits, options.LargeOrderMaxQuantityUnits));
+                Assert.That(contract.AppliedMarkup, Is.EqualTo(ContractBalance.LargeOrderContractMarkup).Within(1e-9));
+                AssertRequirementBand(contract.Requirements, categoryProfile, options, expectLowBand: false);
+            }
+        }
+
+        var observedSmallShare = smallOrders / (double)(smallOrders + largeOrders);
+        Assert.That(observedSmallShare, Is.InRange(0.70d, 0.80d));
+    }
+
+    [Test]
+    public void PricingCalculator_AppliesMarkupByOrderSize()
+    {
+        var calculator = new ContractPricingCalculator();
+        var requirements = new ContractRequirements
+        {
+            RequiredCategory = AircraftCategory.RegionalJet,
+            MinimumReliability = 0.9d,
+            MinimumRangeKilometers = 3200d,
+            MinimumSpeed = new ContractSpeedRequirement(5000d, 200d),
+            MinimumPayloadKilograms = 9000d,
+            MinimumCrew = 2,
+        };
+
+        var smallQuote = calculator.CalculateQuote(requirements, quantityUnits: 60);
+        var largeQuote = calculator.CalculateQuote(requirements, quantityUnits: 200);
+
+        Assert.That(smallQuote.AppliedMarkup, Is.EqualTo(ContractBalance.SmallOrderContractMarkup).Within(1e-9));
+        Assert.That(largeQuote.AppliedMarkup, Is.EqualTo(ContractBalance.LargeOrderContractMarkup).Within(1e-9));
+        Assert.That(smallQuote.UnitPrice, Is.GreaterThan(smallQuote.EstimatedMinimumUnitCost));
+        Assert.That(largeQuote.UnitPrice, Is.GreaterThan(largeQuote.EstimatedMinimumUnitCost));
+        Assert.That(smallQuote.TotalPrice, Is.EqualTo(smallQuote.UnitPrice * 60).Within(0.1d));
+        Assert.That(largeQuote.TotalPrice, Is.EqualTo(largeQuote.UnitPrice * 200).Within(0.1d));
+    }
+    [Test]
+    public void Evaluator_BlocksDelivery_WhenAircraftBelowRequirements()
+    {
+        var evaluator = new ContractEvaluator();
+        var aircraft = CreateAircraft(
+            reliability: 0.84d,
+            rangeKilometers: 1800d,
+            speedAtSeaLevel: 90d,
+            speedAtFiveKilometers: 84d,
+            speedAtTenKilometers: 78d,
+            payloadKilograms: 3100d,
+            crewCount: 2);
+
+        var contract = new Contract(
+            "ctr.test.blocked",
+            "Sky Cargo",
+            quantityUnits: 90,
+            deadlineMonths: 12,
+            new ContractRequirements
+            {
+                RequiredCategory = AircraftCategory.HeavyTransportWideBody,
+                MinimumReliability = 0.91d,
+                MaximumTotalWeightKilograms = 3500d,
+                MinimumRangeKilometers = 2400d,
+                MinimumSpeed = new ContractSpeedRequirement(5000d, 95d),
+                MinimumPayloadKilograms = 4200d,
+                MinimumCrew = 3,
+            },
+            createdMonthIndex: 0);
+
+        var evaluation = evaluator.Evaluate(contract, aircraft);
+
+        Assert.That(evaluation.CanDeliver, Is.False);
+        Assert.That(evaluation.UnmetRequirements.Count, Is.GreaterThan(0));
+    }
+
+    [Test]
+    public void Evaluator_BlocksDelivery_WhenCategoryDoesNotMatch()
+    {
+        var evaluator = new ContractEvaluator();
+        var aircraft = CreateAircraft(
+            reliability: 0.9d,
+            rangeKilometers: 2600d,
+            speedAtSeaLevel: 110d,
+            speedAtFiveKilometers: 104d,
+            speedAtTenKilometers: 98d,
+            payloadKilograms: 4600d,
+            crewCount: 2);
+
+        var contract = new Contract(
+            "ctr.test.category",
+            "Category Cargo",
+            quantityUnits: 50,
+            deadlineMonths: 12,
+            new ContractRequirements
+            {
+                RequiredCategory = AircraftCategory.BusinessVipJet,
+                MinimumReliability = 0.8d,
+            },
+            createdMonthIndex: 0);
+
+        var evaluation = evaluator.Evaluate(contract, aircraft);
+
+        Assert.That(evaluation.CanDeliver, Is.False);
+        Assert.That(evaluation.UnmetRequirements, Has.Some.Contains("Category"));
+    }
+
+    [Test]
+    public void Board_DeliversContract_WhenAircraftMeetsAllRequirements()
+    {
+        var deliverableContract = new Contract(
+            "ctr.test.ok",
+            "Atlas Freight",
+            quantityUnits: 40,
+            deadlineMonths: 18,
+            new ContractRequirements
+            {
+                MinimumReliability = 0.80d,
+                MinimumRangeKilometers = 1500d,
+                MinimumSpeed = new ContractSpeedRequirement(0d, 75d),
+                MinimumPayloadKilograms = 2500d,
+                MinimumCrew = 2,
+            },
+            createdMonthIndex: 0);
+
+        var board = new ContractBoard(
+            new StubGenerator(deliverableContract),
+            new ContractEvaluator());
+
+        var generated = board.GenerateContractsForNextMonth();
+        var aircraft = CreateAircraft(
+            reliability: 0.9d,
+            rangeKilometers: 2600d,
+            speedAtSeaLevel: 110d,
+            speedAtFiveKilometers: 104d,
+            speedAtTenKilometers: 98d,
+            payloadKilograms: 4600d,
+            crewCount: 3);
+
+        var result = board.TryDeliver(generated[0].Id, aircraft);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(board.OpenContracts.Count, Is.EqualTo(0));
+        Assert.That(board.DeliveredContracts.Count, Is.EqualTo(1));
+        Assert.That(board.DeliveredContracts[0].Status, Is.EqualTo(ContractStatus.Delivered));
+    }
+
+    [Test]
+    public void DeliveryFlow_ConsumesWarehouseUnits_WhenContractDelivered()
+    {
+        var deliverableContract = new Contract(
+            "ctr.test.stock",
+            "Western Air Cargo",
+            quantityUnits: 40,
+            deadlineMonths: 18,
+            new ContractRequirements
+            {
+                MinimumReliability = 0.75d,
+                MinimumRangeKilometers = 1400d,
+                MinimumSpeed = new ContractSpeedRequirement(0d, 70d),
+                MinimumPayloadKilograms = 2200d,
+                MinimumCrew = 2,
+            },
+            createdMonthIndex: 0);
+
+        var board = new ContractBoard(
+            new StubGenerator(deliverableContract),
+            new ContractEvaluator());
+
+        var generated = board.GenerateContractsForNextMonth();
+        var warehouse = new AircraftProductionFactory();
+        warehouse.AddWarehouseUnits("design.stock", 60);
+
+        var aircraft = CreateAircraft(
+            reliability: 0.91d,
+            rangeKilometers: 2700d,
+            speedAtSeaLevel: 112d,
+            speedAtFiveKilometers: 105d,
+            speedAtTenKilometers: 97d,
+            payloadKilograms: 4700d,
+            crewCount: 3);
+
+        var catalog = new Dictionary<string, FactoryAircraftTypeCatalogItem>
+        {
+            ["design.stock"] = new FactoryAircraftTypeCatalogItem(
+                "design.stock",
+                "Stock Aircraft",
+                aircraft,
+                requiredFactoryToolLevel: 1,
+                requiredLineToolLevel: 1),
+        };
+
+        var deliveryService = new ContractWarehouseDeliveryService(board, warehouse);
+        var deliveryResult = deliveryService.TryDeliverFromWarehouse(generated[0].Id, "design.stock", catalog);
+
+        Assert.That(deliveryResult.IsSuccess, Is.True);
+        Assert.That(warehouse.GetWarehouseUnits("design.stock"), Is.EqualTo(20));
+    }
+
+    [Test]
+    public void DeliveryFlow_DoesNotDeliver_WhenWarehouseStockIsInsufficient()
+    {
+        var deliverableContract = new Contract(
+            "ctr.test.stock.low",
+            "Northern Air Cargo",
+            quantityUnits: 55,
+            deadlineMonths: 18,
+            new ContractRequirements
+            {
+                MinimumReliability = 0.70d,
+                MinimumRangeKilometers = 1200d,
+                MinimumSpeed = new ContractSpeedRequirement(0d, 65d),
+            },
+            createdMonthIndex: 0);
+
+        var board = new ContractBoard(
+            new StubGenerator(deliverableContract),
+            new ContractEvaluator());
+
+        board.GenerateContractsForNextMonth();
+
+        var warehouse = new AircraftProductionFactory();
+        warehouse.AddWarehouseUnits("design.stock", 20);
+
+        var aircraft = CreateAircraft(
+            reliability: 0.9d,
+            rangeKilometers: 2600d,
+            speedAtSeaLevel: 110d,
+            speedAtFiveKilometers: 102d,
+            speedAtTenKilometers: 96d,
+            payloadKilograms: 4300d,
+            crewCount: 3);
+
+        var catalog = new Dictionary<string, FactoryAircraftTypeCatalogItem>
+        {
+            ["design.stock"] = new FactoryAircraftTypeCatalogItem(
+                "design.stock",
+                "Stock Aircraft",
+                aircraft,
+                requiredFactoryToolLevel: 1,
+                requiredLineToolLevel: 1),
+        };
+
+        var deliveryService = new ContractWarehouseDeliveryService(board, warehouse);
+        var deliveryResult = deliveryService.TryDeliverFromWarehouse(deliverableContract.Id, "design.stock", catalog);
+
+        Assert.That(deliveryResult.IsSuccess, Is.False);
+        Assert.That(board.OpenContracts.Count, Is.EqualTo(1));
+        Assert.That(board.DeliveredContracts.Count, Is.EqualTo(0));
+        Assert.That(warehouse.GetWarehouseUnits("design.stock"), Is.EqualTo(20));
+    }
+
+    [Test]
+    public void Board_CancelsContract_WhenDeadlineDropsBelowZero()
+    {
+        var shortContract = new Contract(
+            "ctr.test.expire",
+            "North Cargo",
+            quantityUnits: 30,
+            deadlineMonths: 6,
+            new ContractRequirements
+            {
+                MinimumReliability = 0.7d,
+            },
+            createdMonthIndex: 0);
+
+        var board = new ContractBoard(
+            new StubGenerator(shortContract),
+            new ContractEvaluator());
+
+        board.GenerateContractsForNextMonth();
+
+        // After seven monthly advances, remaining months becomes -1 and contract is canceled.
+        for (var i = 0; i < 7; i++)
+        {
+            board.AdvanceMonthAndGenerateContracts();
+        }
+
+        Assert.That(shortContract.Status, Is.EqualTo(ContractStatus.Canceled));
+        Assert.That(board.CanceledContracts.Count, Is.EqualTo(1));
+        Assert.That(board.OpenContracts.Count, Is.EqualTo(0));
+    }
+
+    private static void AssertBatchContainsAllRequestedCategories(
+        IReadOnlyList<Contract> batch,
+        IReadOnlyList<AircraftCategory> requestedCategories)
+    {
+        var seenCategories = new HashSet<AircraftCategory>();
+        for (var index = 0; index < batch.Count; index++)
+        {
+            var category = batch[index].Requirements.RequiredCategory;
+            Assert.That(category.HasValue, Is.True);
+            seenCategories.Add(category!.Value);
+        }
+
+        Assert.That(seenCategories.Count, Is.EqualTo(requestedCategories.Count));
+        for (var index = 0; index < requestedCategories.Count; index++)
+        {
+            Assert.That(seenCategories.Contains(requestedCategories[index]), Is.True);
+        }
+    }
+
+    private static void AssertRequirementBand(
+        ContractRequirements requirements,
+        AircraftCategoryProfile categoryProfile,
+        ContractGeneratorOptions options,
+        bool expectLowBand)
+    {
+        if (requirements.MinimumReliability.HasValue)
+        {
+            AssertWithinBand(
+                requirements.MinimumReliability.Value,
+                options.MinReliability,
+                options.MaxReliability,
+                options,
+                expectLowBand,
+                tolerance: 0.001d);
+        }
+
+        if (requirements.MaximumTotalWeightKilograms.HasValue)
+        {
+            AssertWithinBand(
+                requirements.MaximumTotalWeightKilograms.Value,
+                categoryProfile.MinMaximumWeightKilograms,
+                categoryProfile.MaxMaximumWeightKilograms,
+                options,
+                expectLowBand,
+                tolerance: 0.1d);
+        }
+
+        if (requirements.MinimumRangeKilometers.HasValue)
+        {
+            var (minRange, maxRange) = ResolveBoundedRange(
+                categoryProfile.MinRequiredRangeKilometers,
+                categoryProfile.MaxRequiredRangeKilometers,
+                options.MinRangeKilometers,
+                options.MaxRangeKilometers);
+            AssertWithinBand(
+                requirements.MinimumRangeKilometers.Value,
+                minRange,
+                maxRange,
+                options,
+                expectLowBand,
+                tolerance: 0.1d);
+        }
+
+        if (requirements.MinimumPayloadKilograms.HasValue)
+        {
+            var (minPayload, maxPayload) = ResolveBoundedRange(
+                categoryProfile.MinRequiredPayloadKilograms,
+                categoryProfile.MaxRequiredPayloadKilograms,
+                options.MinPayloadKilograms,
+                options.MaxPayloadKilograms);
+            AssertWithinBand(
+                requirements.MinimumPayloadKilograms.Value,
+                minPayload,
+                maxPayload,
+                options,
+                expectLowBand,
+                tolerance: 0.1d);
+        }
+
+        if (requirements.MinimumSpeed.HasValue)
+        {
+            var (minSpeedKmh, maxSpeedKmh) = ResolveBoundedRange(
+                categoryProfile.MinRequiredSpeedKilometersPerHour,
+                categoryProfile.MaxRequiredSpeedKilometersPerHour,
+                options.MinSpeedMetersPerSecond * 3.6d,
+                options.MaxSpeedMetersPerSecond * 3.6d);
+            var requiredSpeedKmh = requirements.MinimumSpeed.Value.MinimumSpeedMetersPerSecond * 3.6d;
+            AssertWithinBand(
+                requiredSpeedKmh,
+                minSpeedKmh,
+                maxSpeedKmh,
+                options,
+                expectLowBand,
+                tolerance: 0.4d);
+        }
+
+        if (requirements.MinimumCrew.HasValue)
+        {
+            var minCrew = System.Math.Max(categoryProfile.MinCrew, options.MinCrew);
+            var maxCrew = System.Math.Min(categoryProfile.MaxCrew, options.MaxCrew);
+            if (minCrew > maxCrew)
+            {
+                minCrew = categoryProfile.MinCrew;
+                maxCrew = categoryProfile.MaxCrew;
+            }
+
+            AssertWithinBand(requirements.MinimumCrew.Value, minCrew, maxCrew, options, expectLowBand);
+        }
+    }
+
+    private static (double MinValue, double MaxValue) ResolveBoundedRange(
+        double categoryMin,
+        double categoryMax,
+        double optionMin,
+        double optionMax)
+    {
+        var minValue = System.Math.Max(categoryMin, optionMin);
+        var maxValue = System.Math.Min(categoryMax, optionMax);
+        if (minValue > maxValue)
+        {
+            minValue = categoryMin;
+            maxValue = categoryMax;
+        }
+
+        return (minValue, maxValue);
+    }
+
+    private static void AssertWithinBand(
+        double value,
+        double minValue,
+        double maxValue,
+        ContractGeneratorOptions options,
+        bool expectLowBand,
+        double tolerance = 0d)
+    {
+        var (bandMin, bandMax) = GetBandRange(minValue, maxValue, options, expectLowBand);
+        Assert.That(value, Is.GreaterThanOrEqualTo(bandMin - tolerance));
+        Assert.That(value, Is.LessThanOrEqualTo(bandMax + tolerance));
+    }
+
+    private static void AssertWithinBand(
+        int value,
+        int minValue,
+        int maxValue,
+        ContractGeneratorOptions options,
+        bool expectLowBand)
+    {
+        var (bandMin, bandMax) = GetBandRange(minValue, maxValue, options, expectLowBand);
+        var allowedMin = (int)System.Math.Ceiling(bandMin);
+        var allowedMax = (int)System.Math.Floor(bandMax);
+        if (allowedMin > allowedMax)
+        {
+            allowedMin = minValue;
+            allowedMax = maxValue;
+        }
+
+        Assert.That(value, Is.InRange(allowedMin, allowedMax));
+    }
+
+    private static (double MinValue, double MaxValue) GetBandRange(
+        double minValue,
+        double maxValue,
+        ContractGeneratorOptions options,
+        bool expectLowBand)
+    {
+        var normalizedMin = expectLowBand ? options.LowDemandBandMinNormalized : options.HighDemandBandMinNormalized;
+        var normalizedMax = expectLowBand ? options.LowDemandBandMaxNormalized : options.HighDemandBandMaxNormalized;
+        var range = maxValue - minValue;
+        return (minValue + (range * normalizedMin), minValue + (range * normalizedMax));
+    }
+
+    private static AircraftModel CreateAircraft(
+        double reliability,
+        double rangeKilometers,
+        double speedAtSeaLevel,
+        double speedAtFiveKilometers,
+        double speedAtTenKilometers,
+        double payloadKilograms,
+        int crewCount)
+    {
+        var engineDefinition = new EngineDefinition
+        {
+            Id = "eng.test",
+            DisplayName = "Test Engine",
+            EngineType = EngineType.Radial,
+        };
+
+        var engineParameters = new EngineParameters
+        {
+            DisplacementLiters = 12d,
+            CompressionRatio = 8d,
+            BoostType = BoostType.None,
+            OptimizationAltitudeMeters = 1800d,
+            CoolingEfficiency = 0.8d,
+        };
+
+        var engine = new Engine(
+            engineDefinition,
+            engineParameters,
+            new EnginePerformanceReport(
+                EngineOutputKind.PowerKilowatts,
+                new[]
+                {
+                    new EngineAltitudePerformance(0d, 620d, 220d),
+                    new EngineAltitudePerformance(5000d, 390d, 150d),
+                    new EngineAltitudePerformance(10000d, 210d, 86d),
+                },
+                reliability,
+                Mass.FromKilograms(420d),
+                cost: 65000d,
+                productionManDays: 85d));
+
+        var airframeParameters = new AirframeParameters
+        {
+            EngineCount = 2,
+            StructureType = StructureType.Monocoque,
+            MaterialType = MaterialType.Aluminum,
+            WingPosition = WingPosition.Low,
+            WingShape = WingShape.Straight,
+            WingAreaSquareMeters = 36d,
+            TailType = TailType.Classic,
+            FlapType = FlapType.Fowler,
+            LandingGearType = LandingGearType.SemiRetractable,
+            EngineCowling = 0.55d,
+            FuelAmountLiters = 1400d,
+            CrewCount = crewCount,
+        };
+
+        var airframe = new Airframe(
+            new AirframeDefinition
+            {
+                Id = "air.test",
+                DisplayName = "Test Airframe",
+                BaseStructuralWeightKilograms = 1200d,
+                ReferenceWingAreaSquareMeters = 36d,
+                BaseDragCoefficient = 0.033d,
+                BaseLiftCoefficient = 1.1d,
+                BaseReliabilityModifier = 1.0d,
+                BaseCost = 70000d,
+                BaseProductionManDays = 145d,
+            },
+            airframeParameters,
+            new AirframePerformanceReport(
+                Mass.FromKilograms(3000d),
+                0.05d,
+                1.2d,
+                75d,
+                100000d,
+                190d,
+                1.0d,
+                Force.FromNewtons(110000d),
+                Force.FromNewtons(5300d)));
+
+        var family = new AircraftFamilyDefinition
+        {
+            Id = "fam.test",
+            DisplayName = "Test Family",
+            EngineDefinitionId = "eng.test",
+            AirframeDefinitionId = "air.test",
+            LockedEngineType = EngineType.Radial,
+            LockedStructureType = StructureType.Monocoque,
+            LockedMaterialType = MaterialType.Aluminum,
+            LockedEngineCount = 2,
+            BaseEngineParameters = engineParameters.Clone(),
+            BaseAirframeParameters = airframeParameters.Clone(),
+            BaseDevelopmentCost = 90000d,
+            BaseDevelopmentManDays = 220d,
+        };
+
+        var type = new AircraftTypeDefinition
+        {
+            Id = "type.test",
+            FamilyId = "fam.test",
+            DisplayName = "Test Type",
+        };
+
+        var performance = new AircraftPerformanceReport(
+            new[]
+            {
+                new AircraftPerformancePoint(0d, speedAtSeaLevel),
+                new AircraftPerformancePoint(5000d, speedAtFiveKilometers),
+                new AircraftPerformancePoint(10000d, speedAtTenKilometers),
+            },
+            rangeKilometers,
+            Mass.FromKilograms(payloadKilograms),
+            220000d,
+            320d,
+            reliability,
+            Mass.FromKilograms(4200d));
+
+        return new AircraftModel(
+            family,
+            type,
+            engine,
+            airframe,
+            performance,
+            new DevelopmentCostReport(
+                ChangedParameterCount: 0,
+                ChangeMagnitudeScore: 0d,
+                DevelopmentCost: 90000d,
+                DevelopmentManDays: 220d));
+    }
+
+    private sealed class StubGenerator : IContractGenerator
+    {
+        private readonly IReadOnlyList<Contract> _contracts;
+        private bool _alreadyGenerated;
+
+        public StubGenerator(params Contract[] contracts)
+        {
+            _contracts = contracts;
+        }
+
+        public IReadOnlyList<Contract> GenerateMonthlyContracts(int monthIndex)
+        {
+            if (_alreadyGenerated)
+            {
+                return System.Array.Empty<Contract>();
+            }
+
+            _alreadyGenerated = true;
+            return _contracts;
+        }
+    }
+}

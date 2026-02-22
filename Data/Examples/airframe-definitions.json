@@ -1,0 +1,136 @@
+{
+  "definitions": [
+    {
+      "id": "air.sport.light",
+      "displayName": "Light Sport Frame",
+      "baseStructuralWeightKilograms": 320.0,
+      "referenceWingAreaSquareMeters": 12.0,
+      "baseDragCoefficient": 0.031,
+      "baseLiftCoefficient": 0.95,
+      "baseReliabilityModifier": 0.96,
+      "baseCost": 22000.0,
+      "baseProductionManDays": 72.0
+    },
+    {
+      "id": "air.piston.multirole",
+      "displayName": "Light Multi-role Piston Frame",
+      "baseStructuralWeightKilograms": 850.0,
+      "referenceWingAreaSquareMeters": 22.0,
+      "baseDragCoefficient": 0.024,
+      "baseLiftCoefficient": 0.87,
+      "baseReliabilityModifier": 0.99,
+      "baseCost": 42000.0,
+      "baseProductionManDays": 102.0
+    },
+    {
+      "id": "air.turboprop.regional",
+      "displayName": "Regional Turboprop Frame",
+      "baseStructuralWeightKilograms": 7200.0,
+      "referenceWingAreaSquareMeters": 62.0,
+      "baseDragCoefficient": 0.031,
+      "baseLiftCoefficient": 0.77,
+      "baseReliabilityModifier": 1.02,
+      "baseCost": 145000.0,
+      "baseProductionManDays": 250.0
+    },
+    {
+      "id": "air.jet.regional",
+      "displayName": "Regional Jet Frame",
+      "baseStructuralWeightKilograms": 13000.0,
+      "referenceWingAreaSquareMeters": 78.0,
+      "baseDragCoefficient": 0.027,
+      "baseLiftCoefficient": 0.69,
+      "baseReliabilityModifier": 1.03,
+      "baseCost": 210000.0,
+      "baseProductionManDays": 320.0
+    },
+    {
+      "id": "air.transport.narrow",
+      "displayName": "Narrow-body Transport Frame",
+      "baseStructuralWeightKilograms": 28000.0,
+      "referenceWingAreaSquareMeters": 124.0,
+      "baseDragCoefficient": 0.023,
+      "baseLiftCoefficient": 0.64,
+      "baseReliabilityModifier": 1.05,
+      "baseCost": 420000.0,
+      "baseProductionManDays": 520.0
+    },
+    {
+      "id": "air.transport.wide",
+      "displayName": "Wide-body Transport Frame",
+      "baseStructuralWeightKilograms": 76000.0,
+      "referenceWingAreaSquareMeters": 380.0,
+      "baseDragCoefficient": 0.0205,
+      "baseLiftCoefficient": 0.59,
+      "baseReliabilityModifier": 1.06,
+      "baseCost": 980000.0,
+      "baseProductionManDays": 980.0
+    },
+    {
+      "id": "air.special.civil",
+      "displayName": "Special Civil Frame",
+      "baseStructuralWeightKilograms": 10000.0,
+      "referenceWingAreaSquareMeters": 70.0,
+      "baseDragCoefficient": 0.03,
+      "baseLiftCoefficient": 0.78,
+      "baseReliabilityModifier": 1.01,
+      "baseCost": 180000.0,
+      "baseProductionManDays": 290.0
+    },
+    {
+      "id": "air.business.jet",
+      "displayName": "Business Jet Frame",
+      "baseStructuralWeightKilograms": 12000.0,
+      "referenceWingAreaSquareMeters": 60.0,
+      "baseDragCoefficient": 0.0235,
+      "baseLiftCoefficient": 0.65,
+      "baseReliabilityModifier": 1.04,
+      "baseCost": 230000.0,
+      "baseProductionManDays": 350.0
+    },
+    {
+      "id": "air.military.tactical",
+      "displayName": "Military Tactical Frame",
+      "baseStructuralWeightKilograms": 7000.0,
+      "referenceWingAreaSquareMeters": 42.0,
+      "baseDragCoefficient": 0.0175,
+      "baseLiftCoefficient": 0.76,
+      "baseReliabilityModifier": 0.96,
+      "baseCost": 260000.0,
+      "baseProductionManDays": 390.0
+    },
+    {
+      "id": "air.military.support",
+      "displayName": "Military Strategic Support Frame",
+      "baseStructuralWeightKilograms": 56000.0,
+      "referenceWingAreaSquareMeters": 250.0,
+      "baseDragCoefficient": 0.0215,
+      "baseLiftCoefficient": 0.61,
+      "baseReliabilityModifier": 1.03,
+      "baseCost": 760000.0,
+      "baseProductionManDays": 820.0
+    },
+    {
+      "id": "air.medium.main",
+      "displayName": "Mainline Medium Frame",
+      "baseStructuralWeightKilograms": 1250.0,
+      "referenceWingAreaSquareMeters": 36.0,
+      "baseDragCoefficient": 0.032,
+      "baseLiftCoefficient": 1.08,
+      "baseReliabilityModifier": 1.0,
+      "baseCost": 68000.0,
+      "baseProductionManDays": 150.0
+    },
+    {
+      "id": "air.light.utility",
+      "displayName": "Light Utility Frame",
+      "baseStructuralWeightKilograms": 760.0,
+      "referenceWingAreaSquareMeters": 25.0,
+      "baseDragCoefficient": 0.034,
+      "baseLiftCoefficient": 1.12,
+      "baseReliabilityModifier": 1.04,
+      "baseCost": 48000.0,
+      "baseProductionManDays": 108.0
+    }
+  ]
+}

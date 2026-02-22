@@ -1,0 +1,323 @@
+using System;
+using System.Collections.Generic;
+using WrightTycoon.Core.Categories;
+
+namespace WrightTycoon.Core.Contracts;
+
+public sealed class ContractGenerator : IContractGenerator
+{
+    private static readonly RequirementType[] RequirementTypesTemplate =
+    {
+        RequirementType.Reliability,
+        RequirementType.MaximumWeight,
+        RequirementType.Range,
+        RequirementType.Speed,
+        RequirementType.Payload,
+        RequirementType.Crew,
+    };
+
+    private readonly Random _random;
+    private readonly ContractGeneratorOptions _options;
+    private readonly List<AircraftCategory> _categoryRotation = new();
+    private readonly ContractPricingCalculator _pricingCalculator = new();
+    private int _sequence;
+    private int _categoryRotationIndex;
+    private int _generatedOrderCount;
+    private int _smallOrderCount;
+
+    private enum RequirementType
+    {
+        Reliability = 0,
+        MaximumWeight = 1,
+        Range = 2,
+        Speed = 3,
+        Payload = 4,
+        Crew = 5,
+    }
+
+    private enum OrderDemandBand
+    {
+        Low = 0,
+        High = 1,
+    }
+
+    public ContractGenerator(int seed = 6003901, ContractGeneratorOptions? options = null)
+    {
+        _random = new Random(seed);
+        _options = options ?? new ContractGeneratorOptions();
+        _options.Validate();
+        ResetCategoryRotation();
+    }
+
+    public IReadOnlyList<Contract> GenerateMonthlyContracts(int monthIndex)
+    {
+        if (monthIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(monthIndex), "Month index must be greater than or equal to zero.");
+        }
+
+        var contractCount = NextInclusive(_options.MinContractsPerMonth, _options.MaxContractsPerMonth);
+        var generated = new List<Contract>(contractCount);
+        for (var index = 0; index < contractCount; index++)
+        {
+            var demandBand = NextDemandBand();
+            var category = NextCategory();
+            var quantityUnits = GenerateQuantityUnits(demandBand);
+            var requirements = GenerateRequirements(category, demandBand);
+            var pricing = _pricingCalculator.CalculateQuote(requirements, quantityUnits);
+            var contract = new Contract(
+                $"ctr.{monthIndex:0000}.{_sequence:0000}",
+                GenerateCompanyName(),
+                quantityUnits,
+                NextInclusive(_options.MinDeadlineMonths, _options.MaxDeadlineMonths),
+                requirements,
+                monthIndex,
+                pricing.UnitPrice,
+                pricing.EstimatedMinimumUnitCost,
+                pricing.AppliedMarkup);
+            generated.Add(contract);
+            _sequence++;
+        }
+
+        return generated;
+    }
+
+    private ContractRequirements GenerateRequirements(AircraftCategory category, OrderDemandBand demandBand)
+    {
+        var categoryProfile = AircraftCategoryCatalog.GetProfile(category);
+        var requirementTypes = CreateRequirementTypePool();
+
+        Shuffle(requirementTypes);
+        var selectedCount = NextInclusive(1, requirementTypes.Length);
+
+        double? reliability = null;
+        double? maximumWeight = null;
+        double? range = null;
+        ContractSpeedRequirement? speed = null;
+        double? payload = null;
+        int? crew = null;
+
+        for (var index = 0; index < selectedCount; index++)
+        {
+            switch (requirementTypes[index])
+            {
+                case RequirementType.Reliability:
+                    reliability = Round(SampleBandValue(_options.MinReliability, _options.MaxReliability, demandBand), 3);
+                    break;
+                case RequirementType.MaximumWeight:
+                    maximumWeight = Round(SampleBandValue(categoryProfile.MinMaximumWeightKilograms, categoryProfile.MaxMaximumWeightKilograms, demandBand), 1);
+                    break;
+                case RequirementType.Range:
+                    var (minRange, maxRange) = ResolveBoundedRange(
+                        categoryProfile.MinRequiredRangeKilometers,
+                        categoryProfile.MaxRequiredRangeKilometers,
+                        _options.MinRangeKilometers,
+                        _options.MaxRangeKilometers);
+                    range = Round(SampleBandValue(minRange, maxRange, demandBand), 1);
+                    break;
+                case RequirementType.Speed:
+                    var altitude = _options.SpeedRequirementAltitudesMeters[_random.Next(_options.SpeedRequirementAltitudesMeters.Count)];
+                    var (minSpeedKmh, maxSpeedKmh) = ResolveBoundedRange(
+                        categoryProfile.MinRequiredSpeedKilometersPerHour,
+                        categoryProfile.MaxRequiredSpeedKilometersPerHour,
+                        _options.MinSpeedMetersPerSecond * 3.6d,
+                        _options.MaxSpeedMetersPerSecond * 3.6d);
+                    var minimumSpeedKmh = SampleBandValue(minSpeedKmh, maxSpeedKmh, demandBand);
+                    var minimumSpeed = Round(minimumSpeedKmh / 3.6d, 1);
+                    speed = new ContractSpeedRequirement(altitude, minimumSpeed);
+                    break;
+                case RequirementType.Payload:
+                    var (minPayload, maxPayload) = ResolveBoundedRange(
+                        categoryProfile.MinRequiredPayloadKilograms,
+                        categoryProfile.MaxRequiredPayloadKilograms,
+                        _options.MinPayloadKilograms,
+                        _options.MaxPayloadKilograms);
+                    payload = Round(SampleBandValue(minPayload, maxPayload, demandBand), 1);
+                    break;
+                case RequirementType.Crew:
+                    var (minCrew, maxCrew) = ResolveBoundedRange(
+                        categoryProfile.MinCrew,
+                        categoryProfile.MaxCrew,
+                        _options.MinCrew,
+                        _options.MaxCrew);
+                    crew = SampleBandInt(minCrew, maxCrew, demandBand);
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unsupported requirement type '{requirementTypes[index]}'.");
+            }
+        }
+
+        return new ContractRequirements
+        {
+            RequiredCategory = category,
+            MinimumReliability = reliability,
+            MaximumTotalWeightKilograms = maximumWeight,
+            MinimumRangeKilometers = range,
+            MinimumSpeed = speed,
+            MinimumPayloadKilograms = payload,
+            MinimumCrew = crew,
+        };
+    }
+
+    private AircraftCategory NextCategory()
+    {
+        if (_categoryRotationIndex >= _categoryRotation.Count)
+        {
+            ResetCategoryRotation();
+        }
+
+        return _categoryRotation[_categoryRotationIndex++];
+    }
+
+    private void ResetCategoryRotation()
+    {
+        _categoryRotation.Clear();
+        _categoryRotation.AddRange(_options.RequestedCategories);
+        Shuffle(_categoryRotation);
+        _categoryRotationIndex = 0;
+    }
+
+    private OrderDemandBand NextDemandBand()
+    {
+        if (_options.SmallOrderShare <= 0d)
+        {
+            _generatedOrderCount++;
+            return OrderDemandBand.High;
+        }
+
+        if (_options.SmallOrderShare >= 1d)
+        {
+            _generatedOrderCount++;
+            _smallOrderCount++;
+            return OrderDemandBand.Low;
+        }
+
+        var expectedSmallCountAfterNext = (_generatedOrderCount + 1) * _options.SmallOrderShare;
+        var selectSmall = _smallOrderCount < expectedSmallCountAfterNext;
+        _generatedOrderCount++;
+        if (selectSmall)
+        {
+            _smallOrderCount++;
+            return OrderDemandBand.Low;
+        }
+
+        return OrderDemandBand.High;
+    }
+
+    private int GenerateQuantityUnits(OrderDemandBand demandBand)
+    {
+        var (minQuantity, maxQuantity) = demandBand == OrderDemandBand.Low
+            ? (_options.SmallOrderMinQuantityUnits, _options.SmallOrderMaxQuantityUnits)
+            : (_options.LargeOrderMinQuantityUnits, _options.LargeOrderMaxQuantityUnits);
+
+        return NextInclusive(minQuantity, maxQuantity);
+    }
+
+    private int SampleBandInt(int minValue, int maxValue, OrderDemandBand demandBand)
+    {
+        if (minValue >= maxValue)
+        {
+            return minValue;
+        }
+
+        var (bandMinNormalized, bandMaxNormalized) = GetBandRange(demandBand);
+        var range = maxValue - minValue;
+        var bandMinValue = minValue + (range * bandMinNormalized);
+        var bandMaxValue = minValue + (range * bandMaxNormalized);
+        var sampleMin = (int)System.Math.Ceiling(bandMinValue);
+        var sampleMax = (int)System.Math.Floor(bandMaxValue);
+        if (sampleMin > sampleMax)
+        {
+            sampleMin = minValue;
+            sampleMax = maxValue;
+        }
+
+        return NextInclusive(sampleMin, sampleMax);
+    }
+
+    private double SampleBandValue(double minValue, double maxValue, OrderDemandBand demandBand)
+    {
+        if (maxValue <= minValue)
+        {
+            return minValue;
+        }
+
+        var (bandMinNormalized, bandMaxNormalized) = GetBandRange(demandBand);
+        var range = maxValue - minValue;
+        var bandMinValue = minValue + (range * bandMinNormalized);
+        var bandMaxValue = minValue + (range * bandMaxNormalized);
+        if (bandMinValue > bandMaxValue)
+        {
+            (bandMinValue, bandMaxValue) = (bandMaxValue, bandMinValue);
+        }
+
+        return NextDouble(bandMinValue, bandMaxValue);
+    }
+
+    private (double MinNormalized, double MaxNormalized) GetBandRange(OrderDemandBand demandBand) => demandBand == OrderDemandBand.Low
+        ? (_options.LowDemandBandMinNormalized, _options.LowDemandBandMaxNormalized)
+        : (_options.HighDemandBandMinNormalized, _options.HighDemandBandMaxNormalized);
+
+    private string GenerateCompanyName()
+    {
+        var prefix = _options.CompanyPrefixes[_random.Next(_options.CompanyPrefixes.Count)];
+        var suffix = _options.CompanySuffixes[_random.Next(_options.CompanySuffixes.Count)];
+        return $"{prefix} {suffix}";
+    }
+
+    private int NextInclusive(int minValue, int maxValue) => _random.Next(minValue, maxValue + 1);
+
+    private double NextDouble(double minValue, double maxValue) => minValue + (_random.NextDouble() * (maxValue - minValue));
+
+    private static double Round(double value, int decimals) => System.Math.Round(value, decimals, MidpointRounding.AwayFromZero);
+
+    private void Shuffle<T>(IList<T> values)
+    {
+        for (var index = values.Count - 1; index > 0; index--)
+        {
+            var target = _random.Next(0, index + 1);
+            (values[index], values[target]) = (values[target], values[index]);
+        }
+    }
+
+    private static RequirementType[] CreateRequirementTypePool()
+    {
+        var pool = new RequirementType[RequirementTypesTemplate.Length];
+        Array.Copy(RequirementTypesTemplate, pool, RequirementTypesTemplate.Length);
+        return pool;
+    }
+
+    private static (double MinValue, double MaxValue) ResolveBoundedRange(
+        double profileMin,
+        double profileMax,
+        double optionMin,
+        double optionMax)
+    {
+        var minValue = System.Math.Max(profileMin, optionMin);
+        var maxValue = System.Math.Min(profileMax, optionMax);
+        if (minValue > maxValue)
+        {
+            minValue = profileMin;
+            maxValue = profileMax;
+        }
+
+        return (minValue, maxValue);
+    }
+
+    private static (int MinValue, int MaxValue) ResolveBoundedRange(
+        int profileMin,
+        int profileMax,
+        int optionMin,
+        int optionMax)
+    {
+        var minValue = System.Math.Max(profileMin, optionMin);
+        var maxValue = System.Math.Min(profileMax, optionMax);
+        if (minValue > maxValue)
+        {
+            minValue = profileMin;
+            maxValue = profileMax;
+        }
+
+        return (minValue, maxValue);
+    }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "WrightTycoon.Core.Tests",
+  "rootNamespace": "WrightTycoon.Core.Tests",
+  "references": [
+    "WrightTycoon.Core"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": true
+}

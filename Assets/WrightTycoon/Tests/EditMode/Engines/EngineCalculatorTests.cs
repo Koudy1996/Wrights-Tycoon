@@ -1,0 +1,680 @@
+using System.Collections.Generic;
+using NUnit.Framework;
+using WrightTycoon.Core.Engines;
+using WrightTycoon.Core.Physics;
+using WrightTycoon.Core.Units;
+
+namespace WrightTycoon.Core.Tests.Engines;
+
+[TestFixture]
+public sealed class EngineCalculatorTests
+{
+    [Test]
+    public void BoostedPistonEngine_IncreasesPowerAndFuelButReducesReliability()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreatePistonDefinition();
+
+        var baseline = new EngineParameters
+        {
+            DisplacementLiters = 18d,
+            CompressionRatio = 8.2d,
+            BoostType = BoostType.None,
+            OptimizationAltitudeMeters = 1500d,
+            CoolingEfficiency = 0.78d,
+        };
+
+        var boosted = baseline.Clone();
+        boosted.BoostType = BoostType.Turbo;
+
+        var baseReport = calculator.Calculate(definition, baseline, atmosphere);
+        var boostedReport = calculator.Calculate(definition, boosted, atmosphere);
+
+        Assert.That(boostedReport.GetPerformanceAtAltitude(0d).Output, Is.GreaterThan(baseReport.GetPerformanceAtAltitude(0d).Output));
+        Assert.That(boostedReport.GetPerformanceAtAltitude(0d).FuelConsumptionKilogramsPerHour, Is.GreaterThan(baseReport.GetPerformanceAtAltitude(0d).FuelConsumptionKilogramsPerHour));
+        Assert.That(boostedReport.Reliability, Is.LessThan(baseReport.Reliability));
+    }
+
+    [Test]
+    public void TurbojetThrust_ScalesWithTurbineDiameterSquared()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateTurbojetDefinition();
+
+        var small = new EngineParameters
+        {
+            MaximumSpeed = 48000d,
+            CompressionRatio = 12d,
+            TurbineDiameterMeters = 1.0d,
+            BypassRatio = 0d,
+            CoolingEfficiency = 0.8d,
+        };
+
+        var large = small.Clone();
+        large.TurbineDiameterMeters = 2.0d;
+
+        var smallReport = calculator.Calculate(definition, small, atmosphere);
+        var largeReport = calculator.Calculate(definition, large, atmosphere);
+        var ratio = largeReport.GetPerformanceAtAltitude(0d).Output / smallReport.GetPerformanceAtAltitude(0d).Output;
+
+        Assert.That(ratio, Is.EqualTo(4d).Within(0.03d));
+    }
+
+    [Test]
+    public void JetAfterburner_KeepsSpecificFuelConsumptionButRaisesMaximumFuelFlow()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateTurbojetDefinition();
+
+        var withoutAfterburner = new EngineParameters
+        {
+            MaximumSpeed = 48000d,
+            CompressionRatio = 12d,
+            TurbineDiameterMeters = 1.0d,
+            BypassRatio = 0d,
+            CoolingEfficiency = 0.8d,
+            HasAfterburner = false,
+        };
+
+        var withAfterburner = withoutAfterburner.Clone();
+        withAfterburner.HasAfterburner = true;
+
+        var noAfterburnerReport = calculator.Calculate(definition, withoutAfterburner, atmosphere);
+        var afterburnerReport = calculator.Calculate(definition, withAfterburner, atmosphere);
+
+        var noAfterburnerAtSeaLevel = noAfterburnerReport.GetPerformanceAtAltitude(0d);
+        var afterburnerAtSeaLevel = afterburnerReport.GetPerformanceAtAltitude(0d);
+
+        var outputRatio = afterburnerAtSeaLevel.Output / noAfterburnerAtSeaLevel.Output;
+        var fuelFlowRatio = afterburnerAtSeaLevel.FuelConsumptionKilogramsPerHour / noAfterburnerAtSeaLevel.FuelConsumptionKilogramsPerHour;
+        var noAfterburnerSpecificFuel = noAfterburnerAtSeaLevel.FuelConsumptionKilogramsPerHour / noAfterburnerAtSeaLevel.Output;
+        var afterburnerSpecificFuel = afterburnerAtSeaLevel.FuelConsumptionKilogramsPerHour / afterburnerAtSeaLevel.Output;
+
+        Assert.That(outputRatio, Is.EqualTo(1.5d).Within(0.01d));
+        Assert.That(fuelFlowRatio, Is.EqualTo(outputRatio).Within(0.01d));
+        Assert.That(afterburnerSpecificFuel, Is.EqualTo(noAfterburnerSpecificFuel).Within(0.0000001d));
+        Assert.That(afterburnerReport.Weight.Kilograms, Is.GreaterThan(noAfterburnerReport.Weight.Kilograms));
+        Assert.That(afterburnerReport.Cost, Is.GreaterThan(noAfterburnerReport.Cost));
+        Assert.That(afterburnerReport.ProductionManDays, Is.GreaterThan(noAfterburnerReport.ProductionManDays));
+    }
+    [Test]
+    public void Turbojet_BypassRatioDoesNotChangePerformance()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateTurbojetDefinition();
+
+        var reference = new EngineParameters
+        {
+            MaximumSpeed = 48000d,
+            CompressionRatio = 12d,
+            TurbineDiameterMeters = 1.0d,
+            BypassRatio = 0d,
+            CoolingEfficiency = 0.8d,
+            HasAfterburner = false,
+        };
+
+        var legacyBypass = reference.Clone();
+        legacyBypass.BypassRatio = 22d;
+
+        var referenceReport = calculator.Calculate(definition, reference, atmosphere);
+        var legacyReport = calculator.Calculate(definition, legacyBypass, atmosphere);
+
+        var referenceAtSeaLevel = referenceReport.GetPerformanceAtAltitude(0d);
+        var legacyAtSeaLevel = legacyReport.GetPerformanceAtAltitude(0d);
+
+        Assert.That(legacyAtSeaLevel.Output, Is.EqualTo(referenceAtSeaLevel.Output).Within(0.0001d));
+        Assert.That(legacyAtSeaLevel.FuelConsumptionKilogramsPerHour, Is.EqualTo(referenceAtSeaLevel.FuelConsumptionKilogramsPerHour).Within(0.0001d));
+        Assert.That(legacyReport.Reliability, Is.EqualTo(referenceReport.Reliability).Within(0.000001d));
+    }
+
+    [Test]
+    public void InlineEngine_MoreThanEightCylinders_ThrowsArgumentOutOfRangeException()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateInlinePistonDefinition();
+        var parameters = new EngineParameters
+        {
+            DisplacementLiters = 10d,
+            CylinderCount = 9,
+            CompressionRatio = 9d,
+            BoostType = BoostType.None,
+            OptimizationAltitudeMeters = 1500d,
+            MaximumSpeed = 2600d,
+            CoolingEfficiency = 0.7d,
+        };
+
+        Assert.Throws<System.ArgumentOutOfRangeException>(() => calculator.Calculate(definition, parameters, atmosphere));
+    }
+
+    [Test]
+    public void BoostHardware_IncreasesEngineFrontalArea()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateInlinePistonDefinition();
+
+        var naturallyAspirated = new EngineParameters
+        {
+            DisplacementLiters = 9.8d,
+            CylinderCount = 8,
+            CompressionRatio = 8.7d,
+            BoostType = BoostType.None,
+            OptimizationAltitudeMeters = 1400d,
+            MaximumSpeed = 2700d,
+            CoolingEfficiency = 0.7d,
+        };
+
+        var supercharged = naturallyAspirated.Clone();
+        supercharged.BoostType = BoostType.Supercharger;
+        var turbocharged = naturallyAspirated.Clone();
+        turbocharged.BoostType = BoostType.Turbo;
+
+        var naturallyAspiratedReport = calculator.Calculate(definition, naturallyAspirated, atmosphere);
+        var superchargedReport = calculator.Calculate(definition, supercharged, atmosphere);
+        var turbochargedReport = calculator.Calculate(definition, turbocharged, atmosphere);
+
+        Assert.That(superchargedReport.EngineFrontalAreaSquareMeters, Is.GreaterThan(naturallyAspiratedReport.EngineFrontalAreaSquareMeters));
+        Assert.That(turbochargedReport.EngineFrontalAreaSquareMeters, Is.GreaterThan(superchargedReport.EngineFrontalAreaSquareMeters));
+    }
+
+    [Test]
+    public void RadialEngine_HasLargerFrontalAreaButLowerWeightThanInlineAndV()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+
+        var inlineDefinition = CreatePistonDefinitionForArrangement(EngineType.Inline);
+        var vDefinition = CreatePistonDefinitionForArrangement(EngineType.V);
+        var radialDefinition = CreatePistonDefinitionForArrangement(EngineType.Radial);
+
+        var parameters = new EngineParameters
+        {
+            DisplacementLiters = 16d,
+            CylinderCount = 8,
+            CompressionRatio = 8.6d,
+            BoostType = BoostType.None,
+            OptimizationAltitudeMeters = 1800d,
+            MaximumSpeed = 2600d,
+            CoolingEfficiency = 0.72d,
+        };
+
+        var inlineReport = calculator.Calculate(inlineDefinition, parameters, atmosphere);
+        var vReport = calculator.Calculate(vDefinition, parameters, atmosphere);
+        var radialReport = calculator.Calculate(radialDefinition, parameters, atmosphere);
+
+        Assert.That(radialReport.EngineFrontalAreaSquareMeters, Is.GreaterThan(vReport.EngineFrontalAreaSquareMeters));
+        Assert.That(vReport.EngineFrontalAreaSquareMeters, Is.GreaterThan(inlineReport.EngineFrontalAreaSquareMeters));
+        Assert.That(radialReport.Weight.Kilograms, Is.LessThan(vReport.Weight.Kilograms));
+        Assert.That(radialReport.Weight.Kilograms, Is.LessThan(inlineReport.Weight.Kilograms));
+    }
+
+    [Test]
+    public void LowBypassTurbofan_ScalesPoorlyAbove150kNewton()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateTurbofanDefinition();
+
+        var lowBypassSmall = new EngineParameters
+        {
+            TurbineDiameterMeters = 2.2d,
+            BypassRatio = 2d,
+            CompressionRatio = 38d,
+            MaximumSpeed = 52000d,
+            CoolingEfficiency = 0.82d,
+        };
+        var lowBypassLarge = lowBypassSmall.Clone();
+        lowBypassLarge.TurbineDiameterMeters = 2.8d;
+
+        var highBypassSmall = lowBypassSmall.Clone();
+        highBypassSmall.BypassRatio = 12d;
+        var highBypassLarge = highBypassSmall.Clone();
+        highBypassLarge.TurbineDiameterMeters = 2.8d;
+
+        var lowSmallOutput = calculator.Calculate(definition, lowBypassSmall, atmosphere).GetPerformanceAtAltitude(0d).Output;
+        var lowLargeOutput = calculator.Calculate(definition, lowBypassLarge, atmosphere).GetPerformanceAtAltitude(0d).Output;
+        var highSmallOutput = calculator.Calculate(definition, highBypassSmall, atmosphere).GetPerformanceAtAltitude(0d).Output;
+        var highLargeOutput = calculator.Calculate(definition, highBypassLarge, atmosphere).GetPerformanceAtAltitude(0d).Output;
+
+        var lowGrowth = lowLargeOutput / lowSmallOutput;
+        var highGrowth = highLargeOutput / highSmallOutput;
+
+        Assert.That(lowSmallOutput, Is.GreaterThan(150000d));
+        Assert.That(lowGrowth, Is.LessThan(highGrowth));
+    }
+
+    [Test]
+    public void EngineOutput_DropsFromSeaLevelToTenKilometers()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreatePistonDefinition();
+        var parameters = new EngineParameters
+        {
+            DisplacementLiters = 16d,
+            CylinderCount = 14,
+            MaximumSpeed = 2600d,
+            CompressionRatio = 8.6d,
+            BoostType = BoostType.Supercharger,
+            OptimizationAltitudeMeters = 3000d,
+            CoolingEfficiency = 0.74d,
+        };
+
+        var report = calculator.Calculate(definition, parameters, atmosphere);
+        var seaLevel = report.GetPerformanceAtAltitude(0d).Output;
+        var tenKm = report.GetPerformanceAtAltitude(10000d).Output;
+
+        Assert.That(tenKm, Is.LessThan(seaLevel));
+    }
+
+    [Test]
+    public void PistonCylinderCountAndSpeed_IncreasePowerOutput()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreatePistonDefinition();
+
+        var conservative = new EngineParameters
+        {
+            DisplacementLiters = 12d,
+            CylinderCount = 6,
+            MaximumSpeed = 1500d,
+            CompressionRatio = 7.5d,
+            BoostType = BoostType.None,
+            OptimizationAltitudeMeters = 2000d,
+            CoolingEfficiency = 0.8d,
+        };
+
+        var aggressive = conservative.Clone();
+        aggressive.CylinderCount = 24;
+        aggressive.MaximumSpeed = 4200d;
+
+        var conservativeReport = calculator.Calculate(definition, conservative, atmosphere);
+        var aggressiveReport = calculator.Calculate(definition, aggressive, atmosphere);
+
+        Assert.That(aggressiveReport.GetPerformanceAtAltitude(0d).Output, Is.GreaterThan(conservativeReport.GetPerformanceAtAltitude(0d).Output));
+    }
+
+    [Test]
+    public void PistonCompressionOutOfRange_ThrowsArgumentOutOfRangeException()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreatePistonDefinition();
+        var parameters = new EngineParameters
+        {
+            DisplacementLiters = 13d,
+            CylinderCount = 8,
+            MaximumSpeed = 2200d,
+            CompressionRatio = 18d,
+            BoostType = BoostType.None,
+            OptimizationAltitudeMeters = 2500d,
+            CoolingEfficiency = 0.76d,
+        };
+
+        Assert.Throws<System.ArgumentOutOfRangeException>(() => calculator.Calculate(definition, parameters, atmosphere));
+    }
+
+    [Test]
+    public void OptimizationHeight_HasStrongVisibleImpactOnPistonOutput()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new ConstantDensityAtmosphereModel();
+        var definition = CreatePistonDefinition();
+
+        var nearOptimized = new EngineParameters
+        {
+            DisplacementLiters = 16d,
+            CylinderCount = 12,
+            MaximumSpeed = 2600d,
+            CompressionRatio = 8.5d,
+            BoostType = BoostType.None,
+            OptimizationAltitudeMeters = 1000d,
+            CoolingEfficiency = 0.78d,
+        };
+
+        var badlyOptimized = nearOptimized.Clone();
+        badlyOptimized.OptimizationAltitudeMeters = 10000d;
+
+        var nearReport = calculator.Calculate(definition, nearOptimized, atmosphere);
+        var badReport = calculator.Calculate(definition, badlyOptimized, atmosphere);
+
+        Assert.That(
+            nearReport.GetPerformanceAtAltitude(0d).Output,
+            Is.GreaterThan(badReport.GetPerformanceAtAltitude(0d).Output * 1.2d));
+    }
+
+    [Test]
+    public void TurboAndSupercharger_ReduceOptimizationMismatchPenalty()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new ConstantDensityAtmosphereModel();
+        var definition = CreatePistonDefinition();
+
+        var naturallyAspirated = new EngineParameters
+        {
+            DisplacementLiters = 18d,
+            CylinderCount = 14,
+            MaximumSpeed = 2700d,
+            CompressionRatio = 8.4d,
+            BoostType = BoostType.None,
+            OptimizationAltitudeMeters = 10000d,
+            CoolingEfficiency = 0.76d,
+        };
+
+        var supercharged = naturallyAspirated.Clone();
+        supercharged.BoostType = BoostType.Supercharger;
+
+        var turbocharged = naturallyAspirated.Clone();
+        turbocharged.BoostType = BoostType.Turbo;
+
+        var naReport = calculator.Calculate(definition, naturallyAspirated, atmosphere);
+        var scReport = calculator.Calculate(definition, supercharged, atmosphere);
+        var turboReport = calculator.Calculate(definition, turbocharged, atmosphere);
+
+        var naOutput = naReport.GetPerformanceAtAltitude(0d).Output;
+        var scOutput = scReport.GetPerformanceAtAltitude(0d).Output;
+        var turboOutput = turboReport.GetPerformanceAtAltitude(0d).Output;
+
+        Assert.That(scOutput, Is.GreaterThan(naOutput));
+        Assert.That(turboOutput, Is.GreaterThan(scOutput));
+    }
+
+    [Test]
+    public void JetWeight_CalibratesNearLargeCivilAndFighterAnchors()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateTurbofanDefinition();
+
+        var largeCivil = new EngineParameters
+        {
+            TurbineDiameterMeters = 3.2d,
+            BypassRatio = 9d,
+            CompressionRatio = 42d,
+            MaximumSpeed = 2800d,
+            CoolingEfficiency = 0.85d,
+        };
+
+        var fighter = new EngineParameters
+        {
+            TurbineDiameterMeters = 0.97d,
+            BypassRatio = 0.5d,
+            CompressionRatio = 36d,
+            MaximumSpeed = 11200d,
+            CoolingEfficiency = 0.85d,
+        };
+
+        var largeReport = calculator.Calculate(definition, largeCivil, atmosphere);
+        var fighterReport = calculator.Calculate(definition, fighter, atmosphere);
+
+        Assert.That(largeReport.Weight.Kilograms, Is.InRange(7000d, 9500d));
+        Assert.That(fighterReport.Weight.Kilograms, Is.InRange(1300d, 2200d));
+        Assert.That(largeReport.Weight.Kilograms, Is.GreaterThan(fighterReport.Weight.Kilograms));
+    }
+
+    [Test]
+    public void JetWeight_HighBypassMidSizeStaysLighterThanVeryLargeWidebodyFan()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateTurbofanDefinition();
+
+        var widebodyFan = new EngineParameters
+        {
+            TurbineDiameterMeters = 3.2d,
+            BypassRatio = 9d,
+            CompressionRatio = 42d,
+            MaximumSpeed = 2800d,
+            CoolingEfficiency = 0.85d,
+        };
+
+        var gearedMidSize = new EngineParameters
+        {
+            TurbineDiameterMeters = 2.04d,
+            BypassRatio = 12.5d,
+            CompressionRatio = 42d,
+            MaximumSpeed = 3250d,
+            CoolingEfficiency = 0.87d,
+        };
+
+        var widebodyReport = calculator.Calculate(definition, widebodyFan, atmosphere);
+        var gearedReport = calculator.Calculate(definition, gearedMidSize, atmosphere);
+
+        Assert.That(gearedReport.Weight.Kilograms, Is.InRange(1400d, 3800d));
+        Assert.That(gearedReport.Weight.Kilograms, Is.LessThan(widebodyReport.Weight.Kilograms * 0.5d));
+    }
+
+    [Test]
+    public void PistonWeight_ModelSeparatesLightGeneralAviationFromLargeRadial()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var smallDefinition = CreateInlinePistonDefinition();
+        var largeDefinition = CreatePistonDefinition();
+
+        var lightGeneralAviation = new EngineParameters
+        {
+            DisplacementLiters = 9.3d,
+            CylinderCount = 6,
+            CompressionRatio = 8.5d,
+            BoostType = BoostType.None,
+            MaximumSpeed = 2700d,
+            OptimizationAltitudeMeters = 1200d,
+            CoolingEfficiency = 0.45d,
+        };
+
+        var largeRadial = new EngineParameters
+        {
+            DisplacementLiters = 46d,
+            CylinderCount = 18,
+            CompressionRatio = 6.75d,
+            BoostType = BoostType.Turbo,
+            MaximumSpeed = 2700d,
+            OptimizationAltitudeMeters = 7600d,
+            CoolingEfficiency = 0.3d,
+        };
+
+        var lightReport = calculator.Calculate(smallDefinition, lightGeneralAviation, atmosphere);
+        var radialReport = calculator.Calculate(largeDefinition, largeRadial, atmosphere);
+
+        Assert.That(lightReport.Weight.Kilograms, Is.InRange(180d, 420d));
+        Assert.That(radialReport.Weight.Kilograms, Is.InRange(1200d, 2300d));
+        Assert.That(radialReport.Weight.Kilograms, Is.GreaterThan(lightReport.Weight.Kilograms * 4.5d));
+    }
+
+    [Test]
+    public void PistonRpmAroundSixThousand_IsAllowedByUpdatedScale()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateInlinePistonDefinition();
+        var parameters = new EngineParameters
+        {
+            DisplacementLiters = 4.8d,
+            CylinderCount = 4,
+            CompressionRatio = 10.2d,
+            BoostType = BoostType.None,
+            OptimizationAltitudeMeters = 1800d,
+            MaximumSpeed = 6000d,
+            CoolingEfficiency = 0.35d,
+        };
+
+        Assert.DoesNotThrow(() => calculator.Calculate(definition, parameters, atmosphere));
+    }
+
+    [Test]
+    public void JetAltitudeOutputRetention_IsHigherThanLinearDensityDrop()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateTurbofanDefinition();
+        var parameters = new EngineParameters
+        {
+            TurbineDiameterMeters = 2.0d,
+            BypassRatio = 9.5d,
+            CompressionRatio = 42d,
+            MaximumSpeed = 14500d,
+            CoolingEfficiency = 0.78d,
+        };
+
+        var report = calculator.Calculate(definition, parameters, atmosphere);
+        var seaLevel = report.GetPerformanceAtAltitude(0d).Output;
+        var tenKm = report.GetPerformanceAtAltitude(10000d).Output;
+        var retention = tenKm / seaLevel;
+        var linearDensityDrop = atmosphere.GetDensityRatioAtAltitude(10000d);
+
+        Assert.That(retention, Is.GreaterThan(linearDensityDrop));
+        Assert.That(retention, Is.LessThan(1d));
+    }
+
+    [Test]
+    public void Carburetor_ReducesPowerButLowersCostAndProductionTime()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateInlinePistonDefinition();
+
+        var directInjection = new EngineParameters
+        {
+            DisplacementLiters = 8.5d,
+            CylinderCount = 6,
+            CompressionRatio = 9.2d,
+            BoostType = BoostType.None,
+            PistonInjectionType = PistonInjectionType.DirectInjection,
+            OptimizationAltitudeMeters = 1800d,
+            MaximumSpeed = 2700d,
+            CoolingEfficiency = 0.45d,
+        };
+
+        var carburetor = directInjection.Clone();
+        carburetor.PistonInjectionType = PistonInjectionType.Carburetor;
+
+        var directReport = calculator.Calculate(definition, directInjection, atmosphere);
+        var carbReport = calculator.Calculate(definition, carburetor, atmosphere);
+
+        Assert.That(carbReport.GetPerformanceAtAltitude(0d).Output, Is.LessThan(directReport.GetPerformanceAtAltitude(0d).Output));
+        Assert.That(carbReport.Cost, Is.LessThan(directReport.Cost));
+        Assert.That(carbReport.ProductionManDays, Is.LessThan(directReport.ProductionManDays));
+        Assert.That(carbReport.EngineLengthMeters, Is.GreaterThan(0d));
+        Assert.That(carbReport.EngineFrontalAreaSquareMeters, Is.GreaterThan(0d));
+    }
+
+    private static EngineDefinition CreatePistonDefinition() =>
+        new()
+        {
+            Id = "eng.piston.large",
+            DisplayName = "Large Piston Core",
+            EngineType = EngineType.Radial,
+            BaseVolumetricEfficiency = 0.87d,
+            BasePowerPerLiterKilowatts = 33d,
+            PropFuelConsumptionPerKilowattHour = 0.26d,
+            BaseReliability = 0.9d,
+            BaseWeightKilograms = 280d,
+            WeightPerDisplacementLiter = 12d,
+            BaseCost = 36000d,
+            CostPerOutputUnit = 105d,
+            BaseProductionManDays = 66d,
+            ComplexityFactor = 1.05d,
+        };
+
+    private static EngineDefinition CreatePistonDefinitionForArrangement(EngineType engineType)
+    {
+        var definition = CreateInlinePistonDefinition();
+        return new EngineDefinition
+        {
+            Id = $"eng.arrangement.{engineType.ToString().ToLowerInvariant()}",
+            DisplayName = $"{engineType} Test Piston",
+            EngineType = engineType,
+            BaseVolumetricEfficiency = definition.BaseVolumetricEfficiency,
+            BasePowerPerLiterKilowatts = definition.BasePowerPerLiterKilowatts,
+            BaseJetThrustPerSquareMeterNewtons = definition.BaseJetThrustPerSquareMeterNewtons,
+            PropFuelConsumptionPerKilowattHour = definition.PropFuelConsumptionPerKilowattHour,
+            JetFuelConsumptionPerKiloNewtonHour = definition.JetFuelConsumptionPerKiloNewtonHour,
+            BaseReliability = definition.BaseReliability,
+            BaseWeightKilograms = definition.BaseWeightKilograms,
+            WeightPerDisplacementLiter = definition.WeightPerDisplacementLiter,
+            WeightPerTurbineSquareMeter = definition.WeightPerTurbineSquareMeter,
+            BaseCost = definition.BaseCost,
+            CostPerOutputUnit = definition.CostPerOutputUnit,
+            BaseProductionManDays = definition.BaseProductionManDays,
+            ComplexityFactor = definition.ComplexityFactor,
+        };
+    }
+
+    private static EngineDefinition CreateTurbojetDefinition() =>
+        new()
+        {
+            Id = "eng.turbojet.early",
+            DisplayName = "Early Turbojet Core",
+            EngineType = EngineType.Turbojet,
+            BaseJetThrustPerSquareMeterNewtons = 94000d,
+            JetFuelConsumptionPerKiloNewtonHour = 73d,
+            BaseReliability = 0.78d,
+            BaseWeightKilograms = 430d,
+            WeightPerTurbineSquareMeter = 350d,
+            BaseCost = 98000d,
+            CostPerOutputUnit = 145d,
+            BaseProductionManDays = 88d,
+            ComplexityFactor = 1.25d,
+        };
+
+    private static EngineDefinition CreateTurbofanDefinition() =>
+        new()
+        {
+            Id = "eng.turbofan.reference",
+            DisplayName = "Reference Turbofan",
+            EngineType = EngineType.Turbofan,
+            BaseJetThrustPerSquareMeterNewtons = 98000d,
+            JetFuelConsumptionPerKiloNewtonHour = 68d,
+            BaseReliability = 0.82d,
+            BaseWeightKilograms = 450d,
+            WeightPerTurbineSquareMeter = 365d,
+            BaseCost = 128000d,
+            CostPerOutputUnit = 152d,
+            BaseProductionManDays = 98d,
+            ComplexityFactor = 1.3d,
+        };
+
+    private static EngineDefinition CreateInlinePistonDefinition() =>
+        new()
+        {
+            Id = "eng.inline.reference",
+            DisplayName = "Reference Inline Piston",
+            EngineType = EngineType.Inline,
+            BaseVolumetricEfficiency = 0.9d,
+            BasePowerPerLiterKilowatts = 33.5d,
+            PropFuelConsumptionPerKilowattHour = 0.24d,
+            BaseReliability = 0.91d,
+            BaseWeightKilograms = 255d,
+            WeightPerDisplacementLiter = 11.8d,
+            BaseCost = 36000d,
+            CostPerOutputUnit = 108d,
+            BaseProductionManDays = 64d,
+            ComplexityFactor = 0.98d,
+        };
+
+    private sealed class ConstantDensityAtmosphereModel : IAtmosphereModel
+    {
+        private static readonly Density SeaLevel = Density.FromKilogramsPerCubicMeter(1.225d);
+        private readonly IReadOnlyList<AtmosphereSample> _samples = new[]
+        {
+            new AtmosphereSample(0d, SeaLevel, 1d),
+            new AtmosphereSample(5000d, SeaLevel, 1d),
+            new AtmosphereSample(10000d, SeaLevel, 1d),
+        };
+
+        public Density SeaLevelDensity => SeaLevel;
+
+        public Density GetDensityAtAltitude(double altitudeMeters) => SeaLevel;
+
+        public double GetDensityRatioAtAltitude(double altitudeMeters) => 1d;
+
+        public IReadOnlyList<AtmosphereSample> GetEvaluationSamples() => _samples;
+    }
+}
