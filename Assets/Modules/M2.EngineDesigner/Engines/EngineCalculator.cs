@@ -124,8 +124,11 @@ public sealed class EngineCalculator : IEngineCalculator
             var outputScale = isJet
                 ? CalculateJetAltitudeOutputScale(densityRatio, definition.EngineType, parameters)
                 : densityRatio;
-            var outputAtAltitude = seaLevelOutput * outputScale * optimizationFactor;
-            var fuelReferenceOutputAtAltitude = fuelReferenceSeaLevelOutput * outputScale * optimizationFactor;
+            var boostAltitudeFactor = isJet
+                ? 1d
+                : CalculatePistonBoostAltitudeFactor(altitude, parameters.OptimizationAltitudeMeters, parameters.BoostType);
+            var outputAtAltitude = seaLevelOutput * outputScale * optimizationFactor * boostAltitudeFactor;
+            var fuelReferenceOutputAtAltitude = fuelReferenceSeaLevelOutput * outputScale * optimizationFactor * boostAltitudeFactor;
             var thrustAtAltitude = outputKind == EngineOutputKind.ThrustNewtons
                 ? outputAtAltitude
                 : CalculatePistonThrustNewtons(outputAtAltitude, parameters);
@@ -147,6 +150,9 @@ public sealed class EngineCalculator : IEngineCalculator
                 var bypassFuelFactor = definition.EngineType == EngineType.Turbofan
                     ? Numeric.Clamp(1.15d - (parameters.BypassRatio * 0.009d), 0.7d, 1.18d)
                     : 1d;
+                var turbojetFuelFactor = definition.EngineType == EngineType.Turbojet
+                    ? EngineDesignerBalance.Engine.TurbojetFuelConsumptionMultiplier
+                    : 1d;
                 var thrustKiloNewtons = fuelReferenceOutputAtAltitude / 1000d;
                 // Jet output is in kN, so jet fuel flow uses kg / (kN * h).
                 fuelPerHour = thrustKiloNewtons
@@ -155,6 +161,7 @@ public sealed class EngineCalculator : IEngineCalculator
                     * boostFuelFactor
                     * coolingFuelFactor
                     * bypassFuelFactor
+                    * turbojetFuelFactor
                     * speedFuelFactor;
             }
 
@@ -558,6 +565,62 @@ public sealed class EngineCalculator : IEngineCalculator
             factor,
             EngineDesignerBalance.Engine.OptimizationFactorMin,
             EngineDesignerBalance.Engine.OptimizationFactorMax);
+    }
+
+    private static double CalculatePistonBoostAltitudeFactor(double altitudeMeters, double optimizationAltitudeMeters, BoostType boostType)
+    {
+        if (boostType == BoostType.None)
+        {
+            return 1d;
+        }
+
+        if (boostType == BoostType.Turbo)
+        {
+            var highAltitudeBonus = Numeric.Clamp(
+                (altitudeMeters - EngineDesignerBalance.Engine.TurboAltitudeBonusStartMeters)
+                / EngineDesignerBalance.Engine.TurboAltitudeBonusRangeMeters,
+                0d,
+                1d) * EngineDesignerBalance.Engine.TurboAltitudeBonusMax;
+            var lowAltitudePenalty = Numeric.Clamp(
+                (EngineDesignerBalance.Engine.TurboLowAltitudePenaltyCeilingMeters - altitudeMeters)
+                / EngineDesignerBalance.Engine.TurboLowAltitudePenaltyCeilingMeters,
+                0d,
+                1d) * EngineDesignerBalance.Engine.TurboLowAltitudePenaltyMax;
+            var optimizationDelta = System.Math.Abs(altitudeMeters - optimizationAltitudeMeters);
+            var optimizationSynergy = (1d - Numeric.Clamp(
+                    optimizationDelta / EngineDesignerBalance.Engine.TurboOptimizationSynergyAltitudeRangeMeters,
+                    0d,
+                    1d)) * EngineDesignerBalance.Engine.TurboOptimizationSynergyBonusMax;
+            return Numeric.Clamp(
+                1d + highAltitudeBonus + optimizationSynergy - lowAltitudePenalty,
+                EngineDesignerBalance.Engine.TurboBoostAltitudeFactorMin,
+                EngineDesignerBalance.Engine.TurboBoostAltitudeFactorMax);
+        }
+
+        var optimizedDelta = System.Math.Abs(altitudeMeters - optimizationAltitudeMeters);
+        var optimizedBlend = 1d - Numeric.Clamp(
+            optimizedDelta / EngineDesignerBalance.Engine.SuperchargerOptimizedAltitudeRangeMeters,
+            0d,
+            1d);
+        var optimizedBonus = optimizedBlend * EngineDesignerBalance.Engine.SuperchargerOptimizedAltitudeBonusMax;
+        var offDesignPenalty = (1d - optimizedBlend) * EngineDesignerBalance.Engine.SuperchargerOffDesignPenaltyMax;
+
+        var optimizationReferenceAltitude = System.Math.Max(optimizationAltitudeMeters, 1000d);
+        var altitudeSupportAtOptimized = Numeric.Clamp(
+            altitudeMeters / optimizationReferenceAltitude,
+            0d,
+            1d) * EngineDesignerBalance.Engine.SuperchargerAltitudeSupportAtOptimizedAltitude;
+        var extraAltitudeSupport = Numeric.Clamp(
+            (altitudeMeters - optimizationReferenceAltitude)
+            / EngineDesignerBalance.Engine.SuperchargerOptimizedAltitudeRangeMeters,
+            0d,
+            1d) * (EngineDesignerBalance.Engine.SuperchargerAltitudeSupportMax
+                    - EngineDesignerBalance.Engine.SuperchargerAltitudeSupportAtOptimizedAltitude);
+
+        return Numeric.Clamp(
+            1d + optimizedBonus - offDesignPenalty + altitudeSupportAtOptimized + extraAltitudeSupport,
+            EngineDesignerBalance.Engine.SuperchargerBoostAltitudeFactorMin,
+            EngineDesignerBalance.Engine.SuperchargerBoostAltitudeFactorMax);
     }
 
     private static double CalculateJetAltitudeOutputScale(

@@ -60,6 +60,7 @@ public sealed class DevelopmentCostCalculator
         AddEnumChange(baseAirframe.TailType, variantAirframe.TailType, 0.75d, ref changedCount, ref magnitude);
         AddEnumChange(baseAirframe.FlapType, variantAirframe.FlapType, 0.65d, ref changedCount, ref magnitude);
         AddBooleanChange(baseAirframe.HasLeadingEdgeFlaps, variantAirframe.HasLeadingEdgeFlaps, 0.45d, ref changedCount, ref magnitude);
+        AddBooleanChange(baseAirframe.HasBackupSystems, variantAirframe.HasBackupSystems, 0.8d, ref changedCount, ref magnitude);
         AddEnumChange(baseAirframe.LandingGearType, variantAirframe.LandingGearType, 0.95d, ref changedCount, ref magnitude);
 
         // v0.2: aircraft type development cost/MD is intentionally ignored.

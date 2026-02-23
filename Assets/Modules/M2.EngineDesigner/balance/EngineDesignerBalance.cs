@@ -53,6 +53,22 @@ public static class EngineDesignerBalance
         public const double OptimizationSuperchargerBonus = 0.01d;
         public const double OptimizationFactorMin = 0.82d;
         public const double OptimizationFactorMax = 1.16d;
+        public const double TurboAltitudeBonusStartMeters = 1200d;
+        public const double TurboAltitudeBonusRangeMeters = 8000d;
+        public const double TurboAltitudeBonusMax = 0.45d;
+        public const double TurboLowAltitudePenaltyCeilingMeters = 1200d;
+        public const double TurboLowAltitudePenaltyMax = 0.08d;
+        public const double TurboOptimizationSynergyAltitudeRangeMeters = 7000d;
+        public const double TurboOptimizationSynergyBonusMax = 0.09d;
+        public const double TurboBoostAltitudeFactorMin = 0.95d;
+        public const double TurboBoostAltitudeFactorMax = 1.75d;
+        public const double SuperchargerOptimizedAltitudeRangeMeters = 5000d;
+        public const double SuperchargerOptimizedAltitudeBonusMax = 0.32d;
+        public const double SuperchargerOffDesignPenaltyMax = 0.08d;
+        public const double SuperchargerAltitudeSupportAtOptimizedAltitude = 0.42d;
+        public const double SuperchargerAltitudeSupportMax = 0.48d;
+        public const double SuperchargerBoostAltitudeFactorMin = 0.88d;
+        public const double SuperchargerBoostAltitudeFactorMax = 1.8d;
 
         public const double JetAltitudeDensityExponentBase = 0.62d;
         public const double JetAltitudeBypassExponentSlope = 0.015d;
@@ -71,6 +87,7 @@ public static class EngineDesignerBalance
         public const double SuperchargerBoostPowerFactor = 1.2d;
         public const double TurboBoostFuelFactor = 1.18d;
         public const double SuperchargerBoostFuelFactor = 1.12d;
+        public const double TurbojetFuelConsumptionMultiplier = 1.2d;
         public const double TurboBoostJetFactor = 1.05d;
         public const double SuperchargerBoostJetFactor = 1.03d;
         public const double TurboBoostJetReliabilityPenalty = 0.03d;

@@ -181,6 +181,96 @@ public sealed class AirframeCalculatorTests
         Assert.That(cleanReport.EffectiveDragAreaSquareMeters, Is.GreaterThan(0d));
     }
 
+
+    [Test]
+    public void WoodAndAluminum_AreEqualWeightForVeryLightAircraft()
+    {
+        var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
+        var definition = new AirframeDefinition
+        {
+            Id = "air.light.compare",
+            DisplayName = "Light Compare",
+            BaseStructuralWeightKilograms = 140d,
+            ReferenceWingAreaSquareMeters = 8d,
+            BaseDragCoefficient = 0.035d,
+            BaseLiftCoefficient = 1.0d,
+            BaseReliabilityModifier = 1.0d,
+            BaseCost = 12000d,
+            BaseProductionManDays = 30d,
+        };
+
+        var aluminum = new AirframeParameters
+        {
+            EngineCount = 1,
+            StructureType = StructureType.Monocoque,
+            MaterialType = MaterialType.Aluminum,
+            WingPosition = WingPosition.High,
+            WingShape = WingShape.Straight,
+            WingAreaSquareMeters = 8d,
+            TailType = TailType.Classic,
+            FlapType = FlapType.Plain,
+            LandingGearType = LandingGearType.Fixed,
+            EngineCowling = 0.4d,
+            FuelAmountLiters = 50d,
+            CrewCount = 1,
+            AerodynamicCleanlinessPercent = 1d,
+            RunwayType = RunwayType.Short,
+        };
+
+        var wood = aluminum.Clone();
+        wood.MaterialType = MaterialType.WoodFabric;
+
+        var aluminumReport = calculator.Calculate(definition, aluminum);
+        var woodReport = calculator.Calculate(definition, wood);
+
+        Assert.That(aluminumReport.TotalWeight.Kilograms, Is.LessThan(800d));
+        Assert.That(woodReport.TotalWeight.Kilograms, Is.LessThan(800d));
+        Assert.That(woodReport.TotalWeight.Kilograms, Is.EqualTo(aluminumReport.TotalWeight.Kilograms).Within(1.0d));
+    }
+
+    [Test]
+    public void HeavyWoodAirframe_IsSignificantlyHeavierThanAluminum()
+    {
+        var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
+        var definition = CreateDefinition();
+
+        var aluminum = CreateParameters();
+        aluminum.EngineCount = 4;
+        aluminum.WingAreaSquareMeters = 320d;
+        aluminum.FuelAmountLiters = 22000d;
+        aluminum.CrewCount = 10;
+        aluminum.LandingGearType = LandingGearType.Retractable;
+        aluminum.MaterialType = MaterialType.Aluminum;
+
+        var wood = aluminum.Clone();
+        wood.MaterialType = MaterialType.WoodFabric;
+
+        var aluminumReport = calculator.Calculate(definition, aluminum);
+        var woodReport = calculator.Calculate(definition, wood);
+
+        Assert.That(woodReport.TotalWeight.Kilograms, Is.GreaterThan(aluminumReport.TotalWeight.Kilograms * 1.12d));
+    }
+
+    [Test]
+    public void BackupSystems_IncreaseReliabilityWeightAndDrag()
+    {
+        var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
+        var definition = CreateDefinition();
+
+        var baseline = CreateParameters();
+        baseline.MaterialType = MaterialType.Aluminum;
+        baseline.HasBackupSystems = false;
+
+        var withBackup = baseline.Clone();
+        withBackup.HasBackupSystems = true;
+
+        var baselineReport = calculator.Calculate(definition, baseline);
+        var withBackupReport = calculator.Calculate(definition, withBackup);
+
+        Assert.That(withBackupReport.ReliabilityModifier, Is.GreaterThanOrEqualTo(baselineReport.ReliabilityModifier + 0.15d));
+        Assert.That(withBackupReport.TotalWeight.Kilograms, Is.GreaterThan(baselineReport.TotalWeight.Kilograms * 1.08d));
+        Assert.That(withBackupReport.DragCoefficient, Is.GreaterThan(baselineReport.DragCoefficient * 1.02d));
+    }
     private static AirframeDefinition CreateDefinition() =>
         new()
         {

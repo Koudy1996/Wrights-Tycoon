@@ -1,4 +1,5 @@
 using System;
+using WrightTycoon.Core.Aircraft;
 using AircraftModel = WrightTycoon.Core.Aircraft.Aircraft;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Engines;
@@ -84,9 +85,13 @@ public sealed class ResearchCalculator
             + (speedNormalized * ResearchBalance.Type.ComplexityWeightSpeed);
         complexity = Numeric.Clamp(complexity, 0d, 1d);
 
-        var multiplier = Lerp(ResearchBalance.Type.CostMultiplierMin, ResearchBalance.Type.CostMultiplierMax, complexity);
-        var months = RoundToInt(Lerp(ResearchBalance.Type.TimeMonthsMin, ResearchBalance.Type.TimeMonthsMax, complexity));
-        var cost = RoundCurrency(aircraft.Performance.TotalProductionCost * multiplier);
+        var baseMultiplier = Lerp(ResearchBalance.Type.CostMultiplierMin, ResearchBalance.Type.CostMultiplierMax, complexity);
+        var baseMonths = RoundToInt(Lerp(ResearchBalance.Type.TimeMonthsMin, ResearchBalance.Type.TimeMonthsMax, complexity));
+        var baseCost = RoundCurrency(aircraft.Performance.TotalProductionCost * baseMultiplier);
+
+        var modifierEffects = TypeResearchModifierCalculator.Calculate(aircraft.TypeDefinition.ResearchModifiers);
+        var months = System.Math.Max(1, RoundToInt(baseMonths * modifierEffects.ResearchTimeMultiplier));
+        var cost = RoundCurrency(baseCost * modifierEffects.ResearchCostMultiplier);
 
         return new ResearchQuote(cost, months, complexity);
     }
@@ -147,4 +152,49 @@ public sealed class ResearchCalculator
     private static int RoundToInt(double value) => (int)System.Math.Round(value, MidpointRounding.AwayFromZero);
 
     private static double RoundCurrency(double value) => System.Math.Round(value, 2, MidpointRounding.AwayFromZero);
+}
+
+public readonly record struct TypeResearchModifierEffects(
+    double ReliabilityDelta,
+    double ProductionCostMultiplier,
+    double ProductionManDaysMultiplier,
+    double ResearchCostMultiplier,
+    double ResearchTimeMultiplier);
+
+public static class TypeResearchModifierCalculator
+{
+    public static TypeResearchModifierEffects Calculate(TypeResearchModifierPoints? points)
+    {
+        if (points is null)
+        {
+            return new TypeResearchModifierEffects(0d, 1d, 1d, 1d, 1d);
+        }
+
+        var reliabilityPoints = TypeResearchModifierPoints.ClampPoints(points.ReliabilityPoints);
+        var productionPoints = TypeResearchModifierPoints.ClampPoints(points.ProductionOptimizationPoints);
+        var fastDevelopmentPoints = TypeResearchModifierPoints.ClampPoints(points.FastDevelopmentPoints);
+
+        var reliabilityDelta = reliabilityPoints * ResearchBalance.Type.ReliabilityPerPoint;
+        var productionCostMultiplier = System.Math.Max(
+            0.05d,
+            1d - (productionPoints * ResearchBalance.Type.ProductionCostReductionPerPoint));
+        var productionManDaysMultiplier = System.Math.Max(
+            0.05d,
+            1d - (productionPoints * ResearchBalance.Type.ProductionManDaysReductionPerPoint));
+
+        var researchCostMultiplier = 1d
+            + ((reliabilityPoints + productionPoints) * ResearchBalance.Type.ResearchCostIncreasePerPoint)
+            + (fastDevelopmentPoints * ResearchBalance.Type.FastDevelopmentCostIncreasePerPoint);
+        var researchTimeMultiplier = 1d
+            + ((reliabilityPoints + productionPoints) * ResearchBalance.Type.ResearchTimeIncreasePerPoint)
+            - (fastDevelopmentPoints * ResearchBalance.Type.FastDevelopmentTimeReductionPerPoint);
+        researchTimeMultiplier = System.Math.Max(0.1d, researchTimeMultiplier);
+
+        return new TypeResearchModifierEffects(
+            reliabilityDelta,
+            productionCostMultiplier,
+            productionManDaysMultiplier,
+            researchCostMultiplier,
+            researchTimeMultiplier);
+    }
 }

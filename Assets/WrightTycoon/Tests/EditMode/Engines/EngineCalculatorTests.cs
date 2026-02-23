@@ -565,6 +565,126 @@ public sealed class EngineCalculatorTests
         Assert.That(carbReport.EngineFrontalAreaSquareMeters, Is.GreaterThan(0d));
     }
 
+
+    [Test]
+    public void Turbocharger_HasMuchStrongerPowerGainAtHighAltitudeThanAtSeaLevel()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreatePistonDefinition();
+
+        var naturallyAspirated = new EngineParameters
+        {
+            DisplacementLiters = 16d,
+            CylinderCount = 12,
+            MaximumSpeed = 2600d,
+            CompressionRatio = 8.4d,
+            BoostType = BoostType.None,
+            OptimizationAltitudeMeters = 5000d,
+            CoolingEfficiency = 0.78d,
+        };
+
+        var turbocharged = naturallyAspirated.Clone();
+        turbocharged.BoostType = BoostType.Turbo;
+
+        var naturallyAspiratedReport = calculator.Calculate(definition, naturallyAspirated, atmosphere);
+        var turbochargedReport = calculator.Calculate(definition, turbocharged, atmosphere);
+
+        var seaLevelGain = turbochargedReport.GetPerformanceAtAltitude(0d).Output
+            / naturallyAspiratedReport.GetPerformanceAtAltitude(0d).Output;
+        var highAltitudeGain = turbochargedReport.GetPerformanceAtAltitude(10000d).Output
+            / naturallyAspiratedReport.GetPerformanceAtAltitude(10000d).Output;
+
+        Assert.That(highAltitudeGain, Is.GreaterThan(seaLevelGain * 1.2d));
+    }
+
+    [Test]
+    public void Supercharger_PeaksCloseToItsOptimizationAltitude()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreatePistonDefinition();
+
+        var supercharged = new EngineParameters
+        {
+            DisplacementLiters = 15d,
+            CylinderCount = 10,
+            MaximumSpeed = 2500d,
+            CompressionRatio = 8.3d,
+            BoostType = BoostType.Supercharger,
+            OptimizationAltitudeMeters = 5000d,
+            CoolingEfficiency = 0.76d,
+        };
+
+        var report = calculator.Calculate(definition, supercharged, atmosphere);
+        var lowAltitudeOutput = report.GetPerformanceAtAltitude(0d).Output;
+        var optimizedAltitudeOutput = report.GetPerformanceAtAltitude(5000d).Output;
+        var highAltitudeOutput = report.GetPerformanceAtAltitude(10000d).Output;
+
+        Assert.That(optimizedAltitudeOutput, Is.GreaterThan(lowAltitudeOutput));
+        Assert.That(optimizedAltitudeOutput, Is.GreaterThan(highAltitudeOutput));
+    }
+
+    [Test]
+    public void Turbojet_HasHigherSpecificFuelFlowThanComparableTurbofan()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+
+        var turbojetDefinition = new EngineDefinition
+        {
+            Id = "eng.turbojet.compare",
+            DisplayName = "Turbojet Compare",
+            EngineType = EngineType.Turbojet,
+            BaseJetThrustPerSquareMeterNewtons = 95000d,
+            JetFuelConsumptionPerKiloNewtonHour = 68d,
+            BaseReliability = 0.8d,
+            BaseWeightKilograms = 500d,
+            WeightPerTurbineSquareMeter = 320d,
+            BaseCost = 120000d,
+            CostPerOutputUnit = 145d,
+            BaseProductionManDays = 90d,
+            ComplexityFactor = 1.25d,
+        };
+
+        var turbofanDefinition = new EngineDefinition
+        {
+            Id = "eng.turbofan.compare",
+            DisplayName = "Turbofan Compare",
+            EngineType = EngineType.Turbofan,
+            BaseJetThrustPerSquareMeterNewtons = 95000d,
+            JetFuelConsumptionPerKiloNewtonHour = 68d,
+            BaseReliability = 0.8d,
+            BaseWeightKilograms = 500d,
+            WeightPerTurbineSquareMeter = 320d,
+            BaseCost = 120000d,
+            CostPerOutputUnit = 145d,
+            BaseProductionManDays = 90d,
+            ComplexityFactor = 1.25d,
+        };
+
+        var turbojetParameters = new EngineParameters
+        {
+            MaximumSpeed = 45000d,
+            CompressionRatio = 16d,
+            TurbineDiameterMeters = 1.4d,
+            BypassRatio = 0d,
+            CoolingEfficiency = 0.8d,
+        };
+
+        var turbofanParameters = turbojetParameters.Clone();
+        turbofanParameters.BypassRatio = 4d;
+
+        var turbojetReport = calculator.Calculate(turbojetDefinition, turbojetParameters, atmosphere);
+        var turbofanReport = calculator.Calculate(turbofanDefinition, turbofanParameters, atmosphere);
+
+        var turbojetSeaLevel = turbojetReport.GetPerformanceAtAltitude(0d);
+        var turbofanSeaLevel = turbofanReport.GetPerformanceAtAltitude(0d);
+        var turbojetSpecificFuel = turbojetSeaLevel.FuelConsumptionKilogramsPerHour / turbojetSeaLevel.Output;
+        var turbofanSpecificFuel = turbofanSeaLevel.FuelConsumptionKilogramsPerHour / turbofanSeaLevel.Output;
+
+        Assert.That(turbojetSpecificFuel, Is.GreaterThan(turbofanSpecificFuel));
+    }
     private static EngineDefinition CreatePistonDefinition() =>
         new()
         {

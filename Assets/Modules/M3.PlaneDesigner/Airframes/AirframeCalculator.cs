@@ -32,14 +32,6 @@ public sealed class AirframeCalculator : IAirframeCalculator
         definition.Validate();
         parameters.Validate();
 
-        var materialWeightFactor = parameters.MaterialType switch
-        {
-            MaterialType.WoodFabric => 0.84d,
-            MaterialType.Aluminum => 1d,
-            MaterialType.Composite => 0.72d,
-            _ => 1d,
-        };
-
         var materialCostFactor = parameters.MaterialType switch
         {
             MaterialType.WoodFabric => 0.65d,
@@ -122,19 +114,25 @@ public sealed class AirframeCalculator : IAirframeCalculator
             _ => PlaneDesignerBalance.Airframe.WingPositionMassFactorLow,
         };
 
-        var totalWeightKg = ((structuralMass
-                              + wingMass
-                              + wingReinforcementMass
-                              + wingSystemsMass
-                              + fuelMass
-                              + fuelTankAndSystemMass
-                              + fuelLoadSupportMass
-                              + crewMass
-                              + installationMass
-                              + systemsMass)
-                             * materialWeightFactor
-                             * structureWeightFactor
-                             * wingPositionMassFactor);
+        var preMaterialWeightKg = (structuralMass
+                                   + wingMass
+                                   + wingReinforcementMass
+                                   + wingSystemsMass
+                                   + fuelMass
+                                   + fuelTankAndSystemMass
+                                   + fuelLoadSupportMass
+                                   + crewMass
+                                   + installationMass
+                                   + systemsMass)
+                                  * structureWeightFactor
+                                  * wingPositionMassFactor;
+        var materialWeightFactor = ResolveMaterialWeightFactor(parameters.MaterialType, preMaterialWeightKg);
+        var totalWeightKg = preMaterialWeightKg * materialWeightFactor;
+        if (parameters.HasBackupSystems)
+        {
+            totalWeightKg *= PlaneDesignerBalance.Airframe.BackupSystemsWeightMultiplier;
+        }
+
         totalWeightKg = ApplySmallWoodTrussWeightModifier(totalWeightKg, parameters);
         var totalWeight = Mass.FromKilograms(totalWeightKg);
 
@@ -295,6 +293,11 @@ public sealed class AirframeCalculator : IAirframeCalculator
             + cowlingDragDelta
             + ((System.Math.Sqrt(System.Math.Max(referenceAreaRatio, 0.1d)) - 1d) * 0.0012d);
         dragCoefficient *= aerodynamicCleanlinessDragFactor;
+        if (parameters.HasBackupSystems)
+        {
+            dragCoefficient *= PlaneDesignerBalance.Airframe.BackupSystemsDragMultiplier;
+        }
+
         dragCoefficient = Numeric.Clamp(dragCoefficient, 0.014d, PlaneDesignerBalance.Performance.MaximumDragCoefficient);
         var effectiveDragAreaSquareMeters = dragCoefficient * airframeFrontalAreaSquareMeters;
 
@@ -361,6 +364,11 @@ public sealed class AirframeCalculator : IAirframeCalculator
             * gearReliability
             * cowlingReliability
             * (hasLeadingEdgeFlaps ? 0.99d : 1d);
+        if (parameters.HasBackupSystems)
+        {
+            reliabilityModifier += PlaneDesignerBalance.Airframe.BackupSystemsReliabilityDelta;
+        }
+
         reliabilityModifier = Numeric.Clamp(reliabilityModifier, 0.65d, 1.2d);
 
         var seaLevelDensity = _atmosphereModel.GetDensityAtAltitude(0d);
@@ -385,6 +393,32 @@ public sealed class AirframeCalculator : IAirframeCalculator
             effectiveDragAreaSquareMeters,
             aerodynamicCleanlinessPercent);
     }
+    private static double ResolveMaterialWeightFactor(MaterialType materialType, double preMaterialWeightKilograms)
+    {
+        return materialType switch
+        {
+            MaterialType.Aluminum => 1d,
+            MaterialType.Composite => 0.72d,
+            MaterialType.WoodFabric => ResolveWoodFabricWeightFactor(preMaterialWeightKilograms),
+            _ => 1d,
+        };
+    }
+
+    private static double ResolveWoodFabricWeightFactor(double preMaterialWeightKilograms)
+    {
+        var threshold = PlaneDesignerBalance.Airframe.WoodFabricEqualWeightThresholdKilograms;
+        if (preMaterialWeightKilograms <= threshold)
+        {
+            return 1d;
+        }
+
+        var heavyRange = System.Math.Max(
+            PlaneDesignerBalance.Airframe.WoodFabricHeavyWeightReferenceKilograms - threshold,
+            Numeric.Epsilon);
+        var heavyBlend = Numeric.Clamp((preMaterialWeightKilograms - threshold) / heavyRange, 0d, 1d);
+        return 1d + ((PlaneDesignerBalance.Airframe.WoodFabricHeavyWeightFactor - 1d) * heavyBlend);
+    }
+
     private static double ApplySmallWoodTrussWeightModifier(double totalWeightKilograms, AirframeParameters parameters)
     {
         if (parameters.MaterialType != MaterialType.WoodFabric || parameters.StructureType != StructureType.Truss)
@@ -393,7 +427,9 @@ public sealed class AirframeCalculator : IAirframeCalculator
         }
 
         var threshold = PlaneDesignerBalance.Airframe.SmallWoodTrussWeightReductionThresholdKilograms;
-        if (threshold <= Numeric.Epsilon || totalWeightKilograms >= threshold)
+        if (threshold <= Numeric.Epsilon
+            || totalWeightKilograms >= threshold
+            || totalWeightKilograms <= PlaneDesignerBalance.Airframe.WoodFabricEqualWeightThresholdKilograms)
         {
             return totalWeightKilograms;
         }
@@ -403,4 +439,3 @@ public sealed class AirframeCalculator : IAirframeCalculator
         return totalWeightKilograms * (1d - Numeric.Clamp(reductionRatio, 0d, 0.95d));
     }
 }
-

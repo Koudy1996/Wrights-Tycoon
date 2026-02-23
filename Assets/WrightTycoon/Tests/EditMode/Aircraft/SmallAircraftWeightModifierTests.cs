@@ -11,7 +11,7 @@ namespace WrightTycoon.Core.Tests.Aircraft;
 public sealed class SmallAircraftWeightModifierTests
 {
     [Test]
-    public void LightSportWoodTrussWithAbout50KilowattPiston_IsAround500KilogramsWithSpeedModifier()
+    public void LightSportWoodTrussWithAbout50KilowattPiston_MatchesAluminumWeightWhenBelow800Kilograms()
     {
         var atmosphere = new IsaAtmosphereModel();
         var aerodynamics = new AerodynamicsCalculator();
@@ -47,43 +47,52 @@ public sealed class SmallAircraftWeightModifierTests
             });
 
         var airframeBuilder = new AirframeBuilder(new AirframeCalculator(aerodynamics, atmosphere));
-        var airframe = airframeBuilder.Build(
-            new AirframeDefinition
-            {
-                Id = "air.light.woodtruss",
-                DisplayName = "Wood Truss Light Frame",
-                BaseStructuralWeightKilograms = 320d,
-                ReferenceWingAreaSquareMeters = 12d,
-                BaseDragCoefficient = 0.031d,
-                BaseLiftCoefficient = 0.95d,
-                BaseReliabilityModifier = 0.96d,
-                BaseCost = 22000d,
-                BaseProductionManDays = 72d,
-            },
-            new AirframeParameters
-            {
-                EngineCount = 1,
-                StructureType = StructureType.Truss,
-                MaterialType = MaterialType.WoodFabric,
-                WingPosition = WingPosition.High,
-                WingShape = WingShape.Straight,
-                WingAreaSquareMeters = 10d,
-                TailType = TailType.Classic,
-                FlapType = FlapType.Plain,
-                LandingGearType = LandingGearType.Fixed,
-                EngineCowling = 0.4d,
-                FuelAmountLiters = 50d,
-                CrewCount = 1,
-                AerodynamicCleanlinessPercent = 2d,
-                RunwayType = RunwayType.Short,
-            });
+        var woodParameters = new AirframeParameters
+        {
+            EngineCount = 1,
+            StructureType = StructureType.Truss,
+            MaterialType = MaterialType.WoodFabric,
+            WingPosition = WingPosition.High,
+            WingShape = WingShape.Straight,
+            WingAreaSquareMeters = 10d,
+            TailType = TailType.Classic,
+            FlapType = FlapType.Plain,
+            LandingGearType = LandingGearType.Fixed,
+            EngineCowling = 0.4d,
+            FuelAmountLiters = 50d,
+            CrewCount = 1,
+            AerodynamicCleanlinessPercent = 2d,
+            RunwayType = RunwayType.Short,
+        };
+
+        var aluminumParameters = woodParameters.Clone();
+        aluminumParameters.MaterialType = MaterialType.Aluminum;
+
+        var definition = new AirframeDefinition
+        {
+            Id = "air.light.woodtruss",
+            DisplayName = "Wood Truss Light Frame",
+            BaseStructuralWeightKilograms = 320d,
+            ReferenceWingAreaSquareMeters = 12d,
+            BaseDragCoefficient = 0.031d,
+            BaseLiftCoefficient = 0.95d,
+            BaseReliabilityModifier = 0.96d,
+            BaseCost = 22000d,
+            BaseProductionManDays = 72d,
+        };
+
+        var woodAirframe = airframeBuilder.Build(definition, woodParameters);
+        var aluminumAirframe = airframeBuilder.Build(definition, aluminumParameters);
 
         var calculator = new AircraftPerformanceCalculator(atmosphere, aerodynamics);
-        var performance = calculator.Calculate(engine, airframe, AircraftCategory.LightSportAndRecreational);
+        var woodPerformance = calculator.Calculate(engine, woodAirframe, AircraftCategory.LightSportAndRecreational);
+        var aluminumPerformance = calculator.Calculate(engine, aluminumAirframe, AircraftCategory.LightSportAndRecreational);
         var seaLevelPowerKilowatts = engine.Performance.GetPerformanceAtAltitude(0d).Output;
 
         Assert.That(engine.Performance.OutputKind, Is.EqualTo(EngineOutputKind.PowerKilowatts));
         Assert.That(seaLevelPowerKilowatts, Is.InRange(45d, 50d));
-        Assert.That(performance.TotalWeight.Kilograms, Is.InRange(450d, 550d));
+        Assert.That(woodPerformance.TotalWeight.Kilograms, Is.LessThan(800d));
+        Assert.That(aluminumPerformance.TotalWeight.Kilograms, Is.LessThan(800d));
+        Assert.That(woodPerformance.TotalWeight.Kilograms, Is.EqualTo(aluminumPerformance.TotalWeight.Kilograms).Within(1.5d));
     }
 }

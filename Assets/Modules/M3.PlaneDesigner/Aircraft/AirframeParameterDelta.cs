@@ -22,6 +22,8 @@ public sealed class AirframeParameterDelta
 
     public bool? HasLeadingEdgeFlapsOverride { get; init; }
 
+    public bool? HasBackupSystemsOverride { get; init; }
+
     public LandingGearType? LandingGearTypeOverride { get; init; }
 
     public double EngineCowlingDelta { get; init; }

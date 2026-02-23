@@ -62,5 +62,13 @@ public static class ResearchBalance
         public const double WeightMaxKilograms = 260000d;
         public const double SpeedMinKilometersPerHour = 110d;
         public const double SpeedMaxKilometersPerHour = 2600d;
+
+        public const double ReliabilityPerPoint = 0.02d;
+        public const double ProductionCostReductionPerPoint = 0.01d;
+        public const double ProductionManDaysReductionPerPoint = 0.02d;
+        public const double ResearchTimeIncreasePerPoint = 0.03d;
+        public const double ResearchCostIncreasePerPoint = 0.05d;
+        public const double FastDevelopmentTimeReductionPerPoint = 0.05d;
+        public const double FastDevelopmentCostIncreasePerPoint = 0.10d;
     }
 }

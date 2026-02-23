@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -114,11 +114,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private double _typeWingAreaSquareMeters = 36d;
     private FlapType _typeFlapType = FlapType.Fowler;
     private bool _typeHasLeadingEdgeFlaps;
+    private bool _typeHasBackupSystems;
     private LandingGearType _typeLandingGearType = LandingGearType.SemiRetractable;
     private RunwayType _typeRunwayType = RunwayType.Medium;
     private double _typeCowling = 0.55d;
     private double _typeAerodynamicCleanlinessPercent;
     private double _typeFuelLiters = 1500d;
+    private int _typeResearchReliabilityPoints;
+    private int _typeResearchProductionOptimizationPoints;
+    private int _typeResearchFastDevelopmentPoints;
     private SimulationDate _currentDate = SimulationDate.WrightTycoonStart;
     private int _elapsedMonths;
     private ContractDeliverabilityFilter _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
@@ -476,6 +480,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _runtimeScreen = RuntimeScreen.LoadMenu;
         }
 
+        if (GUILayout.Button("Exit", GUILayout.Height(38f)))
+        {
+            Application.Quit();
+        }
+
         if (!_initialized && !string.IsNullOrWhiteSpace(_initError))
         {
             GUILayout.Space(8f);
@@ -645,7 +654,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private string BuildSaveSlotName()
     {
         var company = string.IsNullOrWhiteSpace(_playerCompanyName) ? "Player Company" : _playerCompanyName.Trim();
-        return $"{FormatSimulationDate(_currentDate)} — {company}";
+        return $"{FormatSimulationDate(_currentDate)} � {company}";
     }
 
     private void LoadFromSaveEntry(GameSaveSlotEntry entry)
@@ -713,11 +722,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             TypeWingAreaSquareMeters = _typeWingAreaSquareMeters,
             TypeFlapType = _typeFlapType,
             TypeHasLeadingEdgeFlaps = _typeHasLeadingEdgeFlaps,
+            TypeHasBackupSystems = _typeHasBackupSystems,
             TypeLandingGearType = _typeLandingGearType,
             TypeRunwayType = _typeRunwayType,
             TypeCowling = _typeCowling,
             TypeAerodynamicCleanlinessPercent = _typeAerodynamicCleanlinessPercent,
             TypeFuelLiters = _typeFuelLiters,
+            TypeResearchReliabilityPoints = _typeResearchReliabilityPoints,
+            TypeResearchProductionOptimizationPoints = _typeResearchProductionOptimizationPoints,
+            TypeResearchFastDevelopmentPoints = _typeResearchFastDevelopmentPoints,
             ContractDeliverabilityFilter = _contractDeliverabilityFilter,
             ContractSpecificationFilter = _contractSpecificationFilter,
             ContractQuantityFilterMin = _contractQuantityFilterMin,
@@ -857,11 +870,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeWingAreaSquareMeters = data.TypeWingAreaSquareMeters <= 0d ? _baseAirframeParameters.WingAreaSquareMeters : data.TypeWingAreaSquareMeters;
         _typeFlapType = data.TypeFlapType;
         _typeHasLeadingEdgeFlaps = data.TypeHasLeadingEdgeFlaps;
+        _typeHasBackupSystems = data.TypeHasBackupSystems;
         _typeLandingGearType = data.TypeLandingGearType;
         _typeRunwayType = data.TypeRunwayType;
         _typeCowling = Mathf.Clamp((float)data.TypeCowling, 0.1f, 0.9f);
         _typeAerodynamicCleanlinessPercent = Mathf.Clamp((float)data.TypeAerodynamicCleanlinessPercent, (float)PlaneDesignerBalance.Airframe.AerodynamicCleanlinessMinPercent, (float)PlaneDesignerBalance.Airframe.AerodynamicCleanlinessMaxPercent);
         _typeFuelLiters = Mathf.Clamp((float)data.TypeFuelLiters, (float)PlaneDesignerBalance.Airframe.FuelMinLiters, (float)PlaneDesignerBalance.Airframe.FuelMaxLiters);
+        _typeResearchReliabilityPoints = TypeResearchModifierPoints.ClampPoints(data.TypeResearchReliabilityPoints);
+        _typeResearchProductionOptimizationPoints = TypeResearchModifierPoints.ClampPoints(data.TypeResearchProductionOptimizationPoints);
+        _typeResearchFastDevelopmentPoints = TypeResearchModifierPoints.ClampPoints(data.TypeResearchFastDevelopmentPoints);
 
         _contractDeliverabilityFilter = data.ContractDeliverabilityFilter;
         _contractSpecificationFilter = data.ContractSpecificationFilter;
@@ -1415,6 +1432,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeWingAreaSquareMeters = DrawSlider("Wing Area (m2)", _typeWingAreaSquareMeters, 1d, 1000d, "0.0");
         _typeFlapType = DrawTrailingFlapSelector("Flaps", _typeFlapType);
         _typeHasLeadingEdgeFlaps = GUILayout.Toggle(_typeHasLeadingEdgeFlaps, "Leading Edge Flaps");
+        _typeHasBackupSystems = GUILayout.Toggle(_typeHasBackupSystems, "Backup Systems (+0.2 reliability, +10% weight, +3% drag)");
         _typeLandingGearType = DrawLandingGearSelector("Gear Type", _typeLandingGearType);
         _typeRunwayType = DrawRunwayTypeSelector("Runway Type", _typeRunwayType);
         _typeCowling = DrawSlider("Cowling", _typeCowling, 0.1d, 0.9d, "0.00");
@@ -1430,6 +1448,30 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             PlaneDesignerBalance.Airframe.FuelMinLiters,
             PlaneDesignerBalance.Airframe.FuelMaxLiters,
             "0");
+
+        DrawSection("Type Research Modifiers");
+        _typeResearchReliabilityPoints = DrawIntSlider(
+            "Reliability (0-10)",
+            _typeResearchReliabilityPoints,
+            0,
+            TypeResearchModifierPoints.MaxPointsPerCategory);
+        _typeResearchProductionOptimizationPoints = DrawIntSlider(
+            "Production Optimization (0-10)",
+            _typeResearchProductionOptimizationPoints,
+            0,
+            TypeResearchModifierPoints.MaxPointsPerCategory);
+        _typeResearchFastDevelopmentPoints = DrawIntSlider(
+            "Fast Development (0-10)",
+            _typeResearchFastDevelopmentPoints,
+            0,
+            TypeResearchModifierPoints.MaxPointsPerCategory);
+
+        var typeModifierEffects = TypeResearchModifierCalculator.Calculate(BuildTypeResearchModifierPoints());
+        DrawMetric("Type Reliability Bonus", typeModifierEffects.ReliabilityDelta, "0.00");
+        DrawMetric("Type Production Cost Multiplier", typeModifierEffects.ProductionCostMultiplier, "0.00");
+        DrawMetric("Type Production MD Multiplier", typeModifierEffects.ProductionManDaysMultiplier, "0.00");
+        DrawMetric("Type Research Cost Multiplier", typeModifierEffects.ResearchCostMultiplier, "0.00");
+        DrawMetric("Type Research Time Multiplier", typeModifierEffects.ResearchTimeMultiplier, "0.00");
 
         GUILayout.BeginHorizontal();
         if (GUILayout.Button("Reset Variant", GUILayout.Height(28f)))
@@ -1548,6 +1590,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"Engine: {_aircraftPreview.Engine.Definition.DisplayName} x{FormatUiInteger(_aircraftPreview.Airframe.Parameters.EngineCount)}");
         GUILayout.Label($"Wing/Tail: {_aircraftPreview.Airframe.Parameters.WingPosition} {_aircraftPreview.Airframe.Parameters.WingShape}, {_aircraftPreview.Airframe.Parameters.TailType}");
         GUILayout.Label($"Flaps: {_aircraftPreview.Airframe.Parameters.FlapType}, Leading Edge: {_aircraftPreview.Airframe.Parameters.HasLeadingEdgeFlaps}");
+        GUILayout.Label($"Backup Systems: {_aircraftPreview.Airframe.Parameters.HasBackupSystems}");
+        var previewTypeModifiers = _aircraftPreview.TypeDefinition.ResearchModifiers ?? new TypeResearchModifierPoints();
+        var previewModifierEffects = TypeResearchModifierCalculator.Calculate(previewTypeModifiers);
+        GUILayout.Label($"Research Modifiers: REL {FormatUiInteger(previewTypeModifiers.ReliabilityPoints)} | PROD {FormatUiInteger(previewTypeModifiers.ProductionOptimizationPoints)} | FAST {FormatUiInteger(previewTypeModifiers.FastDevelopmentPoints)}");
+        GUILayout.Label($"Modifier Effects: Reliability +{FormatUiNumber(previewModifierEffects.ReliabilityDelta, "0.00")}, Prod Cost x{FormatUiNumber(previewModifierEffects.ProductionCostMultiplier, "0.00")}, Prod MD x{FormatUiNumber(previewModifierEffects.ProductionManDaysMultiplier, "0.00")}");
         GUILayout.Label(
             $"Runway: {_aircraftPreview.Airframe.Parameters.RunwayType} ({FormatUiNumber(GetRunwayLengthMeters(_aircraftPreview.Airframe.Parameters.RunwayType), "0")} m)");
 
@@ -2356,6 +2403,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawMetric("Research Cost", project.ResearchCost, "0.00");
             DrawMetric("Research Time (months)", project.ResearchTimeMonths, "0");
             DrawMetric("Complexity (%)", project.ComplexityNormalized * 100d, "0.0");
+            if (TryGetTypeResearchModifierPoints(project, out var typeModifiers))
+            {
+                var effects = TypeResearchModifierCalculator.Calculate(typeModifiers);
+                GUILayout.Label($"Type Modifiers: REL {FormatUiInteger(typeModifiers.ReliabilityPoints)} | PROD {FormatUiInteger(typeModifiers.ProductionOptimizationPoints)} | FAST {FormatUiInteger(typeModifiers.FastDevelopmentPoints)}");
+                GUILayout.Label($"Type Effects: Reliability +{FormatUiNumber(effects.ReliabilityDelta, "0.00")}, Prod Cost x{FormatUiNumber(effects.ProductionCostMultiplier, "0.00")}, Prod MD x{FormatUiNumber(effects.ProductionManDaysMultiplier, "0.00")}");
+            }
             if (isDetailed)
             {
                 GUILayout.Label($"Research ID: {project.SubjectId}");
@@ -2428,6 +2481,29 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         };
     }
 
+    private bool TryGetTypeResearchModifierPoints(ResearchProject project, out TypeResearchModifierPoints points)
+    {
+        points = new TypeResearchModifierPoints();
+        if (project is null || project.SubjectType != ResearchSubjectType.AircraftType)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+        {
+            var savedDesign = _savedAircraftDesigns[index];
+            if (!string.Equals(savedDesign.TypeResearchId, project.SubjectId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            points = savedDesign.CatalogItem.Aircraft.TypeDefinition.ResearchModifiers?.Clone()
+                ?? new TypeResearchModifierPoints();
+            return true;
+        }
+
+        return false;
+    }
     private string ResolveResearchProjectDisplayName(ResearchProject project)
     {
         if (project is null)
@@ -3389,6 +3465,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             RequiredLineToolLevel = _requiredLineToolLevel,
             EngineDelta = new EngineParameterDelta(),
             AirframeDelta = BuildAirframeDeltaFromType(),
+            ResearchModifiers = BuildTypeResearchModifierPoints(),
         };
     }
 
@@ -3411,11 +3488,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             TailTypeOverride = _typeTailType,
             FlapTypeOverride = _typeFlapType,
             HasLeadingEdgeFlapsOverride = _typeHasLeadingEdgeFlaps,
+            HasBackupSystemsOverride = _typeHasBackupSystems,
             LandingGearTypeOverride = _typeLandingGearType,
             RunwayTypeOverride = _typeRunwayType,
         };
     }
 
+
+    private TypeResearchModifierPoints BuildTypeResearchModifierPoints()
+    {
+        return new TypeResearchModifierPoints
+        {
+            ReliabilityPoints = TypeResearchModifierPoints.ClampPoints(_typeResearchReliabilityPoints),
+            ProductionOptimizationPoints = TypeResearchModifierPoints.ClampPoints(_typeResearchProductionOptimizationPoints),
+            FastDevelopmentPoints = TypeResearchModifierPoints.ClampPoints(_typeResearchFastDevelopmentPoints),
+        };
+    }
     private (string EngineJsonPath, string AirframeJsonPath) ResolveDefinitionPaths()
     {
         var streamingPath = Path.Combine(Application.streamingAssetsPath, "Data", "Examples");
@@ -4416,11 +4504,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeWingAreaSquareMeters = _baseAirframeParameters.WingAreaSquareMeters;
         _typeFlapType = _baseAirframeParameters.FlapType == FlapType.LeadingEdge ? FlapType.Plain : _baseAirframeParameters.FlapType;
         _typeHasLeadingEdgeFlaps = _baseAirframeParameters.HasLeadingEdgeFlaps || _baseAirframeParameters.FlapType == FlapType.LeadingEdge;
+        _typeHasBackupSystems = _baseAirframeParameters.HasBackupSystems;
         _typeLandingGearType = _baseAirframeParameters.LandingGearType;
         _typeRunwayType = _baseAirframeParameters.RunwayType;
         _typeCowling = _baseAirframeParameters.EngineCowling;
         _typeAerodynamicCleanlinessPercent = _baseAirframeParameters.AerodynamicCleanlinessPercent;
         _typeFuelLiters = _baseAirframeParameters.FuelAmountLiters;
+        _typeResearchReliabilityPoints = 0;
+        _typeResearchProductionOptimizationPoints = 0;
+        _typeResearchFastDevelopmentPoints = 0;
     }
 
     private static EngineParameters CreateDefaultEngineParameters(EngineDefinition definition)
@@ -4456,6 +4548,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             TailType = TailType.Classic,
             FlapType = FlapType.Fowler,
             HasLeadingEdgeFlaps = false,
+            HasBackupSystems = false,
             LandingGearType = LandingGearType.SemiRetractable,
             RunwayType = RunwayType.Medium,
             EngineCowling = 0.55d,
@@ -4736,6 +4829,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public bool TypeHasLeadingEdgeFlaps { get; set; }
 
+        public bool TypeHasBackupSystems { get; set; }
+
+
         public LandingGearType TypeLandingGearType { get; set; }
 
         public RunwayType TypeRunwayType { get; set; }
@@ -4745,6 +4841,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public double TypeAerodynamicCleanlinessPercent { get; set; }
 
         public double TypeFuelLiters { get; set; }
+
+        public int TypeResearchReliabilityPoints { get; set; }
+
+        public int TypeResearchProductionOptimizationPoints { get; set; }
+
+        public int TypeResearchFastDevelopmentPoints { get; set; }
+
 
         public ContractDeliverabilityFilter ContractDeliverabilityFilter { get; set; }
 
@@ -4846,7 +4949,3 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public double Value { get; set; }
     }
 }
-
-
-
-

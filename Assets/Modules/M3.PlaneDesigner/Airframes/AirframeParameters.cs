@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Math;
 
@@ -24,6 +24,8 @@ public sealed class AirframeParameters
 
     public bool HasLeadingEdgeFlaps { get; set; }
 
+    public bool HasBackupSystems { get; set; }
+
     public LandingGearType LandingGearType { get; set; } = LandingGearType.Fixed;
 
     public double EngineCowling { get; set; } = 0.5d;
@@ -48,6 +50,7 @@ public sealed class AirframeParameters
             TailType = TailType,
             FlapType = FlapType,
             HasLeadingEdgeFlaps = HasLeadingEdgeFlaps,
+            HasBackupSystems = HasBackupSystems,
             LandingGearType = LandingGearType,
             EngineCowling = EngineCowling,
             FuelAmountLiters = FuelAmountLiters,
@@ -106,4 +109,3 @@ public sealed class AirframeParameters
         }
     }
 }
-

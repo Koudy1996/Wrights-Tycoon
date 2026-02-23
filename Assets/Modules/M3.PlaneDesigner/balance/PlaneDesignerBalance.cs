@@ -14,8 +14,14 @@ public static class PlaneDesignerBalance
         public const double FuelMinLiters = 50d;
         public const double FuelMaxLiters = 50000d;
         public const double WoodFabricMaximumTotalWeightKilograms = 15000d;
+        public const double WoodFabricEqualWeightThresholdKilograms = 800d;
+        public const double WoodFabricHeavyWeightReferenceKilograms = 12000d;
+        public const double WoodFabricHeavyWeightFactor = 1.22d;
         public const double SmallWoodTrussWeightReductionThresholdKilograms = 3000d;
         public const double SmallWoodTrussMaxWeightReductionRatio = 0.3d;
+        public const double BackupSystemsWeightMultiplier = 1.1d;
+        public const double BackupSystemsDragMultiplier = 1.03d;
+        public const double BackupSystemsReliabilityDelta = 0.2d;
         public const double WingPositionMassFactorLow = 1d;
         public const double WingPositionMassFactorHigh = 0.96d;
         public const double WingPositionMassFactorBiplane = 0.83d;

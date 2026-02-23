@@ -1,3 +1,4 @@
+using System;
 using NUnit.Framework;
 using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Airframes;
@@ -6,6 +7,7 @@ using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Data;
 using WrightTycoon.Core.Engines;
 using WrightTycoon.Core.Physics;
+using WrightTycoon.Core.Research;
 using WrightTycoon.Core.Units;
 
 namespace WrightTycoon.Core.Tests.Aircraft;
@@ -523,6 +525,171 @@ public sealed class AircraftIntegrationTests
 
         Assert.That(large.AircraftLengthMeters, Is.GreaterThan(55d));
         Assert.That(large.AircraftLengthMeters, Is.GreaterThan(medium.AircraftLengthMeters + 20d));
+    }
+
+
+    [Test]
+    public void TypeResearchModifiers_AdjustAircraftReliabilityAndProductionValues()
+    {
+        var factory = CreateFactory();
+        var family = CreateFamily("fam.type.modifiers", engineCount: 2, category: AircraftCategory.BusinessVipJet);
+
+        var baselineType = new AircraftTypeDefinition
+        {
+            Id = "type.type.modifiers.base",
+            FamilyId = family.Id,
+            DisplayName = "Baseline",
+        };
+
+        var optimizedType = new AircraftTypeDefinition
+        {
+            Id = "type.type.modifiers.optimized",
+            FamilyId = family.Id,
+            DisplayName = "Optimized",
+            ResearchModifiers = new TypeResearchModifierPoints
+            {
+                ReliabilityPoints = 5,
+                ProductionOptimizationPoints = 6,
+            },
+        };
+
+        var baselineAircraft = factory.CreateAircraft(family, baselineType);
+        var optimizedAircraft = factory.CreateAircraft(family, optimizedType);
+        var effects = TypeResearchModifierCalculator.Calculate(optimizedType.ResearchModifiers);
+
+        var expectedReliability = System.Math.Min(0.995d, baselineAircraft.Performance.OverallReliability + effects.ReliabilityDelta);
+        var expectedProductionCost = baselineAircraft.Performance.TotalProductionCost * effects.ProductionCostMultiplier;
+        var expectedProductionManDays = baselineAircraft.Performance.TotalProductionManDays * effects.ProductionManDaysMultiplier;
+
+        Assert.That(optimizedAircraft.Performance.OverallReliability, Is.EqualTo(expectedReliability).Within(1e-9));
+        Assert.That(optimizedAircraft.Performance.TotalProductionCost, Is.EqualTo(expectedProductionCost).Within(0.01d));
+        Assert.That(optimizedAircraft.Performance.TotalProductionManDays, Is.EqualTo(expectedProductionManDays).Within(0.01d));
+    }
+
+    [Test]
+    public void TypeResearchModifiers_AdjustResearchTypeQuoteCostAndTime()
+    {
+        var factory = CreateFactory();
+        var family = CreateFamily("fam.quote.modifiers", engineCount: 2, category: AircraftCategory.BusinessVipJet);
+        var calculator = new ResearchCalculator();
+
+        var baselineType = new AircraftTypeDefinition
+        {
+            Id = "type.quote.base",
+            FamilyId = family.Id,
+            DisplayName = "Quote Baseline",
+        };
+
+        var modifiedType = new AircraftTypeDefinition
+        {
+            Id = "type.quote.modified",
+            FamilyId = family.Id,
+            DisplayName = "Quote Modified",
+            ResearchModifiers = new TypeResearchModifierPoints
+            {
+                ReliabilityPoints = 4,
+                ProductionOptimizationPoints = 3,
+                FastDevelopmentPoints = 5,
+            },
+        };
+
+        var baselineAircraft = factory.CreateAircraft(family, baselineType);
+        var modifiedAircraft = factory.CreateAircraft(family, modifiedType);
+
+        var baselineQuote = calculator.CalculateTypeQuote(baselineAircraft);
+        var modifiedQuote = calculator.CalculateTypeQuote(modifiedAircraft);
+        var modifierEffects = TypeResearchModifierCalculator.Calculate(modifiedType.ResearchModifiers);
+
+        var expectedMonths = ComputeExpectedTypeResearchMonths(modifiedAircraft, modifierEffects);
+        var expectedCost = ComputeExpectedTypeResearchCost(modifiedAircraft, modifierEffects);
+
+        Assert.That(modifiedQuote.ResearchTimeMonths, Is.EqualTo(expectedMonths));
+        Assert.That(modifiedQuote.ResearchCost, Is.EqualTo(expectedCost).Within(0.01d));
+        Assert.That(modifiedQuote.ResearchTimeMonths, Is.LessThanOrEqualTo(baselineQuote.ResearchTimeMonths));
+        Assert.That(modifiedQuote.ResearchCost, Is.GreaterThan(baselineQuote.ResearchCost));
+    }
+
+    private static int ComputeExpectedTypeResearchMonths(WrightTycoon.Core.Aircraft.Aircraft aircraft, TypeResearchModifierEffects modifierEffects)
+    {
+        var complexity = ComputeTypeResearchComplexity(aircraft);
+        var baseMonths = (int)System.Math.Round(
+            Lerp(ResearchBalance.Type.TimeMonthsMin, ResearchBalance.Type.TimeMonthsMax, complexity),
+            MidpointRounding.AwayFromZero);
+
+        var expectedMonths = (int)System.Math.Round(
+            baseMonths * modifierEffects.ResearchTimeMultiplier,
+            MidpointRounding.AwayFromZero);
+        return System.Math.Max(1, expectedMonths);
+    }
+
+    private static double ComputeExpectedTypeResearchCost(WrightTycoon.Core.Aircraft.Aircraft aircraft, TypeResearchModifierEffects modifierEffects)
+    {
+        var complexity = ComputeTypeResearchComplexity(aircraft);
+        var baseMultiplier = Lerp(ResearchBalance.Type.CostMultiplierMin, ResearchBalance.Type.CostMultiplierMax, complexity);
+        var baseCost = System.Math.Round(
+            aircraft.Performance.TotalProductionCost * baseMultiplier,
+            2,
+            MidpointRounding.AwayFromZero);
+        return System.Math.Round(baseCost * modifierEffects.ResearchCostMultiplier, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static double ComputeTypeResearchComplexity(WrightTycoon.Core.Aircraft.Aircraft aircraft)
+    {
+        var maxSpeedKmh = 0d;
+        if (aircraft.Performance.MaxSpeedByAltitude.Count > 0)
+        {
+            maxSpeedKmh = aircraft.Performance.MaxSpeedByAltitude[0].MaxSpeedMetersPerSecond * 3.6d;
+        }
+
+        var magnitudeNormalized = Normalize(
+            aircraft.Development.ChangeMagnitudeScore,
+            ResearchBalance.Type.ChangeMagnitudeMin,
+            ResearchBalance.Type.ChangeMagnitudeMax);
+        var changedCountNormalized = Normalize(
+            aircraft.Development.ChangedParameterCount,
+            ResearchBalance.Type.ChangedCountMin,
+            ResearchBalance.Type.ChangedCountMax);
+        var weightNormalized = Normalize(
+            aircraft.Performance.TotalWeight.Kilograms,
+            ResearchBalance.Type.WeightMinKilograms,
+            ResearchBalance.Type.WeightMaxKilograms);
+        var speedNormalized = Normalize(
+            maxSpeedKmh,
+            ResearchBalance.Type.SpeedMinKilometersPerHour,
+            ResearchBalance.Type.SpeedMaxKilometersPerHour);
+
+        var complexity = (magnitudeNormalized * ResearchBalance.Type.ComplexityWeightMagnitude)
+            + (changedCountNormalized * ResearchBalance.Type.ComplexityWeightChangedCount)
+            + (weightNormalized * ResearchBalance.Type.ComplexityWeightWeight)
+            + (speedNormalized * ResearchBalance.Type.ComplexityWeightSpeed);
+        return Clamp(complexity, 0d, 1d);
+    }
+
+    private static double Normalize(double value, double minValue, double maxValue)
+    {
+        if (maxValue - minValue <= 1e-9d)
+        {
+            return 0d;
+        }
+
+        return Clamp((value - minValue) / (maxValue - minValue), 0d, 1d);
+    }
+
+    private static double Lerp(double a, double b, double t) => a + ((b - a) * t);
+
+    private static double Clamp(double value, double minValue, double maxValue)
+    {
+        if (value < minValue)
+        {
+            return minValue;
+        }
+
+        if (value > maxValue)
+        {
+            return maxValue;
+        }
+
+        return value;
     }
 
     private static AircraftFactory CreateFactory()

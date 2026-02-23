@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Data;
 using WrightTycoon.Core.Engines;
 using WrightTycoon.Core.Math;
+using WrightTycoon.Core.Research;
 
 namespace WrightTycoon.Core.Aircraft;
 
@@ -77,6 +78,8 @@ public sealed class AircraftFactory
         var engine = _engineBuilder.Build(engineDefinition, variantEngine);
         var airframe = _airframeBuilder.Build(airframeDefinition, variantAirframe);
         var performance = _performanceCalculator.Calculate(engine, airframe, familyDefinition.Category);
+        var researchModifierEffects = TypeResearchModifierCalculator.Calculate(typeDefinition.ResearchModifiers);
+        performance = ApplyTypeResearchModifierEffects(performance, researchModifierEffects);
         var development = _developmentCostCalculator.Calculate(familyDefinition, baseEngine, variantEngine, baseAirframe, variantAirframe);
 
         return new Aircraft(familyDefinition, typeDefinition, engine, airframe, performance, development);
@@ -153,6 +156,11 @@ public sealed class AircraftFactory
             result.HasLeadingEdgeFlaps = delta.HasLeadingEdgeFlapsOverride.Value;
         }
 
+        if (delta.HasBackupSystemsOverride.HasValue)
+        {
+            result.HasBackupSystems = delta.HasBackupSystemsOverride.Value;
+        }
+
         if (delta.LandingGearTypeOverride.HasValue)
         {
             result.LandingGearType = delta.LandingGearTypeOverride.Value;
@@ -165,5 +173,20 @@ public sealed class AircraftFactory
 
         return result;
     }
-}
 
+    private static AircraftPerformanceReport ApplyTypeResearchModifierEffects(
+        AircraftPerformanceReport performance,
+        TypeResearchModifierEffects effects)
+    {
+        var productionCost = System.Math.Max(0d, performance.TotalProductionCost * effects.ProductionCostMultiplier);
+        var productionManDays = System.Math.Max(0d, performance.TotalProductionManDays * effects.ProductionManDaysMultiplier);
+        var reliability = Numeric.Clamp(performance.OverallReliability + effects.ReliabilityDelta, 0.2d, 0.995d);
+
+        return performance with
+        {
+            TotalProductionCost = productionCost,
+            TotalProductionManDays = productionManDays,
+            OverallReliability = reliability,
+        };
+    }
+}
