@@ -185,7 +185,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
         {
             WingShape.Straight => 1d,
             WingShape.Swept => 0.93d,
-            WingShape.Delta => 0.88d,
+            WingShape.Delta => 1d,
             _ => 1d,
         };
 
@@ -305,6 +305,11 @@ public sealed class AirframeCalculator : IAirframeCalculator
             + wingPositionLiftBonus
             + flapLiftBonus
             + ((referenceAreaRatio - 1d) * 0.012d);
+        if (parameters.WingShape == WingShape.Delta)
+        {
+            liftCoefficient *= PlaneDesignerBalance.Airframe.DeltaWingLiftMultiplier;
+        }
+
         liftCoefficient = Numeric.Clamp(liftCoefficient, 0.5d, 1.8d);
 
         var wingLoading = totalWeightKg / System.Math.Max(parameters.WingAreaSquareMeters, 1d);
@@ -439,3 +444,4 @@ public sealed class AirframeCalculator : IAirframeCalculator
         return totalWeightKilograms * (1d - Numeric.Clamp(reductionRatio, 0d, 0.95d));
     }
 }
+

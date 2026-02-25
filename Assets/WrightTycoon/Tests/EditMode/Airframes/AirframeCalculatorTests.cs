@@ -271,6 +271,26 @@ public sealed class AirframeCalculatorTests
         Assert.That(withBackupReport.TotalWeight.Kilograms, Is.GreaterThan(baselineReport.TotalWeight.Kilograms * 1.08d));
         Assert.That(withBackupReport.DragCoefficient, Is.GreaterThan(baselineReport.DragCoefficient * 1.02d));
     }
+
+    [Test]
+    public void DeltaWing_ReducesLiftCoefficientByFifteenPercentAgainstStraightWing()
+    {
+        var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
+        var definition = CreateDefinition();
+
+        var straight = CreateParameters();
+        straight.WingShape = WingShape.Straight;
+
+        var delta = straight.Clone();
+        delta.WingShape = WingShape.Delta;
+
+        var straightReport = calculator.Calculate(definition, straight);
+        var deltaReport = calculator.Calculate(definition, delta);
+
+        Assert.That(straightReport.LiftCoefficient, Is.GreaterThan(0d));
+        Assert.That(deltaReport.LiftCoefficient, Is.EqualTo(straightReport.LiftCoefficient * 0.85d).Within(1e-6));
+    }
+
     private static AirframeDefinition CreateDefinition() =>
         new()
         {
@@ -302,3 +322,4 @@ public sealed class AirframeCalculatorTests
             CrewCount = 2,
         };
 }
+

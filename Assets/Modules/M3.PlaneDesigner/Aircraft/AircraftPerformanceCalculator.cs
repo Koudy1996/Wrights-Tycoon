@@ -50,6 +50,7 @@ public sealed class AircraftPerformanceCalculator
             baseDragCoefficient * wingPositionDragFactor,
             PlaneDesignerBalance.Performance.MinimumDragCoefficient,
             PlaneDesignerBalance.Performance.SpeedCalculationMaximumDragCoefficient);
+        var hasDeltaWingDragModifier = airframe.Parameters.WingShape == WingShape.Delta;
         var liftCoefficient = Numeric.Clamp(
             airframe.Performance.LiftCoefficient,
             PlaneDesignerBalance.Performance.MinimumLiftCoefficient,
@@ -75,7 +76,7 @@ public sealed class AircraftPerformanceCalculator
             var altitude = EvaluationAltitudes[index];
             var density = _atmosphereModel.GetDensityAtAltitude(altitude).KilogramsPerCubicMeter;
             var thrust = GetThrustAtAltitude(engine, altitude) * engineCount;
-            var maxSpeed = CalculateMaximumSpeedMetersPerSecond(thrust, density, wingAreaSquareMeters, dragCoefficient);
+            var maxSpeed = CalculateMaximumSpeedMetersPerSecond(thrust, density, wingAreaSquareMeters, dragCoefficient, hasDeltaWingDragModifier);
             maxSpeed += categoryProfile.SpeedModifierMetersPerSecond;
             maxSpeed = ApplyJetSpeedEnvelope(maxSpeed, engine, category);
             speedPoints[index] = new AircraftPerformancePoint(altitude, System.Math.Max(0d, maxSpeed));
@@ -116,12 +117,16 @@ public sealed class AircraftPerformanceCalculator
             PlaneDesignerBalance.Performance.MinimumCruiseSpeedMetersPerSecond,
             System.Math.Max(PlaneDesignerBalance.Performance.MinimumCruiseSpeedMetersPerSecond, maxSpeedAtCruise));
 
+        var cruiseDragCoefficient = ApplyDeltaWingHighSpeedDragModifier(
+            dragCoefficient,
+            hasDeltaWingDragModifier,
+            optimalCruiseSpeedMetersPerSecond);
         var requiredCruiseThrust = 0.5d
             * cruiseDensity
             * optimalCruiseSpeedMetersPerSecond
             * optimalCruiseSpeedMetersPerSecond
             * wingAreaSquareMeters
-            * dragCoefficient;
+            * cruiseDragCoefficient;
         var availableCruiseThrust = System.Math.Max(GetThrustAtAltitude(engine, cruiseAltitudeMeters) * engineCount, Numeric.Epsilon);
         var thrustRatio = Numeric.Clamp(requiredCruiseThrust / availableCruiseThrust, 0d, 1d);
         var fullThrottleCruiseFuelBurn = engine.Performance.GetPerformanceAtAltitude(cruiseAltitudeMeters).FuelConsumptionKilogramsPerHour
@@ -138,7 +143,7 @@ public sealed class AircraftPerformanceCalculator
         var bodyFrontalAreaSquareMeters = CalculateBodyFrontalAreaSquareMeters(maximumWeightKilograms, wingAreaSquareMeters);
         var totalFrontalAreaSquareMeters = (engine.Performance.EngineFrontalAreaSquareMeters * engineCount)
             + bodyFrontalAreaSquareMeters;
-        var totalDragAreaSquareMeters = dragCoefficient * totalFrontalAreaSquareMeters;
+        var totalDragAreaSquareMeters = cruiseDragCoefficient * totalFrontalAreaSquareMeters;
 
         var maneuverability = Numeric.Clamp(
             airframe.Performance.Maneuverability - (maximumWeightKilograms * PlaneDesignerBalance.Performance.ManeuverabilityWeightPenaltyPerKilogram),
@@ -185,6 +190,37 @@ public sealed class AircraftPerformanceCalculator
         double totalThrustNewtons,
         double densityKilogramsPerCubicMeter,
         double wingAreaSquareMeters,
+        double dragCoefficient,
+        bool hasDeltaWingDragModifier)
+    {
+        if (!hasDeltaWingDragModifier)
+        {
+            return CalculateSpeedFromDragCoefficient(totalThrustNewtons, densityKilogramsPerCubicMeter, wingAreaSquareMeters, dragCoefficient);
+        }
+
+        // Fixed-point iteration resolves speed-dependent drag reduction for delta wings.
+        var effectiveDragCoefficient = dragCoefficient;
+        var maximumSpeedMetersPerSecond = 0d;
+        for (var iteration = 0; iteration < 4; iteration++)
+        {
+            maximumSpeedMetersPerSecond = CalculateSpeedFromDragCoefficient(
+                totalThrustNewtons,
+                densityKilogramsPerCubicMeter,
+                wingAreaSquareMeters,
+                effectiveDragCoefficient);
+            effectiveDragCoefficient = ApplyDeltaWingHighSpeedDragModifier(
+                dragCoefficient,
+                hasDeltaWingDragModifier,
+                maximumSpeedMetersPerSecond);
+        }
+
+        return maximumSpeedMetersPerSecond;
+    }
+
+    private static double CalculateSpeedFromDragCoefficient(
+        double totalThrustNewtons,
+        double densityKilogramsPerCubicMeter,
+        double wingAreaSquareMeters,
         double dragCoefficient)
     {
         var denominator = System.Math.Max(
@@ -192,6 +228,38 @@ public sealed class AircraftPerformanceCalculator
             Numeric.Epsilon);
         var speedSquared = (2d * totalThrustNewtons) / denominator;
         return System.Math.Sqrt(System.Math.Max(0d, speedSquared));
+    }
+
+    private static double ApplyDeltaWingHighSpeedDragModifier(
+        double baseDragCoefficient,
+        bool hasDeltaWingDragModifier,
+        double speedMetersPerSecond)
+    {
+        if (!hasDeltaWingDragModifier)
+        {
+            return baseDragCoefficient;
+        }
+
+        var speedKilometersPerHour = speedMetersPerSecond * 3.6d;
+        var reductionRatio = CalculateDeltaWingHighSpeedDragReductionRatio(speedKilometersPerHour);
+        return Numeric.Clamp(
+            baseDragCoefficient * (1d - reductionRatio),
+            PlaneDesignerBalance.Performance.MinimumDragCoefficient,
+            PlaneDesignerBalance.Performance.SpeedCalculationMaximumDragCoefficient);
+    }
+
+    private static double CalculateDeltaWingHighSpeedDragReductionRatio(double speedKilometersPerHour)
+    {
+        var start = PlaneDesignerBalance.Performance.DeltaWingHighSpeedDragReductionStartKilometersPerHour;
+        var end = PlaneDesignerBalance.Performance.DeltaWingHighSpeedDragReductionEndKilometersPerHour;
+        if (speedKilometersPerHour <= start)
+        {
+            return 0d;
+        }
+
+        var range = System.Math.Max(end - start, Numeric.Epsilon);
+        var blend = Numeric.Clamp((speedKilometersPerHour - start) / range, 0d, 1d);
+        return PlaneDesignerBalance.Performance.DeltaWingHighSpeedDragReductionMaxRatio * blend;
     }
 
     private static double CalculateMaximumWeightKilograms(
@@ -434,3 +502,4 @@ public sealed class AircraftPerformanceCalculator
         return points.Count == 0 ? 0d : points[0].MaxSpeedMetersPerSecond;
     }
 }
+

@@ -609,6 +609,117 @@ public sealed class AircraftIntegrationTests
         Assert.That(modifiedQuote.ResearchCost, Is.GreaterThan(baselineQuote.ResearchCost));
     }
 
+
+    [Test]
+    public void DeltaWing_HighSpeedDragModifier_IncreasesTopSpeedAbove500KilometersPerHour()
+    {
+        var calculator = new AircraftPerformanceCalculator(new IsaAtmosphereModel(), new AerodynamicsCalculator());
+
+        var engine = new Engine(
+            new EngineDefinition
+            {
+                Id = "eng.delta.drag",
+                DisplayName = "Delta Drag Jet",
+                EngineType = EngineType.Turbojet,
+            },
+            new EngineParameters
+            {
+                BypassRatio = 0.2d,
+                TurbineDiameterMeters = 1.8d,
+                CompressionRatio = 16d,
+                CoolingEfficiency = 0.82d,
+                MaximumSpeed = 4000d,
+            },
+            new EnginePerformanceReport(
+                EngineOutputKind.ThrustNewtons,
+                new[]
+                {
+                    new EngineAltitudePerformance(0d, 160000d, 5100d),
+                    new EngineAltitudePerformance(5000d, 120000d, 4300d),
+                    new EngineAltitudePerformance(10000d, 92000d, 3600d),
+                },
+                reliability: 0.89d,
+                weight: Mass.FromKilograms(2900d),
+                cost: 12000000d,
+                productionManDays: 140d,
+                engineLengthMeters: 4.8d,
+                engineFrontalAreaSquareMeters: 2.8d));
+
+        var definition = new AirframeDefinition
+        {
+            Id = "air.delta.drag",
+            DisplayName = "Delta Drag Test Frame",
+            BaseStructuralWeightKilograms = 26000d,
+            ReferenceWingAreaSquareMeters = 160d,
+            BaseDragCoefficient = 0.029d,
+            BaseLiftCoefficient = 0.84d,
+            BaseReliabilityModifier = 0.98d,
+            BaseCost = 90000000d,
+            BaseProductionManDays = 700d,
+        };
+
+        var baselineParameters = new AirframeParameters
+        {
+            EngineCount = 2,
+            StructureType = StructureType.Monocoque,
+            MaterialType = MaterialType.Aluminum,
+            WingPosition = WingPosition.Low,
+            WingShape = WingShape.Straight,
+            WingAreaSquareMeters = 160d,
+            TailType = TailType.Classic,
+            FlapType = FlapType.Fowler,
+            LandingGearType = LandingGearType.Retractable,
+            EngineCowling = 0.6d,
+            FuelAmountLiters = 12000d,
+            CrewCount = 2,
+            RunwayType = RunwayType.Long,
+        };
+
+        var baselineAirframePerformance = new AirframePerformanceReport(
+            TotalWeight: Mass.FromKilograms(42000d),
+            DragCoefficient: 0.029d,
+            LiftCoefficient: 0.88d,
+            Maneuverability: 44d,
+            ProductionCost: 115000000d,
+            ProductionManDays: 980d,
+            ReliabilityModifier: 0.96d,
+            ReferenceLiftAtSeaLevel100Ms: Force.FromNewtons(820000d),
+            ReferenceDragAtSeaLevel100Ms: Force.FromNewtons(38000d),
+            AircraftLengthMeters: 28d,
+            AirframeFrontalAreaSquareMeters: 9.2d,
+            EffectiveDragAreaSquareMeters: 0.2668d,
+            AerodynamicCleanlinessPercent: 10d);
+
+        var straightParameters = baselineParameters.Clone();
+        straightParameters.WingShape = WingShape.Straight;
+        var deltaParameters = baselineParameters.Clone();
+        deltaParameters.WingShape = WingShape.Delta;
+
+        var straightAirframe = new Airframe(definition, straightParameters, baselineAirframePerformance);
+        var deltaAirframe = new Airframe(definition, deltaParameters, baselineAirframePerformance);
+
+        var straightPerformance = calculator.Calculate(engine, straightAirframe, AircraftCategory.MilitaryTactical);
+        var deltaPerformance = calculator.Calculate(engine, deltaAirframe, AircraftCategory.MilitaryTactical);
+
+        var straightTopSpeedMetersPerSecond = 0d;
+        var deltaTopSpeedMetersPerSecond = 0d;
+        for (var index = 0; index < straightPerformance.MaxSpeedByAltitude.Count; index++)
+        {
+            straightTopSpeedMetersPerSecond = System.Math.Max(
+                straightTopSpeedMetersPerSecond,
+                straightPerformance.MaxSpeedByAltitude[index].MaxSpeedMetersPerSecond);
+            deltaTopSpeedMetersPerSecond = System.Math.Max(
+                deltaTopSpeedMetersPerSecond,
+                deltaPerformance.MaxSpeedByAltitude[index].MaxSpeedMetersPerSecond);
+        }
+
+        var straightTopSpeedKilometersPerHour = straightTopSpeedMetersPerSecond * 3.6d;
+        var deltaTopSpeedKilometersPerHour = deltaTopSpeedMetersPerSecond * 3.6d;
+
+        Assert.That(straightTopSpeedKilometersPerHour, Is.GreaterThan(500d));
+        Assert.That(deltaTopSpeedKilometersPerHour, Is.GreaterThan(straightTopSpeedKilometersPerHour));
+    }
+
     private static int ComputeExpectedTypeResearchMonths(WrightTycoon.Core.Aircraft.Aircraft aircraft, TypeResearchModifierEffects modifierEffects)
     {
         var complexity = ComputeTypeResearchComplexity(aircraft);
@@ -788,3 +899,4 @@ public sealed class AircraftIntegrationTests
             },
         };
 }
+

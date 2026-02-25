@@ -22,6 +22,7 @@ public static class PlaneDesignerBalance
         public const double BackupSystemsWeightMultiplier = 1.1d;
         public const double BackupSystemsDragMultiplier = 1.03d;
         public const double BackupSystemsReliabilityDelta = 0.2d;
+        public const double DeltaWingLiftMultiplier = 0.85d;
         public const double WingPositionMassFactorLow = 1d;
         public const double WingPositionMassFactorHigh = 0.96d;
         public const double WingPositionMassFactorBiplane = 0.83d;
@@ -82,6 +83,9 @@ public static class PlaneDesignerBalance
         public const double WingPositionSpeedDragFactorLow = 1d;
         public const double WingPositionSpeedDragFactorHigh = 1.03d;
         public const double WingPositionSpeedDragFactorBiplane = 1.35d;
+        public const double DeltaWingHighSpeedDragReductionStartKilometersPerHour = 500d;
+        public const double DeltaWingHighSpeedDragReductionEndKilometersPerHour = 2000d;
+        public const double DeltaWingHighSpeedDragReductionMaxRatio = 0.30d;
         public const double MinimumLiftCoefficient = 0.35d;
         public const double MaximumLiftCoefficient = 2.2d;
         public const double MinimumEmptyWeightKilograms = 180d;
@@ -355,3 +359,4 @@ public readonly record struct AircraftCategoryBalanceEntry(
             ReliabilityModifierDelta,
             FuelConsumptionMultiplier);
 }
+
