@@ -83,6 +83,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private string _contractActionMessage = string.Empty;
     private string _governmentContractActionMessage = string.Empty;
     private string _governmentDeliveryActionMessage = string.Empty;
+    private GovernmentContractNotebookWindow? _governmentContractNotebookWindow;
+    private ContractUIState _governmentContractNotebookState = CreateDefaultGovernmentContractNotebookState();
     private string _factoryActionMessage = string.Empty;
     private string _researchActionMessage = string.Empty;
     private string _initError = string.Empty;
@@ -165,6 +167,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _aircraftPreview3DRenderer.Dispose();
     }
 
+    private void Update()
+    {
+        if (_governmentContractNotebookWindow is null)
+        {
+            return;
+        }
+
+        _governmentContractNotebookState = CloneGovernmentContractNotebookState(_governmentContractNotebookWindow.CaptureState());
+    }
+
     private void OnGUI()
     {
         if (_runtimeScreen == RuntimeScreen.Intro)
@@ -224,6 +236,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (GUILayout.Button("Main Menu", GUILayout.Width(120f), GUILayout.Height(26f)))
         {
             _runtimeScreen = RuntimeScreen.Intro;
+            CloseGovernmentContractNotebookWindow();
         }
 
         GUILayout.FlexibleSpace();
@@ -427,6 +440,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _governmentContractActionMessage = string.Join(" ", initialGovernmentUpdate.Events);
             }
         }
+
+        ResetGovernmentContractNotebookWindow();
     }
 
     private void InitializeSaveSystem()
@@ -735,6 +750,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             ContractSpecificationFilter = _contractSpecificationFilter,
             ContractQuantityFilterMin = _contractQuantityFilterMin,
             ContractQuantityFilterMax = _contractQuantityFilterMax,
+            GovernmentContractNotebookState = CloneGovernmentContractNotebookState(_governmentContractNotebookState),
             EngineParameters = _engineParameters.Clone(),
             BaseAirframeParameters = _baseAirframeParameters.Clone(),
             ContractActionMessage = _contractActionMessage,
@@ -884,6 +900,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _contractSpecificationFilter = data.ContractSpecificationFilter;
         _contractQuantityFilterMin = Mathf.Clamp(data.ContractQuantityFilterMin, 5, 500);
         _contractQuantityFilterMax = Mathf.Clamp(data.ContractQuantityFilterMax, 5, 500);
+        _governmentContractNotebookState = CloneGovernmentContractNotebookState(data.GovernmentContractNotebookState);
+        ApplyGovernmentContractNotebookState();
 
         if (data.EngineParameters is not null)
         {
@@ -1060,6 +1078,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             PruneContractDeliverySelections(_contractBoard.OpenContracts);
         }
+
+        ApplyGovernmentContractNotebookState();
+        RefreshGovernmentContractNotebookWindowContent();
     }
 
     private static JsonSerializerSettings CreateSaveJsonSettings()
@@ -1981,6 +2002,151 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     }
 
 
+    private static ContractUIState CreateDefaultGovernmentContractNotebookState()
+    {
+        return new ContractUIState
+        {
+            IsOpen = false,
+            Position = new Vector2(120f, -120f),
+            Size = new Vector2(760f, 460f),
+        };
+    }
+
+    private static ContractUIState CloneGovernmentContractNotebookState(ContractUIState? state)
+    {
+        var source = state ?? CreateDefaultGovernmentContractNotebookState();
+        var size = source.Size;
+        if (size.x <= 0f || size.y <= 0f)
+        {
+            size = new Vector2(760f, 460f);
+        }
+
+        return new ContractUIState
+        {
+            IsOpen = source.IsOpen,
+            Position = source.Position,
+            Size = size,
+        };
+    }
+
+    private void EnsureGovernmentContractNotebookWindow()
+    {
+        if (_governmentContractNotebookWindow is not null)
+        {
+            return;
+        }
+
+        _governmentContractNotebookWindow = GovernmentContractNotebookWindow.CreateRuntimeUi(
+            transform,
+            CloneGovernmentContractNotebookState(_governmentContractNotebookState));
+    }
+
+    private void ApplyGovernmentContractNotebookState()
+    {
+        if (_governmentContractNotebookWindow is null)
+        {
+            if (!_governmentContractNotebookState.IsOpen)
+            {
+                return;
+            }
+
+            EnsureGovernmentContractNotebookWindow();
+        }
+
+        _governmentContractNotebookWindow?.ApplyState(CloneGovernmentContractNotebookState(_governmentContractNotebookState));
+    }
+
+    private void ResetGovernmentContractNotebookWindow()
+    {
+        _governmentContractNotebookState = CreateDefaultGovernmentContractNotebookState();
+        EnsureGovernmentContractNotebookWindow();
+        ApplyGovernmentContractNotebookState();
+        RefreshGovernmentContractNotebookWindowContent();
+    }
+
+    private void OpenGovernmentContractNotebookWindow()
+    {
+        EnsureGovernmentContractNotebookWindow();
+        RefreshGovernmentContractNotebookWindowContent();
+        _governmentContractNotebookWindow?.Open();
+        if (_governmentContractNotebookWindow is not null)
+        {
+            _governmentContractNotebookState = CloneGovernmentContractNotebookState(_governmentContractNotebookWindow.CaptureState());
+        }
+    }
+
+    private void CloseGovernmentContractNotebookWindow()
+    {
+        if (_governmentContractNotebookWindow is null)
+        {
+            return;
+        }
+
+        _governmentContractNotebookWindow.Close();
+        _governmentContractNotebookState = CloneGovernmentContractNotebookState(_governmentContractNotebookWindow.CaptureState());
+    }
+
+    private void RefreshGovernmentContractNotebookWindowContent()
+    {
+        if (_governmentContractNotebookWindow is null)
+        {
+            return;
+        }
+
+        var activeContract = _governmentContractBoard?.ActiveContract;
+        if (activeContract is null)
+        {
+            _governmentContractNotebookWindow.SetContent(
+                "Government Contract Notebook",
+                "No active government contract.");
+            return;
+        }
+
+        var requirements = activeContract.Requirements;
+        var categoryProfile = AircraftCategoryCatalog.GetProfile(requirements.RequiredAircraftType);
+        var lines = new List<string>
+        {
+            $"Contract: {activeContract.ContractId}",
+            $"Status: {activeContract.Status}",
+            $"Generated: {FormatSimulationDate(activeContract.GeneratedOn)}",
+            $"Availability Ends: {FormatSimulationDate(activeContract.AvailabilityExpiresOn)}",
+        };
+
+        if (activeContract.AcceptedOn.HasValue)
+        {
+            lines.Add($"Accepted On: {FormatSimulationDate(activeContract.AcceptedOn.Value)}");
+        }
+
+        if (activeContract.EvaluationDueOn.HasValue)
+        {
+            lines.Add($"Evaluation Due: {FormatSimulationDate(activeContract.EvaluationDueOn.Value)}");
+        }
+
+        if (activeContract.AcceptedSubmission is not null)
+        {
+            lines.Add($"Selected Aircraft: {activeContract.AcceptedSubmission.DisplayName} ({activeContract.AcceptedSubmission.DesignId})");
+        }
+
+        if (activeContract.UpfrontFundingGranted > 0d)
+        {
+            lines.Add($"Upfront Funding: {FormatCurrency(activeContract.UpfrontFundingGranted)}");
+        }
+
+        lines.Add(string.Empty);
+        lines.Add("Requirements");
+        lines.Add($"- Aircraft Type: {categoryProfile.DisplayName}");
+        lines.Add($"- Speed Altitude Band: {requirements.SpeedAltitudeBand}");
+        lines.Add($"- Minimum Max Speed: {FormatUiNumber(requirements.MinimumMaximumSpeedMetersPerSecond * 3.6d, "0.0")} km/h");
+        lines.Add($"- Minimum Range: {FormatUiNumber(requirements.MinimumRangeKilometers, "0.0")} km");
+        lines.Add($"- Minimum Payload: {FormatUiNumber(requirements.MinimumPayloadKilograms, "0.0")} kg");
+        lines.Add($"- Minimum Reliability: {FormatUiNumber(requirements.MinimumReliability, "0.000")}");
+        lines.Add($"- Minimum Crew: {FormatUiInteger(requirements.MinimumCrewSize)}");
+        lines.Add($"- Maximum Runway Length: {FormatUiNumber(requirements.MaximumRequiredRunwayLengthMeters, "0.0")} m");
+
+        _governmentContractNotebookWindow.SetContent(
+            $"Government Contract Notebook | {activeContract.ContractId}",
+            string.Join(Environment.NewLine, lines));
+    }
     private void DrawGovernmentContractsTab()
     {
         DrawSection("Government Contracts (M9)");
@@ -2015,10 +2181,20 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label(_governmentDeliveryActionMessage);
         }
 
+        GUILayout.BeginHorizontal();
+        GUI.enabled = activeContract is not null;
+        if (GUILayout.Button("Notebook", GUILayout.Width(140f), GUILayout.Height(30f)))
+        {
+            OpenGovernmentContractNotebookWindow();
+        }
+
+        GUI.enabled = true;
         if (GUILayout.Button("Go To Airframe + Type Tab", GUILayout.Height(30f)))
         {
             _tab = 1;
         }
+
+        GUILayout.EndHorizontal();
     }
 
     private void DrawGovernmentContractsReport()
@@ -2064,6 +2240,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
             DrawGovernmentRequirements(activeContract.Requirements);
             GUILayout.EndVertical();
+
+            if (GUILayout.Button("Notebook", GUILayout.Width(140f), GUILayout.Height(26f)))
+            {
+                OpenGovernmentContractNotebookWindow();
+            }
 
             if (activeContract.Status == GovernmentContractStatus.Available)
             {
@@ -2117,6 +2298,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                                     inventoryByDesign);
                                 _governmentContractActionMessage =
                                     $"{acceptance.Message} Revenue booked: {FormatCurrency(acceptance.UpfrontFundingGranted)}.";
+                            }
+
+                            if (acceptance.IsAccepted)
+                            {
+                                OpenGovernmentContractNotebookWindow();
                             }
 
                             GUI.enabled = true;
@@ -3274,6 +3460,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             if (governmentUpdate.Events.Count > 0)
             {
                 _governmentContractActionMessage = string.Join(" ", governmentUpdate.Events);
+            }
+
+            if (governmentUpdate.EvaluationResult is not null || governmentUpdate.ExpiredContract is not null)
+            {
+                CloseGovernmentContractNotebookWindow();
+            }
+            else if (_governmentContractNotebookWindow is not null)
+            {
+                RefreshGovernmentContractNotebookWindowContent();
             }
         }
 
@@ -4857,6 +5052,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public int ContractQuantityFilterMax { get; set; }
 
+        public ContractUIState GovernmentContractNotebookState { get; set; } = new();
+
         public EngineParameters EngineParameters { get; set; } = new();
 
         public AirframeParameters BaseAirframeParameters { get; set; } = new();
@@ -4949,3 +5146,5 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public double Value { get; set; }
     }
 }
+
+
