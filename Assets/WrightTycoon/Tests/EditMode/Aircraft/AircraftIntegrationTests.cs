@@ -609,6 +609,89 @@ public sealed class AircraftIntegrationTests
         Assert.That(modifiedQuote.ResearchCost, Is.GreaterThan(baselineQuote.ResearchCost));
     }
 
+    [Test]
+    public void ResearchModifiers_AdjustEngineQuoteCostAndTime()
+    {
+        var calculator = new ResearchCalculator();
+        var engine = new Engine(
+            new EngineDefinition
+            {
+                Id = "eng.quote.mod",
+                DisplayName = "Quoted Engine",
+                EngineType = EngineType.Radial,
+            },
+            new EngineParameters
+            {
+                DisplacementLiters = 16d,
+                CylinderCount = 14,
+                CompressionRatio = 8.2d,
+                BoostType = BoostType.None,
+                OptimizationAltitudeMeters = 1800d,
+                CoolingEfficiency = 0.78d,
+                MaximumSpeed = 2600d,
+            },
+            new EnginePerformanceReport(
+                EngineOutputKind.PowerKilowatts,
+                new[]
+                {
+                    new EngineAltitudePerformance(0d, 980d, 0d),
+                    new EngineAltitudePerformance(2000d, 870d, 0d),
+                },
+                reliability: 0.88d,
+                weight: Mass.FromKilograms(320d),
+                cost: 44000d,
+                productionManDays: 78d,
+                engineLengthMeters: 1.9d,
+                engineFrontalAreaSquareMeters: 1.1d));
+
+        var points = new TypeResearchModifierPoints
+        {
+            ReliabilityPoints = 3,
+            ProductionOptimizationPoints = 2,
+            FastDevelopmentPoints = 4,
+        };
+
+        var baselineQuote = calculator.CalculateEngineQuote(engine);
+        var modifiedQuote = calculator.CalculateEngineQuote(engine, points);
+        var effects = TypeResearchModifierCalculator.Calculate(points);
+
+        Assert.That(modifiedQuote.ResearchTimeMonths, Is.EqualTo(ApplyResearchTimeMultiplier(baselineQuote.ResearchTimeMonths, effects.ResearchTimeMultiplier)));
+        Assert.That(modifiedQuote.ResearchCost, Is.EqualTo(ApplyResearchCostMultiplier(baselineQuote.ResearchCost, effects.ResearchCostMultiplier)).Within(0.01d));
+        Assert.That(modifiedQuote.ResearchTimeMonths, Is.LessThanOrEqualTo(baselineQuote.ResearchTimeMonths));
+        Assert.That(modifiedQuote.ResearchCost, Is.GreaterThan(baselineQuote.ResearchCost));
+    }
+
+    [Test]
+    public void ResearchModifiers_AdjustFamilyQuoteCostAndTime()
+    {
+        var factory = CreateFactory();
+        var family = CreateFamily("fam.quote.family.mod", engineCount: 2, category: AircraftCategory.BusinessVipJet);
+        var type = new AircraftTypeDefinition
+        {
+            Id = "type.quote.family.mod",
+            FamilyId = family.Id,
+            DisplayName = "Family Quote Variant",
+        };
+
+        var aircraft = factory.CreateAircraft(family, type);
+        var calculator = new ResearchCalculator();
+        var points = new TypeResearchModifierPoints
+        {
+            ReliabilityPoints = 2,
+            ProductionOptimizationPoints = 3,
+            FastDevelopmentPoints = 3,
+        };
+
+        var baselineQuote = calculator.CalculateFamilyQuote(aircraft);
+        var modifiedQuote = calculator.CalculateFamilyQuote(aircraft, points);
+        var effects = TypeResearchModifierCalculator.Calculate(points);
+
+        Assert.That(modifiedQuote.ResearchTimeMonths, Is.EqualTo(ApplyResearchTimeMultiplier(baselineQuote.ResearchTimeMonths, effects.ResearchTimeMultiplier)));
+        Assert.That(modifiedQuote.ResearchCost, Is.EqualTo(ApplyResearchCostMultiplier(baselineQuote.ResearchCost, effects.ResearchCostMultiplier)).Within(0.01d));
+        Assert.That(modifiedQuote.ResearchTimeMonths, Is.LessThanOrEqualTo(baselineQuote.ResearchTimeMonths));
+        Assert.That(modifiedQuote.ResearchCost, Is.GreaterThan(baselineQuote.ResearchCost));
+    }
+
 
     [Test]
     public void DeltaWing_HighSpeedDragModifier_IncreasesTopSpeedAbove500KilometersPerHour()
@@ -743,6 +826,15 @@ public sealed class AircraftIntegrationTests
             MidpointRounding.AwayFromZero);
         return System.Math.Round(baseCost * modifierEffects.ResearchCostMultiplier, 2, MidpointRounding.AwayFromZero);
     }
+
+    private static int ApplyResearchTimeMultiplier(int baseMonths, double multiplier)
+    {
+        var expectedMonths = (int)System.Math.Round(baseMonths * multiplier, MidpointRounding.AwayFromZero);
+        return System.Math.Max(1, expectedMonths);
+    }
+
+    private static double ApplyResearchCostMultiplier(double baseCost, double multiplier) =>
+        System.Math.Round(baseCost * multiplier, 2, MidpointRounding.AwayFromZero);
 
     private static double ComputeTypeResearchComplexity(WrightTycoon.Core.Aircraft.Aircraft aircraft)
     {

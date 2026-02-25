@@ -9,7 +9,7 @@ namespace WrightTycoon.Core.Research;
 
 public sealed class ResearchCalculator
 {
-    public ResearchQuote CalculateEngineQuote(Engine engine)
+    public ResearchQuote CalculateEngineQuote(Engine engine, TypeResearchModifierPoints? modifierPoints = null)
     {
         if (engine is null)
         {
@@ -34,11 +34,11 @@ public sealed class ResearchCalculator
         var multiplier = Lerp(ResearchBalance.Engine.CostMultiplierMin, ResearchBalance.Engine.CostMultiplierMax, complexity);
         var months = RoundToInt(Lerp(ResearchBalance.Engine.TimeMonthsMin, ResearchBalance.Engine.TimeMonthsMax, complexity));
         var cost = RoundCurrency(engine.Performance.Cost * multiplier);
-
-        return new ResearchQuote(cost, months, complexity);
+        var baseQuote = new ResearchQuote(cost, months, complexity);
+        return ApplyResearchModifierEffects(baseQuote, modifierPoints);
     }
 
-    public ResearchQuote CalculateFamilyQuote(AircraftModel aircraft)
+    public ResearchQuote CalculateFamilyQuote(AircraftModel aircraft, TypeResearchModifierPoints? modifierPoints = null)
     {
         if (aircraft is null)
         {
@@ -46,10 +46,11 @@ public sealed class ResearchCalculator
         }
 
         var cost = RoundCurrency(aircraft.Performance.TotalProductionCost * ResearchBalance.Family.CostMultiplier);
-        return new ResearchQuote(cost, ResearchBalance.Family.TimeMonths, ResearchBalance.Family.ComplexityReference);
+        var baseQuote = new ResearchQuote(cost, ResearchBalance.Family.TimeMonths, ResearchBalance.Family.ComplexityReference);
+        return ApplyResearchModifierEffects(baseQuote, modifierPoints);
     }
 
-    public ResearchQuote CalculateTypeQuote(AircraftModel aircraft)
+    public ResearchQuote CalculateTypeQuote(AircraftModel aircraft, TypeResearchModifierPoints? modifierPoints = null)
     {
         if (aircraft is null)
         {
@@ -88,12 +89,17 @@ public sealed class ResearchCalculator
         var baseMultiplier = Lerp(ResearchBalance.Type.CostMultiplierMin, ResearchBalance.Type.CostMultiplierMax, complexity);
         var baseMonths = RoundToInt(Lerp(ResearchBalance.Type.TimeMonthsMin, ResearchBalance.Type.TimeMonthsMax, complexity));
         var baseCost = RoundCurrency(aircraft.Performance.TotalProductionCost * baseMultiplier);
+        var baseQuote = new ResearchQuote(baseCost, baseMonths, complexity);
+        var effectiveModifierPoints = modifierPoints ?? aircraft.TypeDefinition.ResearchModifiers;
+        return ApplyResearchModifierEffects(baseQuote, effectiveModifierPoints);
+    }
 
-        var modifierEffects = TypeResearchModifierCalculator.Calculate(aircraft.TypeDefinition.ResearchModifiers);
-        var months = System.Math.Max(1, RoundToInt(baseMonths * modifierEffects.ResearchTimeMultiplier));
-        var cost = RoundCurrency(baseCost * modifierEffects.ResearchCostMultiplier);
-
-        return new ResearchQuote(cost, months, complexity);
+    private static ResearchQuote ApplyResearchModifierEffects(ResearchQuote baseQuote, TypeResearchModifierPoints? modifierPoints)
+    {
+        var effects = TypeResearchModifierCalculator.Calculate(modifierPoints);
+        var months = System.Math.Max(1, RoundToInt(baseQuote.ResearchTimeMonths * effects.ResearchTimeMultiplier));
+        var cost = RoundCurrency(baseQuote.ResearchCost * effects.ResearchCostMultiplier);
+        return new ResearchQuote(cost, months, baseQuote.ComplexityNormalized);
     }
 
     private static double ResolveSeaLevelOutputForComplexity(Engine engine)

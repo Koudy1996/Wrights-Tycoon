@@ -50,6 +50,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly List<Contract> _lastGeneratedContracts = new();
     private readonly Dictionary<string, string> _selectedWarehouseDesignByContractId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _deliveredContractProfitById = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TypeResearchModifierPoints> _researchModifiersByResearchId = new(StringComparer.Ordinal);
 
     private readonly FactoryAccountingCalculator _factoryAccountingCalculator = new();
     private readonly ContractPricingCalculator _contractPricingCalculator = new();
@@ -122,9 +123,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private double _typeCowling = 0.55d;
     private double _typeAerodynamicCleanlinessPercent;
     private double _typeFuelLiters = 1500d;
-    private int _typeResearchReliabilityPoints;
-    private int _typeResearchProductionOptimizationPoints;
-    private int _typeResearchFastDevelopmentPoints;
     private SimulationDate _currentDate = SimulationDate.WrightTycoonStart;
     private int _elapsedMonths;
     private ContractDeliverabilityFilter _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
@@ -410,6 +408,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _savedEngines.Clear();
         _savedFamilies.Clear();
         _savedAircraftDesigns.Clear();
+        _researchModifiersByResearchId.Clear();
         _selectedWarehouseDesignByContractId.Clear();
         _deliveredContractProfitById.Clear();
         _selectedSavedEngineIndex = -1;
@@ -669,7 +668,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private string BuildSaveSlotName()
     {
         var company = string.IsNullOrWhiteSpace(_playerCompanyName) ? "Player Company" : _playerCompanyName.Trim();
-        return $"{FormatSimulationDate(_currentDate)} — {company}";
+        return $"{FormatSimulationDate(_currentDate)} - {company}";
     }
 
     private void LoadFromSaveEntry(GameSaveSlotEntry entry)
@@ -743,9 +742,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             TypeCowling = _typeCowling,
             TypeAerodynamicCleanlinessPercent = _typeAerodynamicCleanlinessPercent,
             TypeFuelLiters = _typeFuelLiters,
-            TypeResearchReliabilityPoints = _typeResearchReliabilityPoints,
-            TypeResearchProductionOptimizationPoints = _typeResearchProductionOptimizationPoints,
-            TypeResearchFastDevelopmentPoints = _typeResearchFastDevelopmentPoints,
             ContractDeliverabilityFilter = _contractDeliverabilityFilter,
             ContractSpecificationFilter = _contractSpecificationFilter,
             ContractQuantityFilterMin = _contractQuantityFilterMin,
@@ -799,6 +795,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 RequiredLineToolLevel = saved.CatalogItem.RequiredLineToolLevel,
                 FamilyDefinition = saved.CatalogItem.Aircraft.FamilyDefinition,
                 TypeDefinition = saved.CatalogItem.Aircraft.TypeDefinition,
+            });
+        }
+
+        foreach (var entry in _researchModifiersByResearchId.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            payload.ResearchModifiersByResearchId.Add(new ResearchModifierStateEntry
+            {
+                ResearchId = entry.Key,
+                ReliabilityPoints = entry.Value.ReliabilityPoints,
+                ProductionOptimizationPoints = entry.Value.ProductionOptimizationPoints,
+                FastDevelopmentPoints = entry.Value.FastDevelopmentPoints,
             });
         }
 
@@ -892,9 +899,26 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeCowling = Mathf.Clamp((float)data.TypeCowling, 0.1f, 0.9f);
         _typeAerodynamicCleanlinessPercent = Mathf.Clamp((float)data.TypeAerodynamicCleanlinessPercent, (float)PlaneDesignerBalance.Airframe.AerodynamicCleanlinessMinPercent, (float)PlaneDesignerBalance.Airframe.AerodynamicCleanlinessMaxPercent);
         _typeFuelLiters = Mathf.Clamp((float)data.TypeFuelLiters, (float)PlaneDesignerBalance.Airframe.FuelMinLiters, (float)PlaneDesignerBalance.Airframe.FuelMaxLiters);
-        _typeResearchReliabilityPoints = TypeResearchModifierPoints.ClampPoints(data.TypeResearchReliabilityPoints);
-        _typeResearchProductionOptimizationPoints = TypeResearchModifierPoints.ClampPoints(data.TypeResearchProductionOptimizationPoints);
-        _typeResearchFastDevelopmentPoints = TypeResearchModifierPoints.ClampPoints(data.TypeResearchFastDevelopmentPoints);
+
+        _researchModifiersByResearchId.Clear();
+        if (data.ResearchModifiersByResearchId is not null)
+        {
+            for (var index = 0; index < data.ResearchModifiersByResearchId.Count; index++)
+            {
+                var state = data.ResearchModifiersByResearchId[index];
+                if (state is null || string.IsNullOrWhiteSpace(state.ResearchId))
+                {
+                    continue;
+                }
+
+                _researchModifiersByResearchId[state.ResearchId] = new TypeResearchModifierPoints
+                {
+                    ReliabilityPoints = TypeResearchModifierPoints.ClampPoints(state.ReliabilityPoints),
+                    ProductionOptimizationPoints = TypeResearchModifierPoints.ClampPoints(state.ProductionOptimizationPoints),
+                    FastDevelopmentPoints = TypeResearchModifierPoints.ClampPoints(state.FastDevelopmentPoints),
+                };
+            }
+        }
 
         _contractDeliverabilityFilter = data.ContractDeliverabilityFilter;
         _contractSpecificationFilter = data.ContractSpecificationFilter;
@@ -1053,6 +1077,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             _accountingSystem.RestoreSnapshot(data.AccountingSnapshot);
         }
+
+        EnsureResearchModifierEntriesForSavedDesigns();
 
         _selectedSavedEngineIndex = _savedEngines.Count == 0
             ? -1
@@ -1470,30 +1496,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             PlaneDesignerBalance.Airframe.FuelMaxLiters,
             "0");
 
-        DrawSection("Type Research Modifiers");
-        _typeResearchReliabilityPoints = DrawIntSlider(
-            "Reliability (0-10)",
-            _typeResearchReliabilityPoints,
-            0,
-            TypeResearchModifierPoints.MaxPointsPerCategory);
-        _typeResearchProductionOptimizationPoints = DrawIntSlider(
-            "Production Optimization (0-10)",
-            _typeResearchProductionOptimizationPoints,
-            0,
-            TypeResearchModifierPoints.MaxPointsPerCategory);
-        _typeResearchFastDevelopmentPoints = DrawIntSlider(
-            "Fast Development (0-10)",
-            _typeResearchFastDevelopmentPoints,
-            0,
-            TypeResearchModifierPoints.MaxPointsPerCategory);
-
-        var typeModifierEffects = TypeResearchModifierCalculator.Calculate(BuildTypeResearchModifierPoints());
-        DrawMetric("Type Reliability Bonus", typeModifierEffects.ReliabilityDelta, "0.00");
-        DrawMetric("Type Production Cost Multiplier", typeModifierEffects.ProductionCostMultiplier, "0.00");
-        DrawMetric("Type Production MD Multiplier", typeModifierEffects.ProductionManDaysMultiplier, "0.00");
-        DrawMetric("Type Research Cost Multiplier", typeModifierEffects.ResearchCostMultiplier, "0.00");
-        DrawMetric("Type Research Time Multiplier", typeModifierEffects.ResearchTimeMultiplier, "0.00");
-
         GUILayout.BeginHorizontal();
         if (GUILayout.Button("Reset Variant", GUILayout.Height(28f)))
         {
@@ -1612,10 +1614,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"Wing/Tail: {_aircraftPreview.Airframe.Parameters.WingPosition} {_aircraftPreview.Airframe.Parameters.WingShape}, {_aircraftPreview.Airframe.Parameters.TailType}");
         GUILayout.Label($"Flaps: {_aircraftPreview.Airframe.Parameters.FlapType}, Leading Edge: {_aircraftPreview.Airframe.Parameters.HasLeadingEdgeFlaps}");
         GUILayout.Label($"Backup Systems: {_aircraftPreview.Airframe.Parameters.HasBackupSystems}");
-        var previewTypeModifiers = _aircraftPreview.TypeDefinition.ResearchModifiers ?? new TypeResearchModifierPoints();
-        var previewModifierEffects = TypeResearchModifierCalculator.Calculate(previewTypeModifiers);
-        GUILayout.Label($"Research Modifiers: REL {FormatUiInteger(previewTypeModifiers.ReliabilityPoints)} | PROD {FormatUiInteger(previewTypeModifiers.ProductionOptimizationPoints)} | FAST {FormatUiInteger(previewTypeModifiers.FastDevelopmentPoints)}");
-        GUILayout.Label($"Modifier Effects: Reliability +{FormatUiNumber(previewModifierEffects.ReliabilityDelta, "0.00")}, Prod Cost x{FormatUiNumber(previewModifierEffects.ProductionCostMultiplier, "0.00")}, Prod MD x{FormatUiNumber(previewModifierEffects.ProductionManDaysMultiplier, "0.00")}");
+        GUILayout.Label("Research modifiers are configured per proposal in the Research tab.");
         GUILayout.Label(
             $"Runway: {_aircraftPreview.Airframe.Parameters.RunwayType} ({FormatUiNumber(GetRunwayLengthMeters(_aircraftPreview.Airframe.Parameters.RunwayType), "0")} m)");
 
@@ -2456,7 +2455,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var ongoing = GetVisibleResearchProjectsByStatus(ResearchStatus.Ongoing);
         var completed = GetVisibleResearchProjectsByStatus(ResearchStatus.Completed);
 
-        GUILayout.Label("Approve proposed engines/families/types. Ongoing projects advance every month.");
+        GUILayout.Label("Approve proposed engines/families/types and tune research modifiers per proposal. Ongoing projects advance every month.");
         DrawMetric("Proposed", proposed.Count, "0");
         DrawMetric("Ongoing", ongoing.Count, "0");
         DrawMetric("Completed", completed.Count, "0");
@@ -2589,12 +2588,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawMetric("Research Cost", project.ResearchCost, "0.00");
             DrawMetric("Research Time (months)", project.ResearchTimeMonths, "0");
             DrawMetric("Complexity (%)", project.ComplexityNormalized * 100d, "0.0");
-            if (TryGetTypeResearchModifierPoints(project, out var typeModifiers))
-            {
-                var effects = TypeResearchModifierCalculator.Calculate(typeModifiers);
-                GUILayout.Label($"Type Modifiers: REL {FormatUiInteger(typeModifiers.ReliabilityPoints)} | PROD {FormatUiInteger(typeModifiers.ProductionOptimizationPoints)} | FAST {FormatUiInteger(typeModifiers.FastDevelopmentPoints)}");
-                GUILayout.Label($"Type Effects: Reliability +{FormatUiNumber(effects.ReliabilityDelta, "0.00")}, Prod Cost x{FormatUiNumber(effects.ProductionCostMultiplier, "0.00")}, Prod MD x{FormatUiNumber(effects.ProductionManDaysMultiplier, "0.00")}");
-            }
+            DrawResearchModifierEditor(project);
             if (isDetailed)
             {
                 GUILayout.Label($"Research ID: {project.SubjectId}");
@@ -2667,29 +2661,299 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         };
     }
 
-    private bool TryGetTypeResearchModifierPoints(ResearchProject project, out TypeResearchModifierPoints points)
+    private void DrawResearchModifierEditor(ResearchProject project)
     {
-        points = new TypeResearchModifierPoints();
-        if (project is null || project.SubjectType != ResearchSubjectType.AircraftType)
+        if (project is null)
+        {
+            return;
+        }
+
+        var points = GetOrCreateResearchModifierPoints(project);
+        var sliderIdSuffix = project.ResearchId;
+        var previousReliability = points.ReliabilityPoints;
+        var previousProductionOptimization = points.ProductionOptimizationPoints;
+        var previousFastDevelopment = points.FastDevelopmentPoints;
+
+        DrawSection("Research Modifiers");
+        points.ReliabilityPoints = DrawIntSlider(
+            $"Reliability (0-10) [{sliderIdSuffix}]",
+            points.ReliabilityPoints,
+            0,
+            TypeResearchModifierPoints.MaxPointsPerCategory);
+        points.ProductionOptimizationPoints = DrawIntSlider(
+            $"Production Optimization (0-10) [{sliderIdSuffix}]",
+            points.ProductionOptimizationPoints,
+            0,
+            TypeResearchModifierPoints.MaxPointsPerCategory);
+        points.FastDevelopmentPoints = DrawIntSlider(
+            $"Fast Development (0-10) [{sliderIdSuffix}]",
+            points.FastDevelopmentPoints,
+            0,
+            TypeResearchModifierPoints.MaxPointsPerCategory);
+
+        var effects = TypeResearchModifierCalculator.Calculate(points);
+        GUILayout.Label(
+            $"Points: REL {FormatUiInteger(points.ReliabilityPoints)} | PROD {FormatUiInteger(points.ProductionOptimizationPoints)} | FAST {FormatUiInteger(points.FastDevelopmentPoints)}");
+        GUILayout.Label(
+            $"Research Effects: Cost x{FormatUiNumber(effects.ResearchCostMultiplier, "0.00")} | Time x{FormatUiNumber(effects.ResearchTimeMultiplier, "0.00")}");
+        if (project.SubjectType == ResearchSubjectType.AircraftType)
+        {
+            GUILayout.Label(
+                $"Type Effects: Reliability +{FormatUiNumber(effects.ReliabilityDelta, "0.00")} | Prod Cost x{FormatUiNumber(effects.ProductionCostMultiplier, "0.00")} | Prod MD x{FormatUiNumber(effects.ProductionManDaysMultiplier, "0.00")}");
+        }
+
+        var changed = points.ReliabilityPoints != previousReliability
+            || points.ProductionOptimizationPoints != previousProductionOptimization
+            || points.FastDevelopmentPoints != previousFastDevelopment;
+        if (!changed)
+        {
+            return;
+        }
+
+        _researchModifiersByResearchId[BuildResearchModifierId(project.SubjectType, project.SubjectId)] = points.Clone();
+        if (project.SubjectType == ResearchSubjectType.AircraftType)
+        {
+            ApplyTypeResearchModifiersToSavedDesigns(project.SubjectId, points);
+        }
+
+        if (project.Status == ResearchStatus.Proposed)
+        {
+            TryRefreshResearchProposalQuote(project, points);
+        }
+    }
+
+    private bool TryRefreshResearchProposalQuote(ResearchProject project, TypeResearchModifierPoints? overridePoints = null)
+    {
+        if (_researchBoard is null || project is null)
         {
             return false;
+        }
+
+        var points = overridePoints ?? GetResearchModifierPoints(project.SubjectType, project.SubjectId);
+        if (!TryBuildResearchQuote(project, points, out var displayName, out var quote))
+        {
+            return false;
+        }
+
+        _researchBoard.UpsertProposal(project.SubjectType, project.SubjectId, displayName, quote);
+        return true;
+    }
+
+    private bool TryBuildResearchQuote(
+        ResearchProject project,
+        TypeResearchModifierPoints modifierPoints,
+        out string displayName,
+        out ResearchQuote quote)
+    {
+        displayName = ResolveResearchProjectDisplayName(project);
+        quote = default;
+        if (project is null)
+        {
+            return false;
+        }
+
+        if (project.SubjectType == ResearchSubjectType.Engine)
+        {
+            if (_engineBuilder is null)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < _savedEngines.Count; index++)
+            {
+                var savedEngine = _savedEngines[index];
+                if (!string.Equals(savedEngine.ResearchId, project.SubjectId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var engineSnapshot = _engineBuilder.Build(savedEngine.Definition, savedEngine.Parameters.Clone());
+                    displayName = savedEngine.Name;
+                    quote = _researchCalculator.CalculateEngineQuote(engineSnapshot, modifierPoints);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _researchActionMessage = $"Failed to refresh engine quote for '{savedEngine.Name}': {ex.Message}";
+                    return false;
+                }
+            }
+
+            return false;
+        }
+
+        if (project.SubjectType == ResearchSubjectType.AircraftFamily)
+        {
+            for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+            {
+                var savedDesign = _savedAircraftDesigns[index];
+                if (!string.Equals(savedDesign.FamilyResearchId, project.SubjectId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                displayName = savedDesign.CatalogItem.Aircraft.FamilyDefinition.DisplayName;
+                quote = _researchCalculator.CalculateFamilyQuote(savedDesign.CatalogItem.Aircraft, modifierPoints);
+                return true;
+            }
+
+            return false;
+        }
+
+        if (project.SubjectType == ResearchSubjectType.AircraftType)
+        {
+            for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+            {
+                var savedDesign = _savedAircraftDesigns[index];
+                if (!string.Equals(savedDesign.TypeResearchId, project.SubjectId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                displayName = savedDesign.CatalogItem.Aircraft.TypeDefinition.DisplayName;
+                quote = _researchCalculator.CalculateTypeQuote(savedDesign.CatalogItem.Aircraft, modifierPoints);
+                return true;
+            }
+
+            return false;
+        }
+
+        return false;
+    }
+
+    private static string BuildResearchModifierId(ResearchSubjectType subjectType, string subjectId) =>
+        ResearchBoard.BuildResearchId(subjectType, subjectId);
+
+    private TypeResearchModifierPoints GetResearchModifierPoints(ResearchSubjectType subjectType, string subjectId)
+    {
+        var key = BuildResearchModifierId(subjectType, subjectId);
+        if (_researchModifiersByResearchId.TryGetValue(key, out var points))
+        {
+            return points.Clone();
+        }
+
+        return new TypeResearchModifierPoints();
+    }
+
+    private TypeResearchModifierPoints GetOrCreateResearchModifierPoints(ResearchProject project)
+    {
+        if (project is null)
+        {
+            return new TypeResearchModifierPoints();
+        }
+
+        var key = BuildResearchModifierId(project.SubjectType, project.SubjectId);
+        if (_researchModifiersByResearchId.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        var points = new TypeResearchModifierPoints();
+        _researchModifiersByResearchId[key] = points;
+        return points;
+    }
+
+    private void EnsureResearchModifierEntriesForSavedDesigns()
+    {
+        for (var index = 0; index < _savedEngines.Count; index++)
+        {
+            var savedEngine = _savedEngines[index];
+            var key = BuildResearchModifierId(ResearchSubjectType.Engine, savedEngine.ResearchId);
+            if (_researchModifiersByResearchId.ContainsKey(key))
+            {
+                continue;
+            }
+
+            _researchModifiersByResearchId[key] = new TypeResearchModifierPoints();
+        }
+
+        for (var index = 0; index < _savedFamilies.Count; index++)
+        {
+            var savedFamily = _savedFamilies[index];
+            var key = BuildResearchModifierId(ResearchSubjectType.AircraftFamily, savedFamily.FamilyId);
+            if (_researchModifiersByResearchId.ContainsKey(key))
+            {
+                continue;
+            }
+
+            _researchModifiersByResearchId[key] = new TypeResearchModifierPoints();
         }
 
         for (var index = 0; index < _savedAircraftDesigns.Count; index++)
         {
             var savedDesign = _savedAircraftDesigns[index];
-            if (!string.Equals(savedDesign.TypeResearchId, project.SubjectId, StringComparison.Ordinal))
+            var familyKey = BuildResearchModifierId(ResearchSubjectType.AircraftFamily, savedDesign.FamilyResearchId);
+            if (!_researchModifiersByResearchId.ContainsKey(familyKey))
+            {
+                _researchModifiersByResearchId[familyKey] = new TypeResearchModifierPoints();
+            }
+
+            var typeKey = BuildResearchModifierId(ResearchSubjectType.AircraftType, savedDesign.TypeResearchId);
+            if (_researchModifiersByResearchId.ContainsKey(typeKey))
             {
                 continue;
             }
 
-            points = savedDesign.CatalogItem.Aircraft.TypeDefinition.ResearchModifiers?.Clone()
+            _researchModifiersByResearchId[typeKey] =
+                savedDesign.CatalogItem.Aircraft.TypeDefinition.ResearchModifiers?.Clone()
                 ?? new TypeResearchModifierPoints();
-            return true;
+        }
+    }
+
+    private void ApplyTypeResearchModifiersToSavedDesigns(string typeSubjectId, TypeResearchModifierPoints points)
+    {
+        if (_aircraftFactory is null)
+        {
+            return;
         }
 
-        return false;
+        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+        {
+            var savedDesign = _savedAircraftDesigns[index];
+            if (!string.Equals(savedDesign.TypeResearchId, typeSubjectId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var aircraft = savedDesign.CatalogItem.Aircraft;
+            var existingType = aircraft.TypeDefinition;
+            var updatedType = new AircraftTypeDefinition
+            {
+                Id = existingType.Id,
+                FamilyId = existingType.FamilyId,
+                DisplayName = existingType.DisplayName,
+                EngineDelta = existingType.EngineDelta,
+                AirframeDelta = existingType.AirframeDelta,
+                ResearchModifiers = points.Clone(),
+                RequiredLineToolLevel = existingType.RequiredLineToolLevel,
+            };
+
+            try
+            {
+                var rebuiltAircraft = _aircraftFactory.CreateAircraft(aircraft.FamilyDefinition, updatedType);
+                var updatedCatalogItem = new FactoryAircraftTypeCatalogItem(
+                    savedDesign.CatalogItem.DesignId,
+                    savedDesign.CatalogItem.DisplayName,
+                    rebuiltAircraft,
+                    savedDesign.CatalogItem.RequiredFactoryToolLevel,
+                    savedDesign.CatalogItem.RequiredLineToolLevel);
+
+                _savedAircraftDesigns[index] = new SavedAircraftDesign(
+                    savedDesign.Name,
+                    updatedCatalogItem,
+                    savedDesign.EngineResearchId,
+                    savedDesign.FamilyResearchId,
+                    savedDesign.TypeResearchId);
+            }
+            catch (Exception ex)
+            {
+                _researchActionMessage = $"Failed to apply type modifiers to '{savedDesign.Name}': {ex.Message}";
+            }
+        }
     }
+
     private string ResolveResearchProjectDisplayName(ResearchProject project)
     {
         if (project is null)
@@ -3108,24 +3372,34 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var uniqueId = CreateUniqueAircraftDesignId(baseId);
         var typeResearchId = $"type.{uniqueId}";
 
+        if (_aircraftFactory is null)
+        {
+            _aircraftPreviewError = "Aircraft factory is not initialized.";
+            return;
+        }
+
+        var typeModifiers = GetResearchModifierPoints(ResearchSubjectType.AircraftType, typeResearchId);
+        var typeDefinition = BuildType(_aircraftPreview.FamilyDefinition.Id, typeModifiers);
+        var aircraftForCatalog = _aircraftFactory.CreateAircraft(_aircraftPreview.FamilyDefinition, typeDefinition);
+
         var catalogItem = new FactoryAircraftTypeCatalogItem(
             uniqueId,
             name,
-            _aircraftPreview,
-            _aircraftPreview.FamilyDefinition.RequiredFactoryToolLevel,
-            _aircraftPreview.TypeDefinition.RequiredLineToolLevel);
+            aircraftForCatalog,
+            aircraftForCatalog.FamilyDefinition.RequiredFactoryToolLevel,
+            aircraftForCatalog.TypeDefinition.RequiredLineToolLevel);
 
         var savedDesign = new SavedAircraftDesign(
             name,
             catalogItem,
             selectedSavedEngine.ResearchId,
-            _aircraftPreview.FamilyDefinition.Id,
+            aircraftForCatalog.FamilyDefinition.Id,
             typeResearchId);
         _savedAircraftDesigns.Add(savedDesign);
         _selectedSavedAircraftDesignIndex = _savedAircraftDesigns.Count - 1;
 
-        RegisterFamilyResearchProposal(_aircraftPreview.FamilyDefinition.Id, _aircraftPreview.FamilyDefinition.DisplayName, _aircraftPreview);
-        RegisterTypeResearchProposal(typeResearchId, _aircraftPreview.TypeDefinition.DisplayName, _aircraftPreview);
+        RegisterFamilyResearchProposal(aircraftForCatalog.FamilyDefinition.Id, aircraftForCatalog.FamilyDefinition.DisplayName, aircraftForCatalog);
+        RegisterTypeResearchProposal(typeResearchId, aircraftForCatalog.TypeDefinition.DisplayName, aircraftForCatalog);
 
         _factoryActionMessage =
             $"Saved aircraft design '{name}' ({AircraftCategoryCatalog.GetProfile(catalogItem.Category).DisplayName}) for production. " +
@@ -3224,7 +3498,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        var quote = _researchCalculator.CalculateEngineQuote(engineSnapshot);
+        var points = GetResearchModifierPoints(ResearchSubjectType.Engine, savedDesign.ResearchId);
+        var quote = _researchCalculator.CalculateEngineQuote(engineSnapshot, points);
         _researchBoard.UpsertProposal(
             ResearchSubjectType.Engine,
             savedDesign.ResearchId,
@@ -3241,7 +3516,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        var quote = _researchCalculator.CalculateFamilyQuote(aircraft);
+        var points = GetResearchModifierPoints(ResearchSubjectType.AircraftFamily, familyId);
+        var quote = _researchCalculator.CalculateFamilyQuote(aircraft, points);
         _researchBoard.UpsertProposal(
             ResearchSubjectType.AircraftFamily,
             familyId,
@@ -3256,7 +3532,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        var quote = _researchCalculator.CalculateTypeQuote(aircraft);
+        var points = GetResearchModifierPoints(ResearchSubjectType.AircraftType, typeId);
+        var quote = _researchCalculator.CalculateTypeQuote(aircraft, points);
         _researchBoard.UpsertProposal(
             ResearchSubjectType.AircraftType,
             typeId,
@@ -3650,7 +3927,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         };
     }
 
-    private AircraftTypeDefinition BuildType(string familyId)
+    private AircraftTypeDefinition BuildType(string familyId, TypeResearchModifierPoints? researchModifiers = null)
     {
         return new AircraftTypeDefinition
         {
@@ -3660,7 +3937,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             RequiredLineToolLevel = _requiredLineToolLevel,
             EngineDelta = new EngineParameterDelta(),
             AirframeDelta = BuildAirframeDeltaFromType(),
-            ResearchModifiers = BuildTypeResearchModifierPoints(),
+            ResearchModifiers = (researchModifiers ?? new TypeResearchModifierPoints()).Clone(),
         };
     }
 
@@ -3686,17 +3963,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             HasBackupSystemsOverride = _typeHasBackupSystems,
             LandingGearTypeOverride = _typeLandingGearType,
             RunwayTypeOverride = _typeRunwayType,
-        };
-    }
-
-
-    private TypeResearchModifierPoints BuildTypeResearchModifierPoints()
-    {
-        return new TypeResearchModifierPoints
-        {
-            ReliabilityPoints = TypeResearchModifierPoints.ClampPoints(_typeResearchReliabilityPoints),
-            ProductionOptimizationPoints = TypeResearchModifierPoints.ClampPoints(_typeResearchProductionOptimizationPoints),
-            FastDevelopmentPoints = TypeResearchModifierPoints.ClampPoints(_typeResearchFastDevelopmentPoints),
         };
     }
     private (string EngineJsonPath, string AirframeJsonPath) ResolveDefinitionPaths()
@@ -4705,9 +4971,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeCowling = _baseAirframeParameters.EngineCowling;
         _typeAerodynamicCleanlinessPercent = _baseAirframeParameters.AerodynamicCleanlinessPercent;
         _typeFuelLiters = _baseAirframeParameters.FuelAmountLiters;
-        _typeResearchReliabilityPoints = 0;
-        _typeResearchProductionOptimizationPoints = 0;
-        _typeResearchFastDevelopmentPoints = 0;
     }
 
     private static EngineParameters CreateDefaultEngineParameters(EngineDefinition definition)
@@ -5037,13 +5300,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public double TypeFuelLiters { get; set; }
 
-        public int TypeResearchReliabilityPoints { get; set; }
-
-        public int TypeResearchProductionOptimizationPoints { get; set; }
-
-        public int TypeResearchFastDevelopmentPoints { get; set; }
-
-
         public ContractDeliverabilityFilter ContractDeliverabilityFilter { get; set; }
 
         public ContractSpecificationFilter ContractSpecificationFilter { get; set; }
@@ -5063,6 +5319,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public List<SavedFamilyDesignState> SavedFamilies { get; set; } = new();
 
         public List<SavedAircraftDesignState> SavedAircraftDesigns { get; set; } = new();
+
+        public List<ResearchModifierStateEntry> ResearchModifiersByResearchId { get; set; } = new();
 
         public List<StringStringStateEntry> SelectedWarehouseDesignByContractId { get; set; } = new();
 
@@ -5130,6 +5388,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public AircraftFamilyDefinition? FamilyDefinition { get; set; }
 
         public AircraftTypeDefinition? TypeDefinition { get; set; }
+    }
+
+    private sealed class ResearchModifierStateEntry
+    {
+        public string ResearchId { get; set; } = string.Empty;
+
+        public int ReliabilityPoints { get; set; }
+
+        public int ProductionOptimizationPoints { get; set; }
+
+        public int FastDevelopmentPoints { get; set; }
     }
 
     private sealed class StringStringStateEntry
