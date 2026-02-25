@@ -114,6 +114,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private int _typeCrewCount = 2;
     private TailType _typeTailType = TailType.Classic;
     private WingShape _typeWingShape = WingShape.Straight;
+    private WingProfileType _typeWingProfile = WingProfileType.Standard;
     private double _typeWingAreaSquareMeters = 36d;
     private FlapType _typeFlapType = FlapType.Fowler;
     private bool _typeHasLeadingEdgeFlaps;
@@ -733,6 +734,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             TypeCrewCount = _typeCrewCount,
             TypeTailType = _typeTailType,
             TypeWingShape = _typeWingShape,
+            TypeWingProfile = _typeWingProfile,
             TypeWingAreaSquareMeters = _typeWingAreaSquareMeters,
             TypeFlapType = _typeFlapType,
             TypeHasLeadingEdgeFlaps = _typeHasLeadingEdgeFlaps,
@@ -890,6 +892,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeCrewCount = Mathf.Clamp(data.TypeCrewCount, PlaneDesignerBalance.Airframe.CrewMin, PlaneDesignerBalance.Airframe.CrewMax);
         _typeTailType = data.TypeTailType;
         _typeWingShape = data.TypeWingShape;
+        _typeWingProfile = Enum.IsDefined(typeof(WingProfileType), data.TypeWingProfile)
+            ? data.TypeWingProfile
+            : WingProfileType.Standard;
         _typeWingAreaSquareMeters = data.TypeWingAreaSquareMeters <= 0d ? _baseAirframeParameters.WingAreaSquareMeters : data.TypeWingAreaSquareMeters;
         _typeFlapType = data.TypeFlapType;
         _typeHasLeadingEdgeFlaps = data.TypeHasLeadingEdgeFlaps;
@@ -1476,6 +1481,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             PlaneDesignerBalance.Airframe.CrewMax);
         _typeTailType = DrawTailSelector("Tail Type", _typeTailType);
         _typeWingShape = DrawEnum("Wing Shape", _typeWingShape);
+        _typeWingProfile = DrawWingProfileSelector("Wing Profile", _typeWingProfile);
+        GUILayout.Label(_typeWingProfile switch
+        {
+            WingProfileType.Laminar6SeriesAerodynamic =>
+                "A) Laminar 6-series: up to +5% lift and -5% drag (full effect at 50 m2, fades to 0 at 500 m2).",
+            WingProfileType.Naca4DigitLight =>
+                "B) NACA 4-digit Light: -10% airframe cost, -10% weight, and drag rises by up to +80% from 250 to 1,000 km/h.",
+            WingProfileType.SymmetricalAcrobatic =>
+                "C) Symmetrical Acrobatic: +10% maneuverability, +20% airframe cost, -10% lift.",
+            _ =>
+                "Standard profile: no wing-profile modifiers.",
+        });
         _typeWingAreaSquareMeters = DrawSlider("Wing Area (m2)", _typeWingAreaSquareMeters, 1d, 1000d, "0.0");
         _typeFlapType = DrawTrailingFlapSelector("Flaps", _typeFlapType);
         _typeHasLeadingEdgeFlaps = GUILayout.Toggle(_typeHasLeadingEdgeFlaps, "Leading Edge Flaps");
@@ -1611,7 +1628,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"Category: {categoryProfile.DisplayName}");
         GUILayout.Label($"Type: {_aircraftPreview.TypeDefinition.DisplayName}");
         GUILayout.Label($"Engine: {_aircraftPreview.Engine.Definition.DisplayName} x{FormatUiInteger(_aircraftPreview.Airframe.Parameters.EngineCount)}");
-        GUILayout.Label($"Wing/Tail: {_aircraftPreview.Airframe.Parameters.WingPosition} {_aircraftPreview.Airframe.Parameters.WingShape}, {_aircraftPreview.Airframe.Parameters.TailType}");
+        GUILayout.Label($"Wing/Tail/Profile: {_aircraftPreview.Airframe.Parameters.WingPosition} {_aircraftPreview.Airframe.Parameters.WingShape}, {_aircraftPreview.Airframe.Parameters.TailType}, {_aircraftPreview.Airframe.Parameters.WingProfile}");
         GUILayout.Label($"Flaps: {_aircraftPreview.Airframe.Parameters.FlapType}, Leading Edge: {_aircraftPreview.Airframe.Parameters.HasLeadingEdgeFlaps}");
         GUILayout.Label($"Backup Systems: {_aircraftPreview.Airframe.Parameters.HasBackupSystems}");
         GUILayout.Label("Research modifiers are configured per proposal in the Research tab.");
@@ -3957,6 +3974,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             EngineCowlingDelta = cowlingDelta,
             AerodynamicCleanlinessPercentDelta = aerodynamicCleanlinessDelta,
             WingShapeOverride = _typeWingShape,
+            WingProfileOverride = _typeWingProfile,
             TailTypeOverride = _typeTailType,
             FlapTypeOverride = _typeFlapType,
             HasLeadingEdgeFlapsOverride = _typeHasLeadingEdgeFlaps,
@@ -4738,6 +4756,34 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[next];
     }
 
+    private static WingProfileType DrawWingProfileSelector(string label, WingProfileType wingProfile)
+    {
+        GUILayout.Label(label);
+        var values = new[]
+        {
+            WingProfileType.Standard,
+            WingProfileType.Laminar6SeriesAerodynamic,
+            WingProfileType.Naca4DigitLight,
+            WingProfileType.SymmetricalAcrobatic,
+        };
+        var labels = new[]
+        {
+            "Standard",
+            "A) Laminar 6-series",
+            "B) NACA 4-digit Light",
+            "C) Symmetrical Acrobatic",
+        };
+        var index = Array.IndexOf(values, wingProfile);
+        if (index < 0)
+        {
+            index = 0;
+        }
+
+        var next = GUILayout.SelectionGrid(index, labels, 2);
+        next = Mathf.Clamp(next, 0, values.Length - 1);
+        return values[next];
+    }
+
     private static TailType DrawTailSelector(string label, TailType tailType)
     {
         GUILayout.Label(label);
@@ -4962,6 +5008,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeCrewCount = _baseAirframeParameters.CrewCount;
         _typeTailType = _baseAirframeParameters.TailType;
         _typeWingShape = _baseAirframeParameters.WingShape;
+        _typeWingProfile = _baseAirframeParameters.WingProfile;
         _typeWingAreaSquareMeters = _baseAirframeParameters.WingAreaSquareMeters;
         _typeFlapType = _baseAirframeParameters.FlapType == FlapType.LeadingEdge ? FlapType.Plain : _baseAirframeParameters.FlapType;
         _typeHasLeadingEdgeFlaps = _baseAirframeParameters.HasLeadingEdgeFlaps || _baseAirframeParameters.FlapType == FlapType.LeadingEdge;
@@ -5002,6 +5049,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             MaterialType = MaterialType.Aluminum,
             WingPosition = WingPosition.Low,
             WingShape = WingShape.Straight,
+            WingProfile = WingProfileType.Standard,
             WingAreaSquareMeters = 36d,
             TailType = TailType.Classic,
             FlapType = FlapType.Fowler,
@@ -5280,6 +5328,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public TailType TypeTailType { get; set; }
 
         public WingShape TypeWingShape { get; set; }
+
+        public WingProfileType TypeWingProfile { get; set; }
 
         public double TypeWingAreaSquareMeters { get; set; }
 

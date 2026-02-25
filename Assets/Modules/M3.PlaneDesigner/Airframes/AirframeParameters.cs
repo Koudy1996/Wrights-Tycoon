@@ -16,6 +16,8 @@ public sealed class AirframeParameters
 
     public WingShape WingShape { get; set; } = WingShape.Straight;
 
+    public WingProfileType WingProfile { get; set; } = WingProfileType.Standard;
+
     public double WingAreaSquareMeters { get; set; } = 28d;
 
     public TailType TailType { get; set; } = TailType.Classic;
@@ -46,6 +48,7 @@ public sealed class AirframeParameters
             MaterialType = MaterialType,
             WingPosition = WingPosition,
             WingShape = WingShape,
+            WingProfile = WingProfile,
             WingAreaSquareMeters = WingAreaSquareMeters,
             TailType = TailType,
             FlapType = FlapType,
@@ -106,6 +109,11 @@ public sealed class AirframeParameters
         if (!Enum.IsDefined(typeof(RunwayType), RunwayType))
         {
             throw new ArgumentOutOfRangeException(nameof(RunwayType), "Unsupported runway type.");
+        }
+
+        if (!Enum.IsDefined(typeof(WingProfileType), WingProfile))
+        {
+            throw new ArgumentOutOfRangeException(nameof(WingProfile), "Unsupported wing profile.");
         }
     }
 }

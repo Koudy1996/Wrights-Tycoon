@@ -141,6 +141,11 @@ public sealed class AircraftFactory
             result.WingShape = delta.WingShapeOverride.Value;
         }
 
+        if (delta.WingProfileOverride.HasValue)
+        {
+            result.WingProfile = delta.WingProfileOverride.Value;
+        }
+
         if (delta.TailTypeOverride.HasValue)
         {
             result.TailType = delta.TailTypeOverride.Value;

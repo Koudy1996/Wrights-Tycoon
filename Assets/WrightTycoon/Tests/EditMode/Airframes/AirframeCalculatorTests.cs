@@ -291,6 +291,81 @@ public sealed class AirframeCalculatorTests
         Assert.That(deltaReport.LiftCoefficient, Is.EqualTo(straightReport.LiftCoefficient * 0.85d).Within(1e-6));
     }
 
+    [Test]
+    public void LaminarProfile_EffectFadesAsWingAreaGrowsFrom50To500()
+    {
+        var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
+        var definition = CreateDefinition();
+
+        var smallWingStandard = CreateParameters();
+        smallWingStandard.WingAreaSquareMeters = 50d;
+        smallWingStandard.WingProfile = WingProfileType.Standard;
+
+        var smallWingLaminar = smallWingStandard.Clone();
+        smallWingLaminar.WingProfile = WingProfileType.Laminar6SeriesAerodynamic;
+
+        var largeWingStandard = CreateParameters();
+        largeWingStandard.WingAreaSquareMeters = 500d;
+        largeWingStandard.WingProfile = WingProfileType.Standard;
+
+        var largeWingLaminar = largeWingStandard.Clone();
+        largeWingLaminar.WingProfile = WingProfileType.Laminar6SeriesAerodynamic;
+
+        var smallStandardReport = calculator.Calculate(definition, smallWingStandard);
+        var smallLaminarReport = calculator.Calculate(definition, smallWingLaminar);
+        var largeStandardReport = calculator.Calculate(definition, largeWingStandard);
+        var largeLaminarReport = calculator.Calculate(definition, largeWingLaminar);
+
+        var smallLiftGainRatio = (smallLaminarReport.LiftCoefficient / smallStandardReport.LiftCoefficient) - 1d;
+        var largeLiftGainRatio = (largeLaminarReport.LiftCoefficient / largeStandardReport.LiftCoefficient) - 1d;
+        var smallDragReductionRatio = 1d - (smallLaminarReport.DragCoefficient / smallStandardReport.DragCoefficient);
+        var largeDragReductionRatio = 1d - (largeLaminarReport.DragCoefficient / largeStandardReport.DragCoefficient);
+
+        Assert.That(smallLiftGainRatio, Is.GreaterThan(0.03d));
+        Assert.That(smallDragReductionRatio, Is.GreaterThan(0.03d));
+        Assert.That(smallLiftGainRatio, Is.GreaterThan(largeLiftGainRatio + 0.02d));
+        Assert.That(smallDragReductionRatio, Is.GreaterThan(largeDragReductionRatio + 0.02d));
+    }
+
+    [Test]
+    public void Naca4DigitLightProfile_ReducesAirframeWeightAndCost()
+    {
+        var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
+        var definition = CreateDefinition();
+
+        var standard = CreateParameters();
+        standard.WingProfile = WingProfileType.Standard;
+
+        var lightNaca = standard.Clone();
+        lightNaca.WingProfile = WingProfileType.Naca4DigitLight;
+
+        var standardReport = calculator.Calculate(definition, standard);
+        var nacaReport = calculator.Calculate(definition, lightNaca);
+
+        Assert.That(nacaReport.TotalWeight.Kilograms, Is.LessThan(standardReport.TotalWeight.Kilograms * 0.92d));
+        Assert.That(nacaReport.ProductionCost, Is.LessThan(standardReport.ProductionCost * 0.92d));
+    }
+
+    [Test]
+    public void SymmetricalAcrobaticProfile_IncreasesManeuverabilityAndCostButLowersLift()
+    {
+        var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
+        var definition = CreateDefinition();
+
+        var standard = CreateParameters();
+        standard.WingProfile = WingProfileType.Standard;
+
+        var acrobatic = standard.Clone();
+        acrobatic.WingProfile = WingProfileType.SymmetricalAcrobatic;
+
+        var standardReport = calculator.Calculate(definition, standard);
+        var acrobaticReport = calculator.Calculate(definition, acrobatic);
+
+        Assert.That(acrobaticReport.Maneuverability, Is.GreaterThan(standardReport.Maneuverability * 1.08d));
+        Assert.That(acrobaticReport.ProductionCost, Is.GreaterThan(standardReport.ProductionCost * 1.18d));
+        Assert.That(acrobaticReport.LiftCoefficient, Is.LessThan(standardReport.LiftCoefficient * 0.92d));
+    }
+
     private static AirframeDefinition CreateDefinition() =>
         new()
         {

@@ -57,6 +57,7 @@ public sealed class DevelopmentCostCalculator
         AddNumericChange(baseAirframe.EngineCount, variantAirframe.EngineCount, 6d, ref changedCount, ref magnitude);
         AddEnumChange(baseAirframe.WingPosition, variantAirframe.WingPosition, 0.7d, ref changedCount, ref magnitude);
         AddEnumChange(baseAirframe.WingShape, variantAirframe.WingShape, 0.9d, ref changedCount, ref magnitude);
+        AddEnumChange(baseAirframe.WingProfile, variantAirframe.WingProfile, 0.8d, ref changedCount, ref magnitude);
         AddEnumChange(baseAirframe.TailType, variantAirframe.TailType, 0.75d, ref changedCount, ref magnitude);
         AddEnumChange(baseAirframe.FlapType, variantAirframe.FlapType, 0.65d, ref changedCount, ref magnitude);
         AddBooleanChange(baseAirframe.HasLeadingEdgeFlaps, variantAirframe.HasLeadingEdgeFlaps, 0.45d, ref changedCount, ref magnitude);

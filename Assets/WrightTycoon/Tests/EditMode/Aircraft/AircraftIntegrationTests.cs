@@ -803,6 +803,117 @@ public sealed class AircraftIntegrationTests
         Assert.That(deltaTopSpeedKilometersPerHour, Is.GreaterThan(straightTopSpeedKilometersPerHour));
     }
 
+    [Test]
+    public void Naca4DigitLightProfile_HighSpeedDragPenalty_ReducesTopSpeedAtHighSpeed()
+    {
+        var calculator = new AircraftPerformanceCalculator(new IsaAtmosphereModel(), new AerodynamicsCalculator());
+
+        var engine = new Engine(
+            new EngineDefinition
+            {
+                Id = "eng.naca.drag",
+                DisplayName = "NACA Drag Jet",
+                EngineType = EngineType.Turbojet,
+            },
+            new EngineParameters
+            {
+                BypassRatio = 0.2d,
+                TurbineDiameterMeters = 1.8d,
+                CompressionRatio = 16d,
+                CoolingEfficiency = 0.82d,
+                MaximumSpeed = 4000d,
+            },
+            new EnginePerformanceReport(
+                EngineOutputKind.ThrustNewtons,
+                new[]
+                {
+                    new EngineAltitudePerformance(0d, 160000d, 5100d),
+                    new EngineAltitudePerformance(5000d, 120000d, 4300d),
+                    new EngineAltitudePerformance(10000d, 92000d, 3600d),
+                },
+                reliability: 0.89d,
+                weight: Mass.FromKilograms(2900d),
+                cost: 12000000d,
+                productionManDays: 140d,
+                engineLengthMeters: 4.8d,
+                engineFrontalAreaSquareMeters: 2.8d));
+
+        var definition = new AirframeDefinition
+        {
+            Id = "air.naca.drag",
+            DisplayName = "NACA Drag Test Frame",
+            BaseStructuralWeightKilograms = 26000d,
+            ReferenceWingAreaSquareMeters = 160d,
+            BaseDragCoefficient = 0.029d,
+            BaseLiftCoefficient = 0.84d,
+            BaseReliabilityModifier = 0.98d,
+            BaseCost = 90000000d,
+            BaseProductionManDays = 700d,
+        };
+
+        var baselineParameters = new AirframeParameters
+        {
+            EngineCount = 2,
+            StructureType = StructureType.Monocoque,
+            MaterialType = MaterialType.Aluminum,
+            WingPosition = WingPosition.Low,
+            WingShape = WingShape.Straight,
+            WingProfile = WingProfileType.Standard,
+            WingAreaSquareMeters = 160d,
+            TailType = TailType.Classic,
+            FlapType = FlapType.Fowler,
+            LandingGearType = LandingGearType.Retractable,
+            EngineCowling = 0.6d,
+            FuelAmountLiters = 12000d,
+            CrewCount = 2,
+            RunwayType = RunwayType.Long,
+        };
+
+        var baselineAirframePerformance = new AirframePerformanceReport(
+            TotalWeight: Mass.FromKilograms(42000d),
+            DragCoefficient: 0.029d,
+            LiftCoefficient: 0.88d,
+            Maneuverability: 44d,
+            ProductionCost: 115000000d,
+            ProductionManDays: 980d,
+            ReliabilityModifier: 0.96d,
+            ReferenceLiftAtSeaLevel100Ms: Force.FromNewtons(820000d),
+            ReferenceDragAtSeaLevel100Ms: Force.FromNewtons(38000d),
+            AircraftLengthMeters: 28d,
+            AirframeFrontalAreaSquareMeters: 9.2d,
+            EffectiveDragAreaSquareMeters: 0.2668d,
+            AerodynamicCleanlinessPercent: 10d);
+
+        var standardParameters = baselineParameters.Clone();
+        standardParameters.WingProfile = WingProfileType.Standard;
+        var nacaParameters = baselineParameters.Clone();
+        nacaParameters.WingProfile = WingProfileType.Naca4DigitLight;
+
+        var standardAirframe = new Airframe(definition, standardParameters, baselineAirframePerformance);
+        var nacaAirframe = new Airframe(definition, nacaParameters, baselineAirframePerformance);
+
+        var standardPerformance = calculator.Calculate(engine, standardAirframe, AircraftCategory.MilitaryTactical);
+        var nacaPerformance = calculator.Calculate(engine, nacaAirframe, AircraftCategory.MilitaryTactical);
+
+        var standardTopSpeedMetersPerSecond = 0d;
+        var nacaTopSpeedMetersPerSecond = 0d;
+        for (var index = 0; index < standardPerformance.MaxSpeedByAltitude.Count; index++)
+        {
+            standardTopSpeedMetersPerSecond = System.Math.Max(
+                standardTopSpeedMetersPerSecond,
+                standardPerformance.MaxSpeedByAltitude[index].MaxSpeedMetersPerSecond);
+            nacaTopSpeedMetersPerSecond = System.Math.Max(
+                nacaTopSpeedMetersPerSecond,
+                nacaPerformance.MaxSpeedByAltitude[index].MaxSpeedMetersPerSecond);
+        }
+
+        var standardTopSpeedKilometersPerHour = standardTopSpeedMetersPerSecond * 3.6d;
+        var nacaTopSpeedKilometersPerHour = nacaTopSpeedMetersPerSecond * 3.6d;
+
+        Assert.That(standardTopSpeedKilometersPerHour, Is.GreaterThan(1000d));
+        Assert.That(nacaTopSpeedKilometersPerHour, Is.LessThan(standardTopSpeedKilometersPerHour * 0.9d));
+    }
+
     private static int ComputeExpectedTypeResearchMonths(WrightTycoon.Core.Aircraft.Aircraft aircraft, TypeResearchModifierEffects modifierEffects)
     {
         var complexity = ComputeTypeResearchComplexity(aircraft);

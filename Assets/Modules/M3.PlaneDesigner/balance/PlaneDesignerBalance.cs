@@ -22,7 +22,16 @@ public static class PlaneDesignerBalance
         public const double BackupSystemsWeightMultiplier = 1.1d;
         public const double BackupSystemsDragMultiplier = 1.03d;
         public const double BackupSystemsReliabilityDelta = 0.2d;
-        public const double DeltaWingLiftMultiplier = 0.85d;
+        public const double DeltaWingLiftMultiplier = 0.80d;
+        public const double LaminarProfileFullEffectMaxWingAreaSquareMeters = 50d;
+        public const double LaminarProfileZeroEffectMinWingAreaSquareMeters = 500d;
+        public const double LaminarProfileLiftBonusMaxRatio = 0.05d;
+        public const double LaminarProfileDragReductionMaxRatio = 0.05d;
+        public const double Naca4DigitLightProfileWeightReductionRatio = 0.10d;
+        public const double Naca4DigitLightProfileAirframeCostReductionRatio = 0.10d;
+        public const double SymmetricalAcrobaticProfileLiftPenaltyRatio = 0.10d;
+        public const double SymmetricalAcrobaticProfileManeuverabilityBonusRatio = 0.10d;
+        public const double SymmetricalAcrobaticProfileCostIncreaseRatio = 0.20d;
         public const double WingPositionMassFactorLow = 1d;
         public const double WingPositionMassFactorHigh = 0.96d;
         public const double WingPositionMassFactorBiplane = 0.83d;
@@ -41,10 +50,10 @@ public static class PlaneDesignerBalance
         public const double StructuralAreaScaleMax = 40d;
 
         public const double WingMassExponent = 1.44d;
-        public const double WingMassCoefficient = 4.9d;
-        public const double WingReinforcementMassBaseShare = 0.05d;
-        public const double WingReinforcementMassExponent = 1.6d;
-        public const double WingSystemsMassBasePerSquareMeter = 1.15d;
+        public const double WingMassCoefficient = 5.2d;
+        public const double WingReinforcementMassBaseShare = 0.07d;
+        public const double WingReinforcementMassExponent = 1.7d;
+        public const double WingSystemsMassBasePerSquareMeter = 1.18d;
         public const double WingSystemsMassPerEnginePerSquareMeter = 0.18d;
 
         public const double AerodynamicCleanlinessManDaysPerPercent = 1.2d;
@@ -81,11 +90,14 @@ public static class PlaneDesignerBalance
         public const double MaximumDragCoefficient = 0.12d;
         public const double SpeedCalculationMaximumDragCoefficient = 0.24d;
         public const double WingPositionSpeedDragFactorLow = 1d;
-        public const double WingPositionSpeedDragFactorHigh = 1.03d;
+        public const double WingPositionSpeedDragFactorHigh = 1.1d;
         public const double WingPositionSpeedDragFactorBiplane = 1.35d;
         public const double DeltaWingHighSpeedDragReductionStartKilometersPerHour = 500d;
         public const double DeltaWingHighSpeedDragReductionEndKilometersPerHour = 2000d;
         public const double DeltaWingHighSpeedDragReductionMaxRatio = 0.30d;
+        public const double Naca4DigitLightProfileDragIncreaseStartKilometersPerHour = 250d;
+        public const double Naca4DigitLightProfileDragIncreaseEndKilometersPerHour = 1000d;
+        public const double Naca4DigitLightProfileDragIncreaseMaxRatio = 0.80d;
         public const double MinimumLiftCoefficient = 0.35d;
         public const double MaximumLiftCoefficient = 2.2d;
         public const double MinimumEmptyWeightKilograms = 180d;
@@ -102,7 +114,7 @@ public static class PlaneDesignerBalance
         public const double BodyFrontalAreaWeightExponent = 0.55d;
         public const double BodyFrontalAreaWeightScale = 0.3d;
         public const double BodyFrontalAreaWingExponent = 0.45d;
-        public const double BodyFrontalAreaWingScale = 0.05d;
+        public const double BodyFrontalAreaWingScale = 0.08d;
         public const double BodyFrontalAreaMinSquareMeters = 0.5d;
         public const double BodyFrontalAreaMaxSquareMeters = 180d;
         public const double MultiEngineReliabilityPenaltyFactor = 0.55d;

@@ -133,6 +133,11 @@ public sealed class AirframeCalculator : IAirframeCalculator
             totalWeightKg *= PlaneDesignerBalance.Airframe.BackupSystemsWeightMultiplier;
         }
 
+        if (parameters.WingProfile == WingProfileType.Naca4DigitLight)
+        {
+            totalWeightKg *= 1d - PlaneDesignerBalance.Airframe.Naca4DigitLightProfileWeightReductionRatio;
+        }
+
         totalWeightKg = ApplySmallWoodTrussWeightModifier(totalWeightKg, parameters);
         var totalWeight = Mass.FromKilograms(totalWeightKg);
 
@@ -298,6 +303,12 @@ public sealed class AirframeCalculator : IAirframeCalculator
             dragCoefficient *= PlaneDesignerBalance.Airframe.BackupSystemsDragMultiplier;
         }
 
+        if (parameters.WingProfile == WingProfileType.Laminar6SeriesAerodynamic)
+        {
+            var laminarBlend = CalculateLaminarProfileAreaEffectBlend(parameters.WingAreaSquareMeters);
+            dragCoefficient *= 1d - (PlaneDesignerBalance.Airframe.LaminarProfileDragReductionMaxRatio * laminarBlend);
+        }
+
         dragCoefficient = Numeric.Clamp(dragCoefficient, 0.014d, PlaneDesignerBalance.Performance.MaximumDragCoefficient);
         var effectiveDragAreaSquareMeters = dragCoefficient * airframeFrontalAreaSquareMeters;
 
@@ -308,6 +319,16 @@ public sealed class AirframeCalculator : IAirframeCalculator
         if (parameters.WingShape == WingShape.Delta)
         {
             liftCoefficient *= PlaneDesignerBalance.Airframe.DeltaWingLiftMultiplier;
+        }
+
+        if (parameters.WingProfile == WingProfileType.Laminar6SeriesAerodynamic)
+        {
+            var laminarBlend = CalculateLaminarProfileAreaEffectBlend(parameters.WingAreaSquareMeters);
+            liftCoefficient *= 1d + (PlaneDesignerBalance.Airframe.LaminarProfileLiftBonusMaxRatio * laminarBlend);
+        }
+        else if (parameters.WingProfile == WingProfileType.SymmetricalAcrobatic)
+        {
+            liftCoefficient *= 1d - PlaneDesignerBalance.Airframe.SymmetricalAcrobaticProfileLiftPenaltyRatio;
         }
 
         liftCoefficient = Numeric.Clamp(liftCoefficient, 0.5d, 1.8d);
@@ -341,6 +362,11 @@ public sealed class AirframeCalculator : IAirframeCalculator
             TailType.Twin => 3d,
             _ => 0d,
         };
+        if (parameters.WingProfile == WingProfileType.SymmetricalAcrobatic)
+        {
+            maneuverability *= 1d + PlaneDesignerBalance.Airframe.SymmetricalAcrobaticProfileManeuverabilityBonusRatio;
+        }
+
         maneuverability = Numeric.Clamp(maneuverability, 1d, 100d);
 
         var productionCost = (definition.BaseCost * materialCostFactor * structureCostFactor)
@@ -349,6 +375,12 @@ public sealed class AirframeCalculator : IAirframeCalculator
             + (parameters.CrewCount * 120d)
             + gearCostDelta
             + (hasLeadingEdgeFlaps ? 2600d : 0d);
+        productionCost *= parameters.WingProfile switch
+        {
+            WingProfileType.Naca4DigitLight => 1d - PlaneDesignerBalance.Airframe.Naca4DigitLightProfileAirframeCostReductionRatio,
+            WingProfileType.SymmetricalAcrobatic => 1d + PlaneDesignerBalance.Airframe.SymmetricalAcrobaticProfileCostIncreaseRatio,
+            _ => 1d,
+        };
 
         var productionManDays = (definition.BaseProductionManDays * structureMdFactor)
             + (parameters.WingAreaSquareMeters * 0.55d)
@@ -398,6 +430,26 @@ public sealed class AirframeCalculator : IAirframeCalculator
             effectiveDragAreaSquareMeters,
             aerodynamicCleanlinessPercent);
     }
+
+    private static double CalculateLaminarProfileAreaEffectBlend(double wingAreaSquareMeters)
+    {
+        var fullEffectArea = PlaneDesignerBalance.Airframe.LaminarProfileFullEffectMaxWingAreaSquareMeters;
+        var noEffectArea = PlaneDesignerBalance.Airframe.LaminarProfileZeroEffectMinWingAreaSquareMeters;
+        if (wingAreaSquareMeters <= fullEffectArea)
+        {
+            return 1d;
+        }
+
+        if (wingAreaSquareMeters >= noEffectArea)
+        {
+            return 0d;
+        }
+
+        var range = System.Math.Max(noEffectArea - fullEffectArea, Numeric.Epsilon);
+        var blendToZero = Numeric.Clamp((wingAreaSquareMeters - fullEffectArea) / range, 0d, 1d);
+        return 1d - blendToZero;
+    }
+
     private static double ResolveMaterialWeightFactor(MaterialType materialType, double preMaterialWeightKilograms)
     {
         return materialType switch

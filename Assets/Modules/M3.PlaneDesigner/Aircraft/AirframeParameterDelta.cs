@@ -16,6 +16,8 @@ public sealed class AirframeParameterDelta
 
     public WingShape? WingShapeOverride { get; init; }
 
+    public WingProfileType? WingProfileOverride { get; init; }
+
     public TailType? TailTypeOverride { get; init; }
 
     public FlapType? FlapTypeOverride { get; init; }
