@@ -260,18 +260,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             AdvanceToNextMonth();
         }
 
-        if (GUILayout.Button("Save", GUILayout.Width(110f), GUILayout.Height(26f)))
-        {
-            CreateManualSave();
-        }
-
-        if (GUILayout.Button("Main Menu", GUILayout.Width(120f), GUILayout.Height(26f)))
-        {
-            _runtimeScreen = RuntimeScreen.Intro;
-            CloseGovernmentContractNotebookWindow();
-        }
-
         GUILayout.FlexibleSpace();
+        if (GUILayout.Button("Save and Exit", GUILayout.Width(160f), GUILayout.Height(26f)))
+        {
+            SaveAndExitToMainMenu();
+        }
+
         var cash = _accountingSystem?.Cash ?? 0d;
         DrawSignedCurrencyInline($"Cash: {FormatCurrency(cash)}", cash, 220f);
         GUILayout.EndHorizontal();
@@ -899,6 +893,26 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _saveActionMessage = $"Save failed: {ex.Message}";
             Debug.LogError(ex);
         }
+    }
+
+    private void SaveAndExitToMainMenu()
+    {
+        var previousMessage = _saveActionMessage;
+        CreateManualSave();
+
+        if (_saveActionMessage.StartsWith("Save failed:", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (string.Equals(_saveActionMessage, previousMessage, StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(previousMessage))
+        {
+            return;
+        }
+
+        _runtimeScreen = RuntimeScreen.Intro;
+        CloseGovernmentContractNotebookWindow();
     }
 
     private void CreateAutosave()
