@@ -9,7 +9,7 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
     private static readonly Vector2 LegacyDefaultSize = new(760f, 460f);
     private static readonly Vector2 PreviousCompactDefaultSize = new(560f, 340f);
     private static readonly Vector2 CompactDefaultSize = new(448f, 272f);
-    private const float WindowOpacity = 0.95f;
+    private const float WindowOpacity = 1f;
 
     [SerializeField] private bool _openByDefault;
     [SerializeField] private Vector2 _defaultPosition = new(120f, -120f);

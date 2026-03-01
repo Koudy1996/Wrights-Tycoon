@@ -514,6 +514,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         var hasContinueSave = _savePersistence is not null && _savePersistence.TryGetContinueEntry(out _);
 
+        DrawRect(panelRect, new Color(0.04f, 0.07f, 0.11f, 0.96f));
         GUILayout.BeginArea(panelRect, GUI.skin.box);
         GUILayout.Label("Wright Tycoon");
         GUILayout.Label("Main Menu");
@@ -610,7 +611,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawIntroBackground(virtualScreenSize);
 
         var root = new Rect(20f, 20f, virtualScreenSize.x - 40f, virtualScreenSize.y - 40f);
-        DrawRect(root, new Color(0.06f, 0.09f, 0.14f, 0.9f));
+        DrawRect(root, new Color(0.05f, 0.08f, 0.12f, 0.96f));
 
         GUILayout.BeginArea(root);
         GUILayout.Label("Load Game");
@@ -683,6 +684,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             panelWidth,
             panelHeight);
 
+        DrawRect(panelRect, new Color(0.04f, 0.07f, 0.11f, 0.96f));
         GUILayout.BeginArea(panelRect, GUI.skin.box);
         GUILayout.Label("Options");
         GUILayout.Space(4f);
@@ -859,7 +861,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawRect(full, new Color(0.11f, 0.14f, 0.18f, 1f));
         }
 
-        DrawRect(full, new Color(0f, 0f, 0f, 0.28f));
+        DrawRect(full, new Color(0f, 0f, 0f, 0.44f));
     }
 
     private void StartNewGameFromMenu()
