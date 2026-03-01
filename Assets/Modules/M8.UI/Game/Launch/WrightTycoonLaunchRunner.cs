@@ -100,6 +100,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private int _selectedSavedAircraftDesignIndex = -1;
     private int _lockedEngineCount = 1;
     private EngineDesignerFamily _engineDesignerFamily = EngineDesignerFamily.Piston;
+    private AircraftAllowedEngineFamily _familyAllowedEngineFamily = AircraftAllowedEngineFamily.Propeller;
     private EngineType _selectedPistonArrangement = EngineType.Radial;
     private EngineType _selectedJetTurbineType = EngineType.Turbofan;
     private StructureType _lockedStructure = StructureType.Monocoque;
@@ -721,6 +722,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             SelectedSavedAircraftDesignIndex = _selectedSavedAircraftDesignIndex,
             LockedEngineCount = _lockedEngineCount,
             EngineDesignerFamily = _engineDesignerFamily,
+            FamilyAllowedEngineFamily = _familyAllowedEngineFamily,
             SelectedPistonArrangement = _selectedPistonArrangement,
             SelectedJetTurbineType = _selectedJetTurbineType,
             LockedStructure = _lockedStructure,
@@ -779,6 +781,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 LockedStructureType = saved.LockedStructureType,
                 LockedMaterialType = saved.LockedMaterialType,
                 WingPosition = saved.WingPosition,
+                AllowedEngineFamily = saved.AllowedEngineFamily,
             });
         }
 
@@ -877,6 +880,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _lockedEngineCount = NormalizeEngineCount(data.LockedEngineCount);
         _engineDesignerFamily = data.EngineDesignerFamily;
+        _familyAllowedEngineFamily = data.FamilyAllowedEngineFamily == AircraftAllowedEngineFamily.Any
+            ? AircraftAllowedEngineFamily.Propeller
+            : data.FamilyAllowedEngineFamily;
         _selectedPistonArrangement = data.SelectedPistonArrangement;
         _selectedJetTurbineType = data.SelectedJetTurbineType;
         _lockedStructure = data.LockedStructure;
@@ -995,7 +1001,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     NormalizeEngineCount(state.LockedEngineCount),
                     state.LockedStructureType,
                     state.LockedMaterialType,
-                    state.WingPosition));
+                    state.WingPosition,
+                    state.AllowedEngineFamily == AircraftAllowedEngineFamily.Any ? AircraftAllowedEngineFamily.Propeller : state.AllowedEngineFamily));
             }
         }
 
@@ -1401,14 +1408,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        if (_selectedSavedEngineIndex < 0 || _selectedSavedEngineIndex >= _savedEngines.Count)
-        {
-            _selectedSavedEngineIndex = 0;
-        }
-
-        var savedLabels = _savedEngines.Select(e => BuildEngineDisplayName(e.Name, e.Definition.EngineType, e.Parameters)).ToArray();
-        _selectedSavedEngineIndex = DrawListSelector("Assigned Engine", _selectedSavedEngineIndex, savedLabels);
-
         DrawSection("Family");
         _familyName = DrawText("Family Name", _familyName);
         GUILayout.Label($"Family ID (auto): {BuildFamilyId()}");
@@ -1416,6 +1415,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _lockedStructure = DrawEnum("Structure Type", _lockedStructure);
         _lockedMaterial = DrawMaterialSelector("Material", _lockedMaterial);
         _baseAirframeParameters.WingPosition = DrawWingPositionSelector("Wing Position", _baseAirframeParameters.WingPosition);
+        _familyAllowedEngineFamily = DrawFamilyAllowedEngineSelector("Engine Type", _familyAllowedEngineFamily);
 
         _baseAirframeParameters.EngineCount = _lockedEngineCount;
         _baseAirframeParameters.StructureType = _lockedStructure;
@@ -1447,7 +1447,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         saved.Name,
                         saved.LockedEngineCount,
                         saved.LockedMaterialType,
-                        saved.LockedStructureType))
+                        saved.LockedStructureType,
+                        saved.AllowedEngineFamily))
                 .ToArray();
             _selectedSavedFamilyIndex = DrawListSelector("Select Saved Family", _selectedSavedFamilyIndex < 0 ? 0 : _selectedSavedFamilyIndex, labels);
 
@@ -1501,6 +1502,27 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 "Laminar 6-series: up to +5% lift and -5% drag (full effect at 50 m2, fades to 0 at 500 m2).",
         });
         _typeWingAreaSquareMeters = DrawSlider("Wing Area (m2)", _typeWingAreaSquareMeters, 1d, 1000d, "0.0");
+
+        DrawSection("Type Engine");
+        var compatibleEngineIndices = GetCompatibleSavedEngineIndices();
+        if (compatibleEngineIndices.Count == 0)
+        {
+            DrawError($"No saved {GetAllowedEngineFamilyLabel(_familyAllowedEngineFamily).ToLowerInvariant()} engines available for this family.");
+        }
+        else
+        {
+            var compatibleLabels = compatibleEngineIndices
+                .Select(engineIndex =>
+                {
+                    var savedEngine = _savedEngines[engineIndex];
+                    return BuildEngineDisplayName(savedEngine.Name, savedEngine.Definition.EngineType, savedEngine.Parameters);
+                })
+                .ToArray();
+            var selectedCompatibleIndex = ResolveSelectedCompatibleEngineOptionIndex(compatibleEngineIndices);
+            selectedCompatibleIndex = DrawListSelector("Assigned Engine", selectedCompatibleIndex, compatibleLabels);
+            _selectedSavedEngineIndex = compatibleEngineIndices[selectedCompatibleIndex];
+        }
+
         _typeFlapType = DrawTrailingFlapSelector("Flaps", _typeFlapType);
         _typeHasLeadingEdgeFlaps = GUILayout.Toggle(_typeHasLeadingEdgeFlaps, "Leading Edge Flaps");
         _typeHasBackupSystems = GUILayout.Toggle(_typeHasBackupSystems, "Backup Systems (+0.2 reliability, +10% weight, +3% drag)");
@@ -1519,7 +1541,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             PlaneDesignerBalance.Airframe.FuelMinLiters,
             PlaneDesignerBalance.Airframe.FuelMaxLiters,
             "0");
-
         GUILayout.BeginHorizontal();
         if (GUILayout.Button("Reset Type", GUILayout.Height(28f)))
         {
@@ -2698,7 +2719,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var previousProductionOptimization = points.ProductionOptimizationPoints;
         var previousFastDevelopment = points.FastDevelopmentPoints;
 
-        DrawSection("Research Modifiers");
+        DrawSection($"{GetResearchSubjectLabel(project.SubjectType)} Research Modifiers");
         points.ReliabilityPoints = DrawIntSlider(
             $"Reliability (0-10) [{sliderIdSuffix}]",
             points.ReliabilityPoints,
@@ -2717,14 +2738,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         var effects = TypeResearchModifierCalculator.Calculate(points);
         GUILayout.Label(
-            $"Points: REL {FormatUiInteger(points.ReliabilityPoints)} | PROD {FormatUiInteger(points.ProductionOptimizationPoints)} | FAST {FormatUiInteger(points.FastDevelopmentPoints)}");
-        GUILayout.Label(
-            $"Research Effects: Cost x{FormatUiNumber(effects.ResearchCostMultiplier, "0.00")} | Time x{FormatUiNumber(effects.ResearchTimeMultiplier, "0.00")}");
-        if (project.SubjectType == ResearchSubjectType.AircraftType)
-        {
-            GUILayout.Label(
-                $"Type Effects: Reliability +{FormatUiNumber(effects.ReliabilityDelta, "0.00")} | Prod Cost x{FormatUiNumber(effects.ProductionCostMultiplier, "0.00")} | Prod MD x{FormatUiNumber(effects.ProductionManDaysMultiplier, "0.00")}");
-        }
+            $"Selected Points: REL {FormatUiInteger(points.ReliabilityPoints)} | PROD {FormatUiInteger(points.ProductionOptimizationPoints)} | FAST {FormatUiInteger(points.FastDevelopmentPoints)}");
+        DrawResearchModifierEffectPreview(project, points, effects);
 
         var changed = points.ReliabilityPoints != previousReliability
             || points.ProductionOptimizationPoints != previousProductionOptimization
@@ -2745,6 +2760,299 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             TryRefreshResearchProposalQuote(project, points);
         }
     }
+
+    private void DrawResearchModifierEffectPreview(
+        ResearchProject project,
+        TypeResearchModifierPoints points,
+        TypeResearchModifierEffects effects)
+    {
+        if (project is null)
+        {
+            return;
+        }
+
+        switch (project.SubjectType)
+        {
+            case ResearchSubjectType.Engine:
+                DrawEngineResearchModifierEffects(project.SubjectId, points, effects);
+                break;
+            case ResearchSubjectType.AircraftFamily:
+                DrawFamilyResearchModifierEffects(project.SubjectId, points, effects);
+                break;
+            case ResearchSubjectType.AircraftType:
+                DrawTypeResearchModifierEffects(project.SubjectId, points, effects);
+                break;
+        }
+    }
+
+    private void DrawEngineResearchModifierEffects(
+        string researchId,
+        TypeResearchModifierPoints points,
+        TypeResearchModifierEffects effects)
+    {
+        if (!TryBuildSavedEngineSnapshot(researchId, out var engine))
+        {
+            return;
+        }
+
+        var baseQuote = _researchCalculator.CalculateEngineQuote(engine);
+        var modifiedQuote = _researchCalculator.CalculateEngineQuote(engine, points);
+        var modifiedReliability = ClampResearchPreviewReliability(engine.Performance.Reliability + effects.ReliabilityDelta);
+        var modifiedProductionCost = System.Math.Max(0d, engine.Performance.Cost * effects.ProductionCostMultiplier);
+        var modifiedProductionManDays = System.Math.Max(0d, engine.Performance.ProductionManDays * effects.ProductionManDaysMultiplier);
+
+        DrawSection("Affected Parameters");
+        DrawModifierValuePreview("Reliability", modifiedReliability - engine.Performance.Reliability, "0.00", modifiedReliability, "0.000");
+        DrawModifierPercentagePreview(
+            "Production Cost",
+            (effects.ProductionCostMultiplier - 1d) * 100d,
+            modifiedProductionCost,
+            "0.00");
+        DrawModifierPercentagePreview(
+            "Production MD",
+            (effects.ProductionManDaysMultiplier - 1d) * 100d,
+            modifiedProductionManDays,
+            "0.0");
+        DrawModifierPercentagePreview(
+            "Research Cost",
+            CalculatePercentageDelta(baseQuote.ResearchCost, modifiedQuote.ResearchCost),
+            modifiedQuote.ResearchCost,
+            "0.00");
+        DrawModifierPercentagePreview(
+            "Research Time (months)",
+            CalculatePercentageDelta(baseQuote.ResearchTimeMonths, modifiedQuote.ResearchTimeMonths),
+            modifiedQuote.ResearchTimeMonths,
+            "0");
+    }
+
+    private void DrawFamilyResearchModifierEffects(
+        string familyResearchId,
+        TypeResearchModifierPoints points,
+        TypeResearchModifierEffects effects)
+    {
+        if (!TryGetSavedAircraftDesignByFamilyResearchId(familyResearchId, out var savedDesign))
+        {
+            return;
+        }
+
+        var aircraft = savedDesign.CatalogItem.Aircraft;
+        var baseQuote = _researchCalculator.CalculateFamilyQuote(aircraft);
+        var modifiedQuote = _researchCalculator.CalculateFamilyQuote(aircraft, points);
+        var modifiedReliability = ClampResearchPreviewReliability(aircraft.Performance.OverallReliability + effects.ReliabilityDelta);
+        var modifiedProductionCost = System.Math.Max(0d, aircraft.Performance.TotalProductionCost * effects.ProductionCostMultiplier);
+        var modifiedProductionManDays = System.Math.Max(0d, aircraft.Performance.TotalProductionManDays * effects.ProductionManDaysMultiplier);
+
+        DrawSection("Affected Parameters");
+        DrawModifierValuePreview(
+            "Reliability",
+            modifiedReliability - aircraft.Performance.OverallReliability,
+            "0.00",
+            modifiedReliability,
+            "0.000");
+        DrawModifierPercentagePreview(
+            "Production Cost",
+            (effects.ProductionCostMultiplier - 1d) * 100d,
+            modifiedProductionCost,
+            "0.00");
+        DrawModifierPercentagePreview(
+            "Production MD",
+            (effects.ProductionManDaysMultiplier - 1d) * 100d,
+            modifiedProductionManDays,
+            "0.0");
+        DrawModifierPercentagePreview(
+            "Research Cost",
+            CalculatePercentageDelta(baseQuote.ResearchCost, modifiedQuote.ResearchCost),
+            modifiedQuote.ResearchCost,
+            "0.00");
+        DrawModifierPercentagePreview(
+            "Research Time (months)",
+            CalculatePercentageDelta(baseQuote.ResearchTimeMonths, modifiedQuote.ResearchTimeMonths),
+            modifiedQuote.ResearchTimeMonths,
+            "0");
+    }
+
+    private void DrawTypeResearchModifierEffects(
+        string typeResearchId,
+        TypeResearchModifierPoints points,
+        TypeResearchModifierEffects effects)
+    {
+        if (!TryBuildBaseAircraftForTypeResearch(typeResearchId, out var aircraft))
+        {
+            return;
+        }
+
+        var baseQuote = _researchCalculator.CalculateTypeQuote(aircraft);
+        var modifiedQuote = _researchCalculator.CalculateTypeQuote(aircraft, points);
+        var modifiedReliability = ClampResearchPreviewReliability(aircraft.Performance.OverallReliability + effects.ReliabilityDelta);
+        var modifiedProductionCost = System.Math.Max(0d, aircraft.Performance.TotalProductionCost * effects.ProductionCostMultiplier);
+        var modifiedProductionManDays = System.Math.Max(0d, aircraft.Performance.TotalProductionManDays * effects.ProductionManDaysMultiplier);
+
+        DrawSection("Affected Parameters");
+        DrawModifierValuePreview(
+            "Reliability",
+            modifiedReliability - aircraft.Performance.OverallReliability,
+            "0.00",
+            modifiedReliability,
+            "0.000");
+        DrawModifierPercentagePreview(
+            "Production Cost",
+            (effects.ProductionCostMultiplier - 1d) * 100d,
+            modifiedProductionCost,
+            "0.00");
+        DrawModifierPercentagePreview(
+            "Production MD",
+            (effects.ProductionManDaysMultiplier - 1d) * 100d,
+            modifiedProductionManDays,
+            "0.0");
+        DrawModifierPercentagePreview(
+            "Research Cost",
+            CalculatePercentageDelta(baseQuote.ResearchCost, modifiedQuote.ResearchCost),
+            modifiedQuote.ResearchCost,
+            "0.00");
+        DrawModifierPercentagePreview(
+            "Research Time (months)",
+            CalculatePercentageDelta(baseQuote.ResearchTimeMonths, modifiedQuote.ResearchTimeMonths),
+            modifiedQuote.ResearchTimeMonths,
+            "0");
+    }
+
+    private bool TryBuildSavedEngineSnapshot(string researchId, out Engine engine)
+    {
+        engine = null!;
+        if (_engineBuilder is null)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < _savedEngines.Count; index++)
+        {
+            var savedEngine = _savedEngines[index];
+            if (!string.Equals(savedEngine.ResearchId, researchId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            try
+            {
+                engine = _engineBuilder.Build(savedEngine.Definition, savedEngine.Parameters.Clone());
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryGetSavedAircraftDesignByFamilyResearchId(string familyResearchId, out SavedAircraftDesign savedDesign)
+    {
+        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+        {
+            var candidate = _savedAircraftDesigns[index];
+            if (string.Equals(candidate.FamilyResearchId, familyResearchId, StringComparison.Ordinal))
+            {
+                savedDesign = candidate;
+                return true;
+            }
+        }
+
+        savedDesign = null!;
+        return false;
+    }
+
+    private bool TryGetSavedAircraftDesignByTypeResearchId(string typeResearchId, out SavedAircraftDesign savedDesign)
+    {
+        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+        {
+            var candidate = _savedAircraftDesigns[index];
+            if (string.Equals(candidate.TypeResearchId, typeResearchId, StringComparison.Ordinal))
+            {
+                savedDesign = candidate;
+                return true;
+            }
+        }
+
+        savedDesign = null!;
+        return false;
+    }
+
+    private bool TryBuildBaseAircraftForTypeResearch(string typeResearchId, out Aircraft aircraft)
+    {
+        aircraft = null!;
+        if (!TryGetSavedAircraftDesignByTypeResearchId(typeResearchId, out var savedDesign))
+        {
+            return false;
+        }
+
+        if (_aircraftFactory is null)
+        {
+            aircraft = savedDesign.CatalogItem.Aircraft;
+            return true;
+        }
+
+        var existingType = savedDesign.CatalogItem.Aircraft.TypeDefinition;
+        var baselineType = new AircraftTypeDefinition
+        {
+            Id = existingType.Id,
+            FamilyId = existingType.FamilyId,
+            DisplayName = existingType.DisplayName,
+            EngineDelta = existingType.EngineDelta,
+            AirframeDelta = existingType.AirframeDelta,
+            ResearchModifiers = new TypeResearchModifierPoints(),
+            RequiredLineToolLevel = existingType.RequiredLineToolLevel,
+        };
+
+        try
+        {
+            aircraft = _aircraftFactory.CreateAircraft(savedDesign.CatalogItem.Aircraft.FamilyDefinition, baselineType);
+            return true;
+        }
+        catch
+        {
+            aircraft = savedDesign.CatalogItem.Aircraft;
+            return true;
+        }
+    }
+
+    private static void DrawModifierValuePreview(
+        string label,
+        double deltaValue,
+        string deltaFormat,
+        double resultValue,
+        string resultFormat)
+    {
+        GUILayout.Label($"{label} [{FormatSignedModifierDelta(deltaValue, deltaFormat)} = {FormatUiNumber(resultValue, resultFormat)}]");
+    }
+
+    private static void DrawModifierPercentagePreview(
+        string label,
+        double deltaPercent,
+        double resultValue,
+        string resultFormat)
+    {
+        GUILayout.Label($"{label} [{FormatSignedModifierDelta(deltaPercent, "0.0", "%")} = {FormatUiNumber(resultValue, resultFormat)}]");
+    }
+
+    private static string FormatSignedModifierDelta(double value, string format, string suffix = "")
+    {
+        var sign = value >= 0d ? "+" : string.Empty;
+        return $"{sign}{FormatUiNumber(value, format)}{suffix}";
+    }
+
+    private static double CalculatePercentageDelta(double baseValue, double resultValue)
+    {
+        if (System.Math.Abs(baseValue) <= 0.000001d)
+        {
+            return 0d;
+        }
+
+        return ((resultValue / baseValue) - 1d) * 100d;
+    }
+
+    private static double ClampResearchPreviewReliability(double value) =>
+        System.Math.Max(0d, System.Math.Min(0.995d, value));
 
     private bool TryRefreshResearchProposalQuote(ResearchProject project, TypeResearchModifierPoints? overridePoints = null)
     {
@@ -3384,10 +3692,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        var safeSavedEngineIndex = Mathf.Clamp(_selectedSavedEngineIndex, 0, _savedEngines.Count - 1);
-        _selectedSavedEngineIndex = safeSavedEngineIndex;
-        var selectedSavedEngine = _savedEngines[safeSavedEngineIndex];
-
+        if (!TryGetSelectedCompatibleSavedEngine(out var selectedSavedEngine, out var engineSelectionError))
+        {
+            _aircraftPreviewError = engineSelectionError;
+            return;
+        }
         var name = string.IsNullOrWhiteSpace(_aircraftDesignName)
             ? $"{_aircraftPreview.FamilyDefinition.DisplayName} {_aircraftPreview.TypeDefinition.DisplayName}"
             : _aircraftDesignName.Trim();
@@ -3435,7 +3744,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var name = string.IsNullOrWhiteSpace(_familyName)
             ? $"Family {_savedFamilies.Count + 1}"
             : _familyName.Trim();
-        var familyDisplayName = BuildFamilyDisplayName(name, _lockedEngineCount, _lockedMaterial, _lockedStructure);
+        var familyDisplayName = BuildFamilyDisplayName(name, _lockedEngineCount, _lockedMaterial, _lockedStructure, _familyAllowedEngineFamily);
 
         var familyId = BuildFamilyId();
         _savedFamilies.Add(new SavedFamilyDesign(
@@ -3444,7 +3753,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _lockedEngineCount,
             _lockedStructure,
             _lockedMaterial,
-            _baseAirframeParameters.WingPosition));
+            _baseAirframeParameters.WingPosition,
+            _familyAllowedEngineFamily));
         _selectedSavedFamilyIndex = _savedFamilies.Count - 1;
 
         RebuildAircraftPreview();
@@ -3475,8 +3785,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _baseAirframeParameters.EngineCount = saved.LockedEngineCount;
         _baseAirframeParameters.StructureType = saved.LockedStructureType;
         _baseAirframeParameters.MaterialType = saved.LockedMaterialType;
+        _familyAllowedEngineFamily = saved.AllowedEngineFamily;
         _selectedSavedFamilyIndex = index;
-        _factoryActionMessage = $"Loaded family '{BuildFamilyDisplayName(saved.Name, saved.LockedEngineCount, saved.LockedMaterialType, saved.LockedStructureType)}'.";
+        _factoryActionMessage = $"Loaded family '{BuildFamilyDisplayName(saved.Name, saved.LockedEngineCount, saved.LockedMaterialType, saved.LockedStructureType, saved.AllowedEngineFamily)}'.";
     }
 
     private void ResetFamilyConfig()
@@ -3484,6 +3795,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _lockedEngineCount = NormalizeEngineCount(_defaultEngineCount);
         _lockedStructure = StructureType.Monocoque;
         _lockedMaterial = MaterialType.Aluminum;
+        _familyAllowedEngineFamily = AircraftAllowedEngineFamily.Propeller;
         _baseAirframeParameters = CreateDefaultAirframeParameters(_lockedEngineCount);
     }
 
@@ -3879,9 +4191,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         try
         {
-            var safeSavedEngineIndex = Mathf.Clamp(_selectedSavedEngineIndex, 0, _savedEngines.Count - 1);
-            _selectedSavedEngineIndex = safeSavedEngineIndex;
-            var saved = _savedEngines[safeSavedEngineIndex];
+            if (!TryGetSelectedCompatibleSavedEngine(out var saved, out var engineSelectionError))
+            {
+                _aircraftPreviewError = engineSelectionError;
+                return;
+            }
+
             var family = BuildFamily(saved);
             var type = BuildType(family.Id);
             _aircraftPreview = _aircraftFactory.CreateAircraft(family, type);
@@ -3927,8 +4242,65 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         RebuildEnginePreview();
     }
 
+    private IReadOnlyList<int> GetCompatibleSavedEngineIndices()
+    {
+        var compatibleIndices = new List<int>();
+        for (var index = 0; index < _savedEngines.Count; index++)
+        {
+            var engineType = _savedEngines[index].Definition.EngineType;
+            if (AircraftEngineFamilyCompatibility.IsEngineTypeAllowed(_familyAllowedEngineFamily, engineType))
+            {
+                compatibleIndices.Add(index);
+            }
+        }
+
+        return compatibleIndices;
+    }
+
+    private int ResolveSelectedCompatibleEngineOptionIndex(IReadOnlyList<int> compatibleEngineIndices)
+    {
+        if (compatibleEngineIndices is null || compatibleEngineIndices.Count == 0)
+        {
+            return 0;
+        }
+
+        for (var index = 0; index < compatibleEngineIndices.Count; index++)
+        {
+            if (compatibleEngineIndices[index] == _selectedSavedEngineIndex)
+            {
+                return index;
+            }
+        }
+
+        _selectedSavedEngineIndex = compatibleEngineIndices[0];
+        return 0;
+    }
+
+    private bool TryGetSelectedCompatibleSavedEngine(out SavedEngineDesign saved, out string errorMessage)
+    {
+        var compatibleEngineIndices = GetCompatibleSavedEngineIndices();
+        if (compatibleEngineIndices.Count == 0)
+        {
+            saved = null!;
+            errorMessage = $"No saved {GetAllowedEngineFamilyLabel(_familyAllowedEngineFamily).ToLowerInvariant()} engines available for this family.";
+            return false;
+        }
+
+        var selectedIndex = ResolveSelectedCompatibleEngineOptionIndex(compatibleEngineIndices);
+        _selectedSavedEngineIndex = compatibleEngineIndices[selectedIndex];
+        saved = _savedEngines[_selectedSavedEngineIndex];
+        errorMessage = string.Empty;
+        return true;
+    }
+
     private AircraftFamilyDefinition BuildFamily(SavedEngineDesign saved)
     {
+        if (!AircraftEngineFamilyCompatibility.IsEngineTypeAllowed(_familyAllowedEngineFamily, saved.Definition.EngineType))
+        {
+            throw new InvalidOperationException(
+                $"Selected engine '{saved.Definition.DisplayName}' is not allowed for a {GetAllowedEngineFamilyLabel(_familyAllowedEngineFamily).ToLowerInvariant()} family.");
+        }
+
         var baseAirframe = _baseAirframeParameters.Clone();
         baseAirframe.EngineCount = _lockedEngineCount;
         baseAirframe.StructureType = _lockedStructure;
@@ -3937,10 +4309,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return new AircraftFamilyDefinition
         {
             Id = BuildFamilyId(),
-            DisplayName = BuildFamilyDisplayName(_familyName, _lockedEngineCount, _lockedMaterial, _lockedStructure),
+            DisplayName = BuildFamilyDisplayName(_familyName, _lockedEngineCount, _lockedMaterial, _lockedStructure, _familyAllowedEngineFamily),
             EngineDefinitionId = saved.Definition.Id,
             AirframeDefinitionId = _airframeDefinitions[_selectedAirframeDefinitionIndex].Id,
             LockedEngineType = saved.Definition.EngineType,
+            AllowedEngineFamily = _familyAllowedEngineFamily,
             LockedStructureType = _lockedStructure,
             LockedMaterialType = _lockedMaterial,
             LockedEngineCount = _lockedEngineCount,
@@ -4869,6 +5242,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return nextIndex == 1 ? EngineDesignerFamily.Jet : EngineDesignerFamily.Piston;
     }
 
+    private static AircraftAllowedEngineFamily DrawFamilyAllowedEngineSelector(string label, AircraftAllowedEngineFamily currentFamily)
+    {
+        GUILayout.Label(label);
+        var labels = new[] { "Propeller", "Jet" };
+        var index = currentFamily == AircraftAllowedEngineFamily.Jet ? 1 : 0;
+        var nextIndex = GUILayout.SelectionGrid(index, labels, 2);
+        return nextIndex == 1 ? AircraftAllowedEngineFamily.Jet : AircraftAllowedEngineFamily.Propeller;
+    }
+
     private static EngineType DrawPistonArrangementSelector(string label, EngineType currentType)
     {
         GUILayout.Label(label);
@@ -5122,8 +5504,23 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private string BuildTypeDisplayName() => AircraftCategoryCatalog.GetProfile(_selectedAircraftCategory).DisplayName;
 
-    private static string BuildFamilyDisplayName(string baseName, int engineCount, MaterialType materialType, StructureType structureType) =>
-        $"{SanitizeName(baseName, "Player Family")} | {FormatUiInteger(engineCount)} engines | {GetMaterialDisplayName(materialType)} | {structureType}";
+    private static string GetAllowedEngineFamilyLabel(AircraftAllowedEngineFamily allowedEngineFamily)
+    {
+        return allowedEngineFamily switch
+        {
+            AircraftAllowedEngineFamily.Jet => "Jet",
+            AircraftAllowedEngineFamily.Propeller => "Propeller",
+            _ => "Mixed",
+        };
+    }
+
+    private static string BuildFamilyDisplayName(
+        string baseName,
+        int engineCount,
+        MaterialType materialType,
+        StructureType structureType,
+        AircraftAllowedEngineFamily allowedEngineFamily = AircraftAllowedEngineFamily.Any) =>
+        $"{SanitizeName(baseName, "Player Family")} | {GetAllowedEngineFamilyLabel(allowedEngineFamily)} | {FormatUiInteger(engineCount)} engines | {GetMaterialDisplayName(materialType)} | {structureType}";
 
     private static string BuildEngineDisplayName(string baseName, EngineType engineType, EngineParameters parameters) =>
         $"{SanitizeName(baseName, "Prototype Engine")} | {BuildEngineDescriptor(engineType, parameters)}";
@@ -5256,7 +5653,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             int lockedEngineCount,
             StructureType lockedStructureType,
             MaterialType lockedMaterialType,
-            WingPosition wingPosition)
+            WingPosition wingPosition,
+            AircraftAllowedEngineFamily allowedEngineFamily)
         {
             Name = name;
             FamilyId = familyId;
@@ -5264,6 +5662,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             LockedStructureType = lockedStructureType;
             LockedMaterialType = lockedMaterialType;
             WingPosition = wingPosition;
+            AllowedEngineFamily = allowedEngineFamily;
         }
 
         public string Name { get; }
@@ -5277,6 +5676,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public MaterialType LockedMaterialType { get; }
 
         public WingPosition WingPosition { get; }
+
+        public AircraftAllowedEngineFamily AllowedEngineFamily { get; }
     }
 
     private sealed class SavedAircraftDesign
@@ -5343,6 +5744,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public int LockedEngineCount { get; set; }
 
         public EngineDesignerFamily EngineDesignerFamily { get; set; }
+
+        public AircraftAllowedEngineFamily FamilyAllowedEngineFamily { get; set; }
 
         public EngineType SelectedPistonArrangement { get; set; }
 
@@ -5456,6 +5859,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public MaterialType LockedMaterialType { get; set; }
 
         public WingPosition WingPosition { get; set; }
+
+        public AircraftAllowedEngineFamily AllowedEngineFamily { get; set; }
     }
 
     private sealed class SavedAircraftDesignState
@@ -5506,5 +5911,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public double Value { get; set; }
     }
 }
+
+
+
+
+
+
+
+
+
+
 
 

@@ -60,6 +60,12 @@ public sealed class AircraftFactory
                 $"Family lock mismatch. Engine definition '{engineDefinition.Id}' is '{engineDefinition.EngineType}' but family requires '{familyDefinition.LockedEngineType}'.");
         }
 
+        if (!AircraftEngineFamilyCompatibility.IsEngineTypeAllowed(familyDefinition.AllowedEngineFamily, engineDefinition.EngineType))
+        {
+            throw new InvalidOperationException(
+                $"Family engine policy mismatch. Engine definition '{engineDefinition.Id}' is '{engineDefinition.EngineType}' but family allows '{familyDefinition.AllowedEngineFamily}'.");
+        }
+
         var airframeDefinition = _airframeRepository.GetById(familyDefinition.AirframeDefinitionId);
         var baseEngine = familyDefinition.BaseEngineParameters.Clone();
         var baseAirframe = familyDefinition.BaseAirframeParameters.Clone();
@@ -195,3 +201,4 @@ public sealed class AircraftFactory
         };
     }
 }
+

@@ -17,6 +17,8 @@ public sealed class AircraftFamilyDefinition
 
     public EngineType LockedEngineType { get; init; } = EngineType.Piston;
 
+    public AircraftAllowedEngineFamily AllowedEngineFamily { get; init; } = AircraftAllowedEngineFamily.Any;
+
     public StructureType LockedStructureType { get; init; } = StructureType.Truss;
 
     public MaterialType LockedMaterialType { get; init; } = MaterialType.WoodFabric;
@@ -62,6 +64,11 @@ public sealed class AircraftFamilyDefinition
             throw new ArgumentOutOfRangeException(nameof(LockedEngineCount), "Locked engine count must be within [1, 6].");
         }
 
+        if (!Enum.IsDefined(typeof(AircraftAllowedEngineFamily), AllowedEngineFamily))
+        {
+            throw new ArgumentOutOfRangeException(nameof(AllowedEngineFamily), "Allowed engine family must be a defined value.");
+        }
+
         _ = AircraftCategoryCatalog.GetProfile(Category);
 
         if (RequiredFactoryToolLevel < 1)
@@ -81,5 +88,44 @@ public sealed class AircraftFamilyDefinition
 
         BaseEngineParameters.Validate();
         BaseAirframeParameters.Validate();
+    }
+}
+
+public enum AircraftAllowedEngineFamily
+{
+    Any = 0,
+    Propeller = 1,
+    Jet = 2,
+}
+
+public static class AircraftEngineFamilyCompatibility
+{
+    public static bool IsEngineTypeAllowed(AircraftAllowedEngineFamily allowedFamily, EngineType engineType)
+    {
+        return allowedFamily switch
+        {
+            AircraftAllowedEngineFamily.Any => true,
+            AircraftAllowedEngineFamily.Propeller => IsPropellerEngine(engineType),
+            AircraftAllowedEngineFamily.Jet => IsJetEngine(engineType),
+            _ => false,
+        };
+    }
+
+    public static AircraftAllowedEngineFamily GetFamilyForEngineType(EngineType engineType) =>
+        IsJetEngine(engineType) ? AircraftAllowedEngineFamily.Jet : AircraftAllowedEngineFamily.Propeller;
+
+    private static bool IsPropellerEngine(EngineType engineType)
+    {
+        return engineType == EngineType.Piston
+            || engineType == EngineType.Inline
+            || engineType == EngineType.V
+            || engineType == EngineType.Radial;
+    }
+
+    private static bool IsJetEngine(EngineType engineType)
+    {
+        return engineType == EngineType.Jet
+            || engineType == EngineType.Turbojet
+            || engineType == EngineType.Turbofan;
     }
 }

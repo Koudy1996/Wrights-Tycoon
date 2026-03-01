@@ -117,6 +117,28 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    public void FamilyEnginePolicy_BlocksIncompatibleEngineFamilies()
+    {
+        var factory = CreateFactory();
+        var family = CreateFamily(
+            "fam.engine.policy",
+            engineCount: 1,
+            category: AircraftCategory.LightMultiRolePiston,
+            allowedEngineFamily: AircraftAllowedEngineFamily.Jet);
+        var type = new AircraftTypeDefinition
+        {
+            Id = "type.engine.policy",
+            FamilyId = family.Id,
+            DisplayName = "Engine Policy",
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateAircraft(family, type));
+
+        Assert.That(exception, Is.Not.Null);
+        Assert.That(exception!.Message, Does.Contain("engine policy"));
+    }
+
+    [Test]
     public void LargerTypeDelta_IncreasesDevelopmentCostAndManDays()
     {
         var factory = CreateFactory();
@@ -1063,7 +1085,8 @@ public sealed class AircraftIntegrationTests
     private static AircraftFamilyDefinition CreateFamily(
         string id,
         int engineCount,
-        AircraftCategory category = AircraftCategory.LightSportAndRecreational) =>
+        AircraftCategory category = AircraftCategory.LightSportAndRecreational,
+        AircraftAllowedEngineFamily allowedEngineFamily = AircraftAllowedEngineFamily.Any) =>
         new()
         {
             Id = id,
@@ -1072,6 +1095,7 @@ public sealed class AircraftIntegrationTests
             AirframeDefinitionId = "air.medium.main",
             Category = category,
             LockedEngineType = EngineType.Radial,
+            AllowedEngineFamily = allowedEngineFamily,
             LockedStructureType = StructureType.Monocoque,
             LockedMaterialType = MaterialType.Aluminum,
             LockedEngineCount = engineCount,
@@ -1102,4 +1126,7 @@ public sealed class AircraftIntegrationTests
             },
         };
 }
+
+
+
 
