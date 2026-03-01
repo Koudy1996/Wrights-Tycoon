@@ -5,10 +5,14 @@ namespace WrightTycoon.Game.GovernmentContracts;
 
 public sealed class GovernmentContractNotebookWindow : MonoBehaviour
 {
+    private static readonly Vector2 LegacyDefaultSize = new(760f, 460f);
+    private static readonly Vector2 CompactDefaultSize = new(560f, 340f);
+    private const float WindowOpacity = 0.9f;
+
     [SerializeField] private bool _openByDefault;
     [SerializeField] private Vector2 _defaultPosition = new(120f, -120f);
-    [SerializeField] private Vector2 _defaultSize = new(760f, 460f);
-    [SerializeField] private Vector2 _minimumSize = new(420f, 260f);
+    [SerializeField] private Vector2 _defaultSize = default;
+    [SerializeField] private Vector2 _minimumSize = new(480f, 260f);
     [SerializeField] private Vector2 _maximumSize = new(1800f, 1100f);
 
     private ContractUIState _state = new();
@@ -20,6 +24,7 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
     private int _windowId;
     private string _title = "Government Contract Notebook";
     private string _content = string.Empty;
+    private GUIStyle? _contentLabelStyle;
 
     public ContractUIState State => _state;
 
@@ -37,12 +42,13 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
         windowObject.transform.SetParent(parent, false);
 
         var notebookWindow = windowObject.AddComponent<GovernmentContractNotebookWindow>();
+        notebookWindow.InitializeDefaults();
         var state = initialState is null
             ? new ContractUIState
             {
                 IsOpen = false,
                 Position = new Vector2(120f, -120f),
-                Size = new Vector2(760f, 460f),
+                Size = CompactDefaultSize,
             }
             : new ContractUIState
             {
@@ -59,6 +65,7 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
 
     private void Awake()
     {
+        InitializeDefaults();
         _windowId = $"{nameof(GovernmentContractNotebookWindow)}_{GetInstanceID()}".GetHashCode();
 
         if (_state.Size.x <= 0f || _state.Size.y <= 0f)
@@ -79,6 +86,7 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
             return;
         }
 
+        InitializeDefaults();
         _state = NormalizeState(state);
         _windowRect = ToWindowRect(_state);
     }
@@ -129,9 +137,20 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
         }
 
         ClampWindowToScreen();
-        _windowRect = GUI.Window(_windowId, _windowRect, DrawWindowContents, _title);
-        ClampWindowToScreen();
-        _state = FromWindowRect(_windowRect, _state.IsOpen);
+
+        var originalGuiColor = GUI.color;
+        GUI.color = new Color(originalGuiColor.r, originalGuiColor.g, originalGuiColor.b, WindowOpacity);
+
+        try
+        {
+            _windowRect = GUI.Window(_windowId, _windowRect, DrawWindowContents, _title);
+            ClampWindowToScreen();
+            _state = FromWindowRect(_windowRect, _state.IsOpen);
+        }
+        finally
+        {
+            GUI.color = originalGuiColor;
+        }
     }
 
     private void DrawWindowContents(int windowId)
@@ -146,7 +165,7 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
         var contentRect = new Rect(10f, 28f, _windowRect.width - 20f, _windowRect.height - 52f);
         GUILayout.BeginArea(contentRect);
         _contentScroll = GUILayout.BeginScrollView(_contentScroll);
-        GUILayout.Label(_content);
+        GUILayout.Label(_content, GetContentLabelStyle(), GUILayout.ExpandWidth(true));
         GUILayout.EndScrollView();
         GUILayout.EndArea();
 
@@ -220,6 +239,11 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
         {
             normalized.Size = _defaultSize;
         }
+        else if (Mathf.Approximately(normalized.Size.x, LegacyDefaultSize.x) &&
+                 Mathf.Approximately(normalized.Size.y, LegacyDefaultSize.y))
+        {
+            normalized.Size = _defaultSize;
+        }
 
         normalized.Size = new Vector2(
             Mathf.Clamp(normalized.Size.x, _minimumSize.x, _maximumSize.x),
@@ -244,5 +268,24 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
             Position = new Vector2(rect.x, -rect.y),
             Size = new Vector2(rect.width, rect.height),
         };
+    }
+
+    private GUIStyle GetContentLabelStyle()
+    {
+        _contentLabelStyle ??= new GUIStyle(GUI.skin.label)
+        {
+            wordWrap = true,
+            richText = false,
+        };
+
+        return _contentLabelStyle;
+    }
+
+    private void InitializeDefaults()
+    {
+        if (_defaultSize.x <= 0f || _defaultSize.y <= 0f)
+        {
+            _defaultSize = CompactDefaultSize;
+        }
     }
 }

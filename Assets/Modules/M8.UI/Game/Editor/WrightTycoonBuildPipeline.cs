@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using UnityEditor;
@@ -87,7 +87,7 @@ public static class WrightTycoonBuildPipeline
 
         var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
         var buildFolder = Path.Combine(projectRoot, outputFolder);
-        Directory.CreateDirectory(buildFolder);
+        CleanBuildFolder(buildFolder);
 
         var outputPath = Path.Combine(buildFolder, playerFileName);
         var options = new BuildPlayerOptions
@@ -106,6 +106,27 @@ public static class WrightTycoonBuildPipeline
         if (summary.result != BuildResult.Succeeded)
         {
             throw new Exception($"{buildLabel} build failed: {summary.result}");
+        }
+
+        if (!File.Exists(outputPath) && !Directory.Exists(outputPath))
+        {
+            throw new FileNotFoundException($"Build finished but output was not found at '{outputPath}'.");
+        }
+    }
+
+    private static void CleanBuildFolder(string buildFolder)
+    {
+        Directory.CreateDirectory(buildFolder);
+
+        var directoryInfo = new DirectoryInfo(buildFolder);
+        foreach (var directory in directoryInfo.GetDirectories())
+        {
+            directory.Delete(true);
+        }
+
+        foreach (var file in directoryInfo.GetFiles())
+        {
+            file.Delete();
         }
     }
 }
