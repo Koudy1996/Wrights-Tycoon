@@ -16,10 +16,6 @@ public sealed class GovernmentContractGeneratorOptions
 
     public double MaxReliability { get; init; } = ContractBalance.MaxReliability;
 
-    public double MinRunwayLengthMeters { get; init; } = PlaneDesignerBalance.Airframe.RunwayShortLengthMeters;
-
-    public double MaxRunwayLengthMeters { get; init; } = PlaneDesignerBalance.Airframe.RunwayLongLengthMeters;
-
     public string ContractIdPrefix { get; init; } = "gov";
 
     public void Validate()
@@ -41,8 +37,6 @@ public sealed class GovernmentContractGeneratorOptions
 
         Numeric.ThrowIfNotFinite(MinReliability, nameof(MinReliability));
         Numeric.ThrowIfNotFinite(MaxReliability, nameof(MaxReliability));
-        Numeric.ThrowIfNotFinite(MinRunwayLengthMeters, nameof(MinRunwayLengthMeters));
-        Numeric.ThrowIfNotFinite(MaxRunwayLengthMeters, nameof(MaxRunwayLengthMeters));
 
         if (MinReliability < 0d || MinReliability > 1d)
         {
@@ -52,16 +46,6 @@ public sealed class GovernmentContractGeneratorOptions
         if (MaxReliability < 0d || MaxReliability > 1d || MaxReliability < MinReliability)
         {
             throw new ArgumentOutOfRangeException(nameof(MaxReliability), "Maximum reliability must be >= minimum reliability and within [0, 1].");
-        }
-
-        if (MinRunwayLengthMeters <= 0d)
-        {
-            throw new ArgumentOutOfRangeException(nameof(MinRunwayLengthMeters), "Minimum runway length must be > 0.");
-        }
-
-        if (MaxRunwayLengthMeters < MinRunwayLengthMeters)
-        {
-            throw new ArgumentOutOfRangeException(nameof(MaxRunwayLengthMeters), "Maximum runway length must be >= minimum runway length.");
         }
     }
 }

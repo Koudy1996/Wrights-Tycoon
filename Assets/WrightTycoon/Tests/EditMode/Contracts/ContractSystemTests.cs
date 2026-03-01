@@ -29,6 +29,9 @@ public sealed class ContractSystemTests
             Assert.That(contract.DeadlineMonths, Is.InRange(6, 36));
             Assert.That(contract.Requirements.DefinedRequirementCount, Is.InRange(2, 7));
             Assert.That(contract.Requirements.RequiredCategory.HasValue, Is.True);
+            Assert.That(contract.Requirements.MaximumRequiredRunwayLengthMeters.HasValue, Is.True);
+            var allowedRunwayLengths = ContractBalance.ResolveAllowedRunwayLengthMeters(contract.Requirements.RequiredCategory!.Value);
+            Assert.That(allowedRunwayLengths, Has.Member(contract.Requirements.MaximumRequiredRunwayLengthMeters.Value));
             Assert.That(contract.EstimatedMinimumUnitCost, Is.GreaterThan(0d));
             Assert.That(contract.UnitPrice, Is.GreaterThan(contract.EstimatedMinimumUnitCost));
             Assert.That(contract.TotalPrice, Is.GreaterThan(0d));
@@ -60,6 +63,23 @@ public sealed class ContractSystemTests
                 Assert.That(requiredSpeedKmh, Is.InRange(profile.MinRequiredSpeedKilometersPerHour, profile.MaxRequiredSpeedKilometersPerHour));
             }
         }
+    }
+
+    [Test]
+    public void RunwayBalance_UsesSingleTierForExtremeCategories_AndTwoTiersForIntermediateCategories()
+    {
+        CollectionAssert.AreEqual(
+            new[] { PlaneDesignerBalance.Airframe.RunwayShortLengthMeters },
+            ContractBalance.ResolveAllowedRunwayLengthMeters(AircraftCategory.LightSportAndRecreational));
+        CollectionAssert.AreEqual(
+            new[] { PlaneDesignerBalance.Airframe.RunwayShortLengthMeters, PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters },
+            ContractBalance.ResolveAllowedRunwayLengthMeters(AircraftCategory.LightMultiRolePiston));
+        CollectionAssert.AreEqual(
+            new[] { PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters, PlaneDesignerBalance.Airframe.RunwayLongLengthMeters },
+            ContractBalance.ResolveAllowedRunwayLengthMeters(AircraftCategory.RegionalJet));
+        CollectionAssert.AreEqual(
+            new[] { PlaneDesignerBalance.Airframe.RunwayLongLengthMeters },
+            ContractBalance.ResolveAllowedRunwayLengthMeters(AircraftCategory.HeavyTransportWideBody));
     }
 
     [Test]
@@ -190,8 +210,41 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    public void Evaluator_BlocksDelivery_WhenRunwayRequirementIsTooShort()
+    {
+        var evaluator = new ContractEvaluator();
+        var aircraft = CreateAircraft(
+            reliability: 0.9d,
+            rangeKilometers: 2600d,
+            speedAtSeaLevel: 110d,
+            speedAtFiveKilometers: 104d,
+            speedAtTenKilometers: 98d,
+            payloadKilograms: 4600d,
+            crewCount: 2);
+
+        var contract = new Contract(
+            "ctr.test.runway",
+            "Runway Cargo",
+            quantityUnits: 50,
+            deadlineMonths: 12,
+            new ContractRequirements
+            {
+                RequiredCategory = AircraftCategory.BusinessVipJet,
+                MinimumReliability = 0.8d,
+                MaximumRequiredRunwayLengthMeters = PlaneDesignerBalance.Airframe.RunwayShortLengthMeters,
+            },
+            createdMonthIndex: 0);
+
+        var evaluation = evaluator.Evaluate(contract, aircraft);
+
+        Assert.That(evaluation.CanDeliver, Is.False);
+        Assert.That(evaluation.UnmetRequirements, Has.Some.Contains("Runway"));
+    }
+
+    [Test]
     public void Evaluator_BlocksDelivery_WhenCategoryDoesNotMatch()
     {
+
         var evaluator = new ContractEvaluator();
         var aircraft = CreateAircraft(
             reliability: 0.9d,
@@ -721,3 +774,6 @@ public sealed class ContractSystemTests
         }
     }
 }
+
+
+

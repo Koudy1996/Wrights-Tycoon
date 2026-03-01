@@ -39,7 +39,7 @@ public sealed class GovernmentContractGenerator : IGovernmentContractGenerator
         var minimumPayloadKilograms = Round(SampleTopThird(profile.MinRequiredPayloadKilograms, profile.MaxRequiredPayloadKilograms), 1);
         var minimumReliability = Round(SampleTopThird(_options.MinReliability, _options.MaxReliability), 3);
         var minimumCrewSize = SampleTopThirdInt(profile.MinCrew, profile.MaxCrew);
-        var maximumRunwayLengthMeters = Round(SampleTopThird(_options.MinRunwayLengthMeters, _options.MaxRunwayLengthMeters), 1);
+        var maximumRunwayLengthMeters = ContractBalance.ResolveRequiredRunwayLengthMeters(aircraftType, _random.NextDouble());
 
         var requirements = new GovernmentContractRequirements
         {
@@ -89,3 +89,4 @@ public sealed class GovernmentContractGenerator : IGovernmentContractGenerator
     private static double Round(double value, int decimals) =>
         System.Math.Round(value, decimals, MidpointRounding.AwayFromZero);
 }
+

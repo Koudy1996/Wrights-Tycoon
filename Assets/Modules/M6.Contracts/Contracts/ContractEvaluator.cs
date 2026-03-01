@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Globalization;
+using System.Linq;
 using WrightTycoon.Core.Aircraft;
+using WrightTycoon.Core.Airframes;
+using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Math;
 
 namespace WrightTycoon.Core.Contracts;
@@ -99,9 +101,18 @@ public sealed class ContractEvaluator : IContractEvaluator
             }
         }
 
+        if (requirements.MaximumRequiredRunwayLengthMeters.HasValue)
+        {
+            var maximumRunwayLength = requirements.MaximumRequiredRunwayLengthMeters.Value;
+            var actualRunwayLength = ResolveRunwayLengthMeters(aircraft.Airframe.Parameters.RunwayType);
+            if (actualRunwayLength - Numeric.Epsilon > maximumRunwayLength)
+            {
+                unmetRequirements.Add($"Runway {FormatUiNumber(actualRunwayLength, "0.0")} m > {FormatUiNumber(maximumRunwayLength, "0.0")} m");
+            }
+        }
+
         return new ContractEvaluationReport(unmetRequirements);
     }
-
 
     private static readonly CultureInfo UiNumberCulture = CreateUiNumberCulture();
 
@@ -119,6 +130,7 @@ public sealed class ContractEvaluator : IContractEvaluator
 
     private static string FormatUiInteger(int value) =>
         value.ToString("#,##0", UiNumberCulture);
+
     private static bool TryGetSpeedAtAltitude(
         AircraftPerformanceReport performance,
         double altitudeMeters,
@@ -173,4 +185,13 @@ public sealed class ContractEvaluator : IContractEvaluator
         speedMetersPerSecond = 0d;
         return false;
     }
+
+    private static double ResolveRunwayLengthMeters(RunwayType runwayType) =>
+        runwayType switch
+        {
+            RunwayType.Short => PlaneDesignerBalance.Airframe.RunwayShortLengthMeters,
+            RunwayType.Medium => PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters,
+            RunwayType.Long => PlaneDesignerBalance.Airframe.RunwayLongLengthMeters,
+            _ => PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters,
+        };
 }

@@ -33,7 +33,7 @@ public sealed class GovernmentContractModuleTests
     }
 
     [Test]
-    public void Generator_UsesTopThirdRangesForGovernmentRequirements()
+    public void Generator_UsesTopThirdRangesAndDiscreteRunwayForGovernmentRequirements()
     {
         var random = new DeterministicRandomProvider();
         var options = new GovernmentContractGeneratorOptions
@@ -41,8 +41,6 @@ public sealed class GovernmentContractModuleTests
             RequestedAircraftTypes = new[] { AircraftCategory.RegionalJet },
             MinReliability = 0.8d,
             MaxReliability = 0.98d,
-            MinRunwayLengthMeters = 500d,
-            MaxRunwayLengthMeters = 2000d,
         };
 
         var generator = new GovernmentContractGenerator(random, options);
@@ -73,11 +71,28 @@ public sealed class GovernmentContractModuleTests
         Assert.That(requirements.MinimumCrewSize, Is.InRange(
             (int)System.Math.Ceiling(LowerTopThird(profile.MinCrew, profile.MaxCrew)),
             profile.MaxCrew));
-        AssertThatWithinTopThird(
-            requirements.MaximumRequiredRunwayLengthMeters,
-            options.MinRunwayLengthMeters,
-            options.MaxRunwayLengthMeters,
-            tolerance: 0.1d);
+        var allowedRunwayLengths = ContractBalance.ResolveAllowedRunwayLengthMeters(AircraftCategory.RegionalJet);
+        Assert.That(allowedRunwayLengths, Has.Member(requirements.MaximumRequiredRunwayLengthMeters));
+    }
+
+    [Test]
+    public void Generator_CanSelectSecondRunwayOption_ForMultiTierCategories()
+    {
+        var random = new DeterministicRandomProvider();
+        random.EnqueueDoubles(0d, 0d, 0d, 0d, 0.75d);
+
+        var generator = new GovernmentContractGenerator(
+            random,
+            new GovernmentContractGeneratorOptions
+            {
+                RequestedAircraftTypes = new[] { AircraftCategory.RegionalJet },
+            });
+
+        var generated = generator.Generate(new SimulationDate(2000, 1), contractSequence: 0);
+
+        Assert.That(
+            generated.Requirements.MaximumRequiredRunwayLengthMeters,
+            Is.EqualTo(PlaneDesignerBalance.Airframe.RunwayLongLengthMeters).Within(1e-9d));
     }
 
     [Test]
@@ -205,7 +220,7 @@ public sealed class GovernmentContractModuleTests
             MinimumPayloadKilograms = 10000d,
             MinimumReliability = 0.9d,
             MinimumCrewSize = 2,
-            MaximumRequiredRunwayLengthMeters = 1200d,
+            MaximumRequiredRunwayLengthMeters = ContractBalance.ResolveRequiredRunwayLengthMeters(AircraftCategory.RegionalJet),
         };
     }
 
@@ -369,3 +384,7 @@ public sealed class GovernmentContractModuleTests
         public void SetUnits(string designId, int units) => _unitsByDesign[designId] = units;
     }
 }
+
+
+
+

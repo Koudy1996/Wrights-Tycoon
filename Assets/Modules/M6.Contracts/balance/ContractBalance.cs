@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using WrightTycoon.Core.Categories;
 
 namespace WrightTycoon.Core.Balance;
@@ -112,4 +114,110 @@ public static class ContractBalance
         AircraftCategory.MilitaryTactical,
         AircraftCategory.MilitaryStrategicSupport,
     };
+
+    // Editable category groups for runway-constrained contracts.
+    // Categories may appear in more than one group to enable multiple valid runway requirements.
+    public static readonly AircraftCategory[] ShortRunwayCategories =
+    {
+        AircraftCategory.LightSportAndRecreational,
+        AircraftCategory.LightMultiRolePiston,
+        AircraftCategory.TurbopropRegional,
+        AircraftCategory.SpecialCivil,
+        AircraftCategory.BusinessVipJet,
+        AircraftCategory.MilitaryTactical,
+    };
+
+    public static readonly AircraftCategory[] MediumRunwayCategories =
+    {
+        AircraftCategory.LightMultiRolePiston,
+        AircraftCategory.TurbopropRegional,
+        AircraftCategory.RegionalJet,
+        AircraftCategory.MediumTransportNarrowBody,
+        AircraftCategory.SpecialCivil,
+        AircraftCategory.BusinessVipJet,
+        AircraftCategory.MilitaryTactical,
+        AircraftCategory.MilitaryStrategicSupport,
+    };
+
+    public static readonly AircraftCategory[] LongRunwayCategories =
+    {
+        AircraftCategory.RegionalJet,
+        AircraftCategory.MediumTransportNarrowBody,
+        AircraftCategory.HeavyTransportWideBody,
+        AircraftCategory.MilitaryStrategicSupport,
+    };
+
+    public static double[] ResolveAllowedRunwayLengthMeters(AircraftCategory category)
+    {
+        var allowedRunwayLengths = new List<double>(capacity: 3);
+
+        if (ContainsCategory(ShortRunwayCategories, category))
+        {
+            allowedRunwayLengths.Add(PlaneDesignerBalance.Airframe.RunwayShortLengthMeters);
+        }
+
+        if (ContainsCategory(MediumRunwayCategories, category))
+        {
+            allowedRunwayLengths.Add(PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters);
+        }
+
+        if (ContainsCategory(LongRunwayCategories, category))
+        {
+            allowedRunwayLengths.Add(PlaneDesignerBalance.Airframe.RunwayLongLengthMeters);
+        }
+
+        if (allowedRunwayLengths.Count == 0)
+        {
+            allowedRunwayLengths.Add(PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters);
+        }
+
+        return allowedRunwayLengths.ToArray();
+    }
+
+    public static double ResolveRequiredRunwayLengthMeters(AircraftCategory category) =>
+        ResolveRequiredRunwayLengthMeters(category, runwayOptionRoll: 0d);
+
+    public static double ResolveRequiredRunwayLengthMeters(AircraftCategory category, double runwayOptionRoll)
+    {
+        var allowedRunwayLengths = ResolveAllowedRunwayLengthMeters(category);
+        if (allowedRunwayLengths.Length == 1)
+        {
+            return allowedRunwayLengths[0];
+        }
+
+        if (double.IsNaN(runwayOptionRoll) || double.IsInfinity(runwayOptionRoll) || runwayOptionRoll <= 0d)
+        {
+            return allowedRunwayLengths[0];
+        }
+
+        if (runwayOptionRoll >= 1d)
+        {
+            return allowedRunwayLengths[allowedRunwayLengths.Length - 1];
+        }
+
+        var index = (int)(runwayOptionRoll * allowedRunwayLengths.Length);
+        if (index < 0)
+        {
+            index = 0;
+        }
+        else if (index >= allowedRunwayLengths.Length)
+        {
+            index = allowedRunwayLengths.Length - 1;
+        }
+
+        return allowedRunwayLengths[index];
+    }
+
+    private static bool ContainsCategory(AircraftCategory[] configuredCategories, AircraftCategory category)
+    {
+        for (var index = 0; index < configuredCategories.Length; index++)
+        {
+            if (configuredCategories[index] == category)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

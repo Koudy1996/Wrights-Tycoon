@@ -20,13 +20,16 @@ public sealed class ContractRequirements
 
     public int? MinimumCrew { get; init; }
 
+    public double? MaximumRequiredRunwayLengthMeters { get; init; }
+
     public int DefinedRequirementCount =>
         CountIfDefined(MinimumReliability.HasValue)
         + CountIfDefined(MaximumTotalWeightKilograms.HasValue)
         + CountIfDefined(MinimumRangeKilometers.HasValue)
         + CountIfDefined(MinimumSpeed.HasValue)
         + CountIfDefined(MinimumPayloadKilograms.HasValue)
-        + CountIfDefined(MinimumCrew.HasValue);
+        + CountIfDefined(MinimumCrew.HasValue)
+        + CountIfDefined(MaximumRequiredRunwayLengthMeters.HasValue);
 
     public void Validate()
     {
@@ -84,6 +87,15 @@ public sealed class ContractRequirements
         if (MinimumCrew.HasValue && MinimumCrew.Value < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(MinimumCrew), "Minimum crew must be greater than or equal to 1.");
+        }
+
+        if (MaximumRequiredRunwayLengthMeters.HasValue)
+        {
+            Numeric.ThrowIfNotFinite(MaximumRequiredRunwayLengthMeters.Value, nameof(MaximumRequiredRunwayLengthMeters));
+            if (MaximumRequiredRunwayLengthMeters.Value <= 0d)
+            {
+                throw new ArgumentOutOfRangeException(nameof(MaximumRequiredRunwayLengthMeters), "Maximum runway length must be greater than zero.");
+            }
         }
     }
 

@@ -4724,6 +4724,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             GUILayout.Label($"Crew >= {FormatUiInteger(requirements.MinimumCrew.Value)}");
         }
+
+        if (requirements.MaximumRequiredRunwayLengthMeters.HasValue)
+        {
+            GUILayout.Label($"Runway <= {FormatUiNumber(requirements.MaximumRequiredRunwayLengthMeters.Value, "0.0")} m");
+        }
     }
 
     private static double CalculateFuelPerOutputMetric(double output, double fuelKilogramsPerHour, bool isJet)

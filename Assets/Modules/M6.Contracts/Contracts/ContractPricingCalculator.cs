@@ -272,6 +272,15 @@ public sealed class ContractPricingCalculator
                 invert: false));
         }
 
+        if (requirements.MaximumRequiredRunwayLengthMeters.HasValue)
+        {
+            AddMetric(ref sum, ref count, Normalize(
+                requirements.MaximumRequiredRunwayLengthMeters.Value,
+                PlaneDesignerBalance.Airframe.RunwayShortLengthMeters,
+                PlaneDesignerBalance.Airframe.RunwayLongLengthMeters,
+                invert: true));
+        }
+
         if (count == 0)
         {
             return 0.5d;

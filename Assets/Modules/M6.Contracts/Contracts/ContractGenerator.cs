@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Categories;
 
 namespace WrightTycoon.Core.Contracts;
@@ -96,6 +97,7 @@ public sealed class ContractGenerator : IContractGenerator
         ContractSpeedRequirement? speed = null;
         double? payload = null;
         int? crew = null;
+        var maximumRunwayLengthMeters = ContractBalance.ResolveRequiredRunwayLengthMeters(category, _random.NextDouble());
 
         for (var index = 0; index < selectedCount; index++)
         {
@@ -156,6 +158,7 @@ public sealed class ContractGenerator : IContractGenerator
             MinimumSpeed = speed,
             MinimumPayloadKilograms = payload,
             MinimumCrew = crew,
+            MaximumRequiredRunwayLengthMeters = maximumRunwayLengthMeters,
         };
     }
 
@@ -321,3 +324,5 @@ public sealed class ContractGenerator : IContractGenerator
         return (minValue, maxValue);
     }
 }
+
+
