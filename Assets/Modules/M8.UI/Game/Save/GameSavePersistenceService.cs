@@ -168,7 +168,16 @@ public sealed class GameSavePersistenceService
             return;
         }
 
-        var loaded = JsonConvert.DeserializeObject<GameSaveCollection>(json, _jsonSettings);
+        GameSaveCollection? loaded;
+        try
+        {
+            loaded = JsonConvert.DeserializeObject<GameSaveCollection>(json, _jsonSettings);
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
         if (loaded?.Saves is null)
         {
             return;

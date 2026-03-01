@@ -1,44 +1,45 @@
-# Unity Pairing and Launch Setup
+# Unity Launch and Build Flow
 
-This repo is now prepared as a Unity project folder (has `Assets`, `Packages`, `ProjectSettings`).
+This repo is a Unity project. The Unity editor menus are the only supported launch/build entry points.
 
-## 1. Confirm Unity Editor install
+## 1. Open the project
 
-Unity Hub alone is not enough. You need a Unity Editor version installed (Unity 6 LTS recommended).
+- Open the project folder in Unity Hub with the Unity editor version from `ProjectSettings/ProjectVersion.txt`.
 
-## 2. Open the project
+## 2. Prepare and run in the editor
 
-- Open Unity Hub.
-- Add project folder:
-  - `C:\Wibe coding projekty\Wright tycoon`
-- Open it with your Unity 6 LTS editor.
-
-## 3. Auto-prepare launch scene
-
-In Unity Editor menu:
-
-- `WrightTycoon -> Prepare Project For Launch`
-
-This will:
-
-- create `Assets/WrightTycoon/Scenes/WrightTycoonLaunch.unity`,
-- add it to Build Settings,
-- ensure JSON definitions are available in `Assets/StreamingAssets/Data/Examples`.
-
-## 4. Run in Editor
-
-- Open `Assets/WrightTycoon/Scenes/WrightTycoonLaunch.unity`.
+- Run `WrightTycoon -> Prepare Project For Launch`.
+- Run `WrightTycoon -> Open Launch Scene`.
 - Press Play.
-- A launch report (single vs twin engine comparison) appears on screen and in Console.
 
-## 5. Build executable (Windows)
+`Prepare Project For Launch` keeps the existing launch scene if it already exists, refreshes definition JSON files in `Assets/StreamingAssets/Data/Examples`, and ensures the launch scene is in Build Settings.
 
-- `File -> Build Settings`
-- Platform: `Windows`
-- Scene list should include `Assets/WrightTycoon/Scenes/WrightTycoonLaunch.unity`
-- Click Build.
+## 3. Build releases
+
+- Use `WrightTycoon -> Build -> Windows Release`.
+- Use `WrightTycoon -> Build -> macOS Release`.
+
+The build pipeline is the single build authority. It prepares the project, writes `WrightTycoon.build.json`, creates a release-side `Player Info` folder, and moves Windows developer-only backup payloads out of the normal `Release` folder.
+
+## 4. Runtime data
+
+- The game stores runtime data in `Player Info`.
+- Subfolders:
+  - `Player Info/Saves`
+  - `Player Info/Generated Assets`
+  - `Player Info/Logs`
+- In the editor, `Player Info` is created in the project root.
+- In builds, `Player Info` is created next to the executable/build root.
+- It is safe to delete. The game recreates it automatically.
+
+## 5. Release layout
+
+- Windows release: `Builds/Windows/Release`
+- Windows developer-only artifacts: `Builds/Windows/Developer`
+- macOS release: `Builds/Mac/Release`
 
 ## Notes
 
-- Domain modules are in `Assets/Modules/M1.Core`, `Assets/Modules/M2.EngineDesigner`, `Assets/Modules/M3.PlaneDesigner`, `Assets/Modules/M5.Factory`, `Assets/Modules/M6.Contracts`.
-- Unity-facing launch layer is in `Assets/Modules/M8.UI/Game`.
+- Domain modules are organized under `Assets/Modules/M1.Core` through `Assets/Modules/M9.GovernmentContracts`.
+- The Unity-facing launch/build layer lives in `Assets/Modules/M8.UI/Game`.
+- The launch scene asset stays at `Assets/WrightTycoon/Scenes/WrightTycoonLaunch.unity` for compatibility, but it is managed by the M8 UI pipeline.

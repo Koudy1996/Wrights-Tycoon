@@ -30,7 +30,7 @@ public static class WrightTycoonLaunchBootstrap
 
         var host = new GameObject("WrightTycoonLaunchRunner");
         host.AddComponent<WrightTycoonLaunchRunner>();
-        Debug.LogWarning("[LaunchBootstrap] Launch runner was missing and has been recreated at runtime.");
+        Debug.Log("[LaunchBootstrap] Launch runner created at runtime.");
     }
 
     private static bool IsLaunchScene(Scene scene)
@@ -40,7 +40,13 @@ public static class WrightTycoonLaunchBootstrap
             return true;
         }
 
-        return string.Equals(scene.name, "WrightTycoonLaunch", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(scene.path, "Assets/Modules/M8.UI/Game/Scenes/WrightTycoonBuildLaunch.unity", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return string.Equals(scene.name, "WrightTycoonLaunch", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(scene.name, "WrightTycoonBuildLaunch", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsBackupScene(Scene scene)

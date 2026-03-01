@@ -8,5 +8,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/WrightTycoon/Scenes/WrightTycoonLaunch.unity
     guid: a5e9c7987ded27546a9ae62a903ace63
+  - enabled: 1
+    path: Assets/Modules/M8.UI/Game/Scenes/WrightTycoonBuildLaunch.unity
+    guid: 80dba869191ce194aa11b580822bf328
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0

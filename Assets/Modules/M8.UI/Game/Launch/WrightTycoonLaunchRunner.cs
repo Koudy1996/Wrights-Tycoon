@@ -19,6 +19,7 @@ using WrightTycoon.Core.Physics;
 using WrightTycoon.Core.Simulation;
 using WrightTycoon.Core.Research;
 using WrightTycoon.Game.GovernmentContracts;
+using WrightTycoon.Game.RuntimeData;
 using WrightTycoon.Game.UI;
 using WrightTycoon.Game.Save;
 
@@ -149,6 +150,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly JsonSerializerSettings _saveJsonSettings = CreateSaveJsonSettings();
 
     private GameSavePersistenceService? _savePersistence;
+    private WrightTycoonBuildManifest _buildManifest = new();
     private Texture2D? _introBackgroundTexture;
     private RuntimeScreen _runtimeScreen = RuntimeScreen.Intro;
     private Vector2 _loadMenuScroll;
@@ -158,6 +160,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private void Awake()
     {
         InitializeSaveSystem();
+        LoadBuildManifest();
         LoadIntroBackgroundTexture();
         TryInitialize();
     }
@@ -447,9 +450,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void InitializeSaveSystem()
     {
-        var saveRoot = Path.Combine(Application.persistentDataPath, "WrightTycoon");
-        var savePath = Path.Combine(saveRoot, SaveFileName);
+        WrightTycoonRuntimePaths.EnsurePlayerInfoLayout();
+        var savePath = WrightTycoonRuntimePaths.GetSaveFilePath(SaveFileName);
         _savePersistence = new GameSavePersistenceService(savePath, _saveJsonSettings);
+        Debug.Log($"[RuntimeData] Player Info root: {WrightTycoonRuntimePaths.GetPlayerInfoRootPath()}");
         Debug.Log($"[Save] Using save file: {savePath}");
     }
 
@@ -462,12 +466,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
     }
 
+    private void LoadBuildManifest()
+    {
+        _buildManifest = WrightTycoonBuildManifestService.LoadOrCreateRuntimeManifest();
+    }
+
     private void DrawIntroScreen()
     {
         DrawIntroBackground();
 
         var panelWidth = Mathf.Min(560f, Screen.width - 40f);
-        var panelHeight = 300f;
+        var panelHeight = Mathf.Min(380f, Screen.height - 40f);
         var panelRect = new Rect(
             (Screen.width - panelWidth) * 0.5f,
             (Screen.height - panelHeight) * 0.5f,
@@ -477,6 +486,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.BeginArea(panelRect, GUI.skin.box);
         GUILayout.Label("Wright Tycoon");
         GUILayout.Label("Main Menu");
+        DrawBuildManifestSummary();
 
         _playerCompanyName = DrawText("Company Name", _playerCompanyName);
         if (string.IsNullOrWhiteSpace(_playerCompanyName))
@@ -496,7 +506,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _runtimeScreen = RuntimeScreen.LoadMenu;
         }
 
-        if (GUILayout.Button("Exit", GUILayout.Height(38f)))
+        if (GUILayout.Button("Exit", GUILayout.Height(44f)))
         {
             Application.Quit();
         }
@@ -510,6 +520,41 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.EndArea();
     }
 
+    private void DrawBuildManifestSummary()
+    {
+        var gameVersion = string.IsNullOrWhiteSpace(_buildManifest.GameVersion)
+            ? "0.0.0"
+            : _buildManifest.GameVersion;
+        var targetPlatform = string.IsNullOrWhiteSpace(_buildManifest.TargetPlatform)
+            ? Application.platform.ToString()
+            : _buildManifest.TargetPlatform;
+
+        GUILayout.Label($"Version: {gameVersion} | Platform: {targetPlatform}");
+
+        var buildLine = $"Build: {FormatBuildManifestTimestamp(_buildManifest.BuildTimestampUtc)}";
+        if (!string.IsNullOrWhiteSpace(_buildManifest.GitCommit))
+        {
+            buildLine += $" | Git: {_buildManifest.GitCommit}";
+        }
+
+        GUILayout.Label(buildLine);
+
+        if (!string.IsNullOrWhiteSpace(_buildManifest.BalanceChecksum))
+        {
+            var checksum = _buildManifest.BalanceChecksum.Length > 8
+                ? _buildManifest.BalanceChecksum[..8]
+                : _buildManifest.BalanceChecksum;
+
+            var balanceLine = _buildManifest.BalanceFileCount > 0
+                ? $"Balance: {checksum} ({_buildManifest.BalanceFileCount} files)"
+                : $"Balance: {checksum}";
+
+            GUILayout.Label(balanceLine);
+        }
+
+        GUILayout.Space(8f);
+    }
+
     private void DrawLoadMenuScreen()
     {
         DrawIntroBackground();
@@ -521,9 +566,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label("Load Game");
 
         GUILayout.BeginHorizontal();
-        if (GUILayout.Button("Back", GUILayout.Width(120f), GUILayout.Height(30f)))
+        if (GUILayout.Button("Back", GUILayout.Width(180f), GUILayout.Height(44f)))
         {
             _runtimeScreen = RuntimeScreen.Intro;
+        }
+
+        if (GUILayout.Button("Exit", GUILayout.Width(180f), GUILayout.Height(44f)))
+        {
+            Application.Quit();
         }
 
         GUILayout.FlexibleSpace();
@@ -5564,6 +5614,26 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         };
 
         return $"{monthName} {date.Year}";
+    }
+
+    private static string FormatBuildManifestTimestamp(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "unknown";
+        }
+
+        if (string.Equals(value, "runtime-generated", StringComparison.OrdinalIgnoreCase))
+        {
+            return "runtime-generated";
+        }
+
+        if (DateTimeOffset.TryParse(value, out var parsed))
+        {
+            return parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+        }
+
+        return value;
     }
 
     private static double GetRunwayLengthMeters(RunwayType runwayType) =>

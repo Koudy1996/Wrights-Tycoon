@@ -11,13 +11,18 @@ public static class WrightTycoonProjectSetup
 {
     private const string SceneFolder = "Assets/WrightTycoon/Scenes";
     private const string ScenePath = "Assets/WrightTycoon/Scenes/WrightTycoonLaunch.unity";
+    private const string BuildSceneFolder = "Assets/Modules/M8.UI/Game/Scenes";
+    private const string BuildScenePath = "Assets/Modules/M8.UI/Game/Scenes/WrightTycoonBuildLaunch.unity";
     private const string StreamingExamplesPath = "Assets/StreamingAssets/Data/Examples";
+
+    public static string RuntimeLaunchScenePath => BuildScenePath;
 
     [MenuItem("WrightTycoon/Prepare Project For Launch")]
     public static void PrepareProjectForLaunch()
     {
         EnsureStreamingDefinitions();
         CreateOrUpdateLaunchScene();
+        CreateOrUpdateBuildLaunchScene();
         EnsureBuildSettings();
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
@@ -35,7 +40,7 @@ public static class WrightTycoonProjectSetup
     public static void OpenLaunchScene()
     {
         PrepareProjectForLaunch();
-        EditorSceneManager.OpenScene(ScenePath);
+        EditorSceneManager.OpenScene(BuildScenePath);
     }
 
     [MenuItem("WrightTycoon/Fix Missing Scripts (Open Scene)")]
@@ -106,6 +111,11 @@ public static class WrightTycoonProjectSetup
 
     private static void CreateOrUpdateLaunchScene()
     {
+        if (File.Exists(ScenePath))
+        {
+            return;
+        }
+
         Directory.CreateDirectory(SceneFolder);
         var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
 
@@ -115,24 +125,55 @@ public static class WrightTycoonProjectSetup
         EditorSceneManager.SaveScene(scene, ScenePath);
     }
 
+    private static void CreateOrUpdateBuildLaunchScene()
+    {
+        Directory.CreateDirectory(BuildSceneFolder);
+        var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+        EditorSceneManager.SaveScene(scene, BuildScenePath);
+    }
+
     private static void EnsureBuildSettings()
     {
         var existing = EditorBuildSettings.scenes;
+        var hasLegacyScene = false;
+        var hasBuildScene = false;
+
         foreach (var scene in existing)
         {
             if (scene.path == ScenePath)
             {
-                return;
+                hasLegacyScene = true;
+            }
+
+            if (scene.path == BuildScenePath)
+            {
+                hasBuildScene = true;
             }
         }
 
-        var updated = new EditorBuildSettingsScene[existing.Length + 1];
+        var additionalCount = (hasLegacyScene ? 0 : 1) + (hasBuildScene ? 0 : 1);
+        if (additionalCount == 0)
+        {
+            return;
+        }
+
+        var updated = new EditorBuildSettingsScene[existing.Length + additionalCount];
         for (var index = 0; index < existing.Length; index++)
         {
             updated[index] = existing[index];
         }
 
-        updated[^1] = new EditorBuildSettingsScene(ScenePath, true);
+        var next = existing.Length;
+        if (!hasLegacyScene)
+        {
+            updated[next++] = new EditorBuildSettingsScene(ScenePath, false);
+        }
+
+        if (!hasBuildScene)
+        {
+            updated[next] = new EditorBuildSettingsScene(BuildScenePath, true);
+        }
+
         EditorBuildSettings.scenes = updated;
     }
 }
