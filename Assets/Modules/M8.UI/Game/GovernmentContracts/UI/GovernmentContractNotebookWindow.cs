@@ -6,13 +6,14 @@ namespace WrightTycoon.Game.GovernmentContracts;
 public sealed class GovernmentContractNotebookWindow : MonoBehaviour
 {
     private static readonly Vector2 LegacyDefaultSize = new(760f, 460f);
-    private static readonly Vector2 CompactDefaultSize = new(560f, 340f);
-    private const float WindowOpacity = 0.9f;
+    private static readonly Vector2 PreviousCompactDefaultSize = new(560f, 340f);
+    private static readonly Vector2 CompactDefaultSize = new(448f, 272f);
+    private const float WindowOpacity = 0.95f;
 
     [SerializeField] private bool _openByDefault;
     [SerializeField] private Vector2 _defaultPosition = new(120f, -120f);
     [SerializeField] private Vector2 _defaultSize = default;
-    [SerializeField] private Vector2 _minimumSize = new(480f, 260f);
+    [SerializeField] private Vector2 _minimumSize = new(400f, 240f);
     [SerializeField] private Vector2 _maximumSize = new(1800f, 1100f);
 
     private ContractUIState _state = new();
@@ -239,8 +240,10 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
         {
             normalized.Size = _defaultSize;
         }
-        else if (Mathf.Approximately(normalized.Size.x, LegacyDefaultSize.x) &&
-                 Mathf.Approximately(normalized.Size.y, LegacyDefaultSize.y))
+        else if ((Mathf.Approximately(normalized.Size.x, LegacyDefaultSize.x) &&
+                  Mathf.Approximately(normalized.Size.y, LegacyDefaultSize.y)) ||
+                 (Mathf.Approximately(normalized.Size.x, PreviousCompactDefaultSize.x) &&
+                  Mathf.Approximately(normalized.Size.y, PreviousCompactDefaultSize.y)))
         {
             normalized.Size = _defaultSize;
         }

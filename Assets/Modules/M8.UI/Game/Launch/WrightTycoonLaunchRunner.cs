@@ -1278,7 +1278,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _selectedSavedEngineIndex = i;
             }
 
-            GUILayout.Label(_savedEngines[i].Name);
+            GUILayout.Label(BuildEngineDisplayName(_savedEngines[i].Name, _savedEngines[i].Definition.EngineType, _savedEngines[i].Parameters));
             if (GUILayout.Button("Load", GUILayout.Width(60f)))
             {
                 LoadSavedEngine(i);
@@ -1406,7 +1406,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _selectedSavedEngineIndex = 0;
         }
 
-        var savedLabels = _savedEngines.Select(e => $"{e.Name} | {e.Definition.DisplayName}").ToArray();
+        var savedLabels = _savedEngines.Select(e => BuildEngineDisplayName(e.Name, e.Definition.EngineType, e.Parameters)).ToArray();
         _selectedSavedEngineIndex = DrawListSelector("Assigned Engine", _selectedSavedEngineIndex, savedLabels);
 
         DrawSection("Family");
@@ -1443,7 +1443,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             var labels = _savedFamilies
                 .Select(saved =>
-                    $"{saved.Name} | {FormatUiInteger(saved.LockedEngineCount)} engines | {saved.LockedStructureType} | {saved.LockedMaterialType} | {saved.WingPosition}")
+                    BuildFamilyDisplayName(
+                        saved.Name,
+                        saved.LockedEngineCount,
+                        saved.LockedMaterialType,
+                        saved.LockedStructureType))
                 .ToArray();
             _selectedSavedFamilyIndex = DrawListSelector("Select Saved Family", _selectedSavedFamilyIndex < 0 ? 0 : _selectedSavedFamilyIndex, labels);
 
@@ -1472,9 +1476,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        DrawSection("Variant");
-        _typeName = DrawText("Variant Name", _typeName);
-        GUILayout.Label($"Variant ID (auto): {BuildTypeId()}");
+        DrawSection("Type");
+        _typeName = BuildTypeDisplayName();
+        GUILayout.Label($"Type Name (auto): {_typeName}");
+        GUILayout.Label($"Type ID (auto): {BuildTypeId()}");
         _selectedAircraftCategory = DrawAircraftCategorySelector("Aircraft Category", _selectedAircraftCategory);
         _typeCrewCount = DrawIntSlider(
             "Crew Members",
@@ -1516,7 +1521,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "0");
 
         GUILayout.BeginHorizontal();
-        if (GUILayout.Button("Reset Variant", GUILayout.Height(28f)))
+        if (GUILayout.Button("Reset Type", GUILayout.Height(28f)))
         {
             SyncTypeAirframeFromBase();
         }
@@ -3430,6 +3435,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var name = string.IsNullOrWhiteSpace(_familyName)
             ? $"Family {_savedFamilies.Count + 1}"
             : _familyName.Trim();
+        var familyDisplayName = BuildFamilyDisplayName(name, _lockedEngineCount, _lockedMaterial, _lockedStructure);
 
         var familyId = BuildFamilyId();
         _savedFamilies.Add(new SavedFamilyDesign(
@@ -3444,13 +3450,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         RebuildAircraftPreview();
         if (_aircraftPreview is not null)
         {
-            RegisterFamilyResearchProposal(familyId, name, _aircraftPreview);
+            RegisterFamilyResearchProposal(familyId, familyDisplayName, _aircraftPreview);
             _factoryActionMessage =
-                $"Saved family '{name}'. Family research proposal added and awaits approval/completion.";
+                $"Saved family '{familyDisplayName}'. Family research proposal added and awaits approval/completion.";
             return;
         }
 
-        _factoryActionMessage = $"Saved family '{name}'.";
+        _factoryActionMessage = $"Saved family '{familyDisplayName}'.";
     }
 
     private void LoadSavedFamily(int index)
@@ -3470,7 +3476,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _baseAirframeParameters.StructureType = saved.LockedStructureType;
         _baseAirframeParameters.MaterialType = saved.LockedMaterialType;
         _selectedSavedFamilyIndex = index;
-        _factoryActionMessage = $"Loaded family '{saved.Name}'.";
+        _factoryActionMessage = $"Loaded family '{BuildFamilyDisplayName(saved.Name, saved.LockedEngineCount, saved.LockedMaterialType, saved.LockedStructureType)}'.";
     }
 
     private void ResetFamilyConfig()
@@ -3517,15 +3523,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
+        var engineDisplayName = BuildEngineDisplayName(savedDesign.Name, savedDesign.Definition.EngineType, savedDesign.Parameters);
         var points = GetResearchModifierPoints(ResearchSubjectType.Engine, savedDesign.ResearchId);
         var quote = _researchCalculator.CalculateEngineQuote(engineSnapshot, points);
         _researchBoard.UpsertProposal(
             ResearchSubjectType.Engine,
             savedDesign.ResearchId,
-            savedDesign.Name,
+            engineDisplayName,
             quote);
         _researchActionMessage =
-            $"Engine '{savedDesign.Name}' submitted for approval: {FormatCurrency(quote.ResearchCost)} / {FormatUiInteger(quote.ResearchTimeMonths)} months.";
+            $"Engine '{engineDisplayName}' submitted for approval: {FormatCurrency(quote.ResearchCost)} / {FormatUiInteger(quote.ResearchTimeMonths)} months.";
     }
 
     private void RegisterFamilyResearchProposal(string familyId, string familyName, Aircraft aircraft)
@@ -3930,7 +3937,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return new AircraftFamilyDefinition
         {
             Id = BuildFamilyId(),
-            DisplayName = SanitizeName(_familyName, "Player Family"),
+            DisplayName = BuildFamilyDisplayName(_familyName, _lockedEngineCount, _lockedMaterial, _lockedStructure),
             EngineDefinitionId = saved.Definition.Id,
             AirframeDefinitionId = _airframeDefinitions[_selectedAirframeDefinitionIndex].Id,
             LockedEngineType = saved.Definition.EngineType,
@@ -3952,7 +3959,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             Id = BuildTypeId(),
             FamilyId = familyId,
-            DisplayName = SanitizeName(_typeName, "Player Variant"),
+            DisplayName = BuildTypeDisplayName(),
             RequiredLineToolLevel = 1,
             EngineDelta = new EngineParameterDelta(),
             AirframeDelta = BuildAirframeDeltaFromType(),
@@ -5083,7 +5090,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private string BuildFamilyId() => BuildNamedId("fam", _familyName, "player");
 
-    private string BuildTypeId() => BuildNamedId("type", _typeName, "player");
+    private string BuildTypeId() => BuildNamedId("type", _selectedAircraftCategory.ToString(), "player");
 
     private static string BuildNamedId(string prefix, string name, string fallbackSuffix)
     {
@@ -5107,6 +5114,33 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     }
 
     private static string SanitizeName(string value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+
+    private string BuildTypeDisplayName() => AircraftCategoryCatalog.GetProfile(_selectedAircraftCategory).DisplayName;
+
+    private static string BuildFamilyDisplayName(string baseName, int engineCount, MaterialType materialType, StructureType structureType) =>
+        $"{SanitizeName(baseName, "Player Family")} | {FormatUiInteger(engineCount)} engines | {GetMaterialDisplayName(materialType)} | {structureType}";
+
+    private static string BuildEngineDisplayName(string baseName, EngineType engineType, EngineParameters parameters) =>
+        $"{SanitizeName(baseName, "Prototype Engine")} | {BuildEngineDescriptor(engineType, parameters)}";
+
+    private static string BuildEngineDescriptor(EngineType engineType, EngineParameters parameters)
+    {
+        if (IsJetFamily(engineType))
+        {
+            return $"{engineType} {FormatUiNumber(parameters.TurbineDiameterMeters * 100d, "0")} cm";
+        }
+
+        return $"{engineType} {FormatUiInteger(parameters.CylinderCount)}c";
+    }
+
+    private static string GetMaterialDisplayName(MaterialType materialType) =>
+        materialType switch
+        {
+            MaterialType.WoodFabric => "Wood",
+            MaterialType.Aluminum => "Aluminum",
+            MaterialType.Composite => "Composite",
+            _ => materialType.ToString(),
+        };
 
     private static string FormatSimulationDate(SimulationDate date)
     {
