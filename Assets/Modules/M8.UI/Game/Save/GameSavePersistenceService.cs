@@ -69,6 +69,26 @@ public sealed class GameSavePersistenceService
         return ordered;
     }
 
+    public bool TryGetContinueEntry(out GameSaveSlotEntry? entry)
+    {
+        EnsureLoaded();
+
+        if (!string.IsNullOrWhiteSpace(_collection.LastPlayedSaveId))
+        {
+            entry = _collection.Saves.FirstOrDefault(item =>
+                string.Equals(item.Id, _collection.LastPlayedSaveId, StringComparison.Ordinal));
+            if (entry is not null)
+            {
+                return true;
+            }
+        }
+
+        entry = _collection.Saves
+            .OrderByDescending(item => item.CreatedAtUnixMilliseconds)
+            .FirstOrDefault();
+        return entry is not null;
+    }
+
     public GameSaveSlotEntry CreateManualSave(string slotName, int gameMonth, string companyName, string payloadJson)
     {
         return CreateSaveInternal(SaveSlotType.Manual, slotName, gameMonth, companyName, payloadJson);
@@ -96,6 +116,31 @@ public sealed class GameSavePersistenceService
         return entry is not null;
     }
 
+    public bool MarkAsLastPlayed(string id)
+    {
+        EnsureLoaded();
+
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return false;
+        }
+
+        var entry = _collection.Saves.FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.Ordinal));
+        if (entry is null)
+        {
+            return false;
+        }
+
+        if (string.Equals(_collection.LastPlayedSaveId, entry.Id, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        _collection.LastPlayedSaveId = entry.Id;
+        SaveToDisk();
+        return true;
+    }
+
     private GameSaveSlotEntry CreateSaveInternal(SaveSlotType type, string slotName, int gameMonth, string companyName, string payloadJson)
     {
         EnsureLoaded();
@@ -114,6 +159,7 @@ public sealed class GameSavePersistenceService
         };
 
         _collection.Saves.Add(entry);
+        _collection.LastPlayedSaveId = entry.Id;
         SaveToDisk();
         return entry;
     }
@@ -138,6 +184,11 @@ public sealed class GameSavePersistenceService
 
         for (var index = 0; index < removeCount; index++)
         {
+            if (string.Equals(_collection.LastPlayedSaveId, autos[index].Id, StringComparison.Ordinal))
+            {
+                _collection.LastPlayedSaveId = string.Empty;
+            }
+
             _collection.Saves.Remove(autos[index]);
         }
     }
@@ -210,6 +261,8 @@ public sealed class GameSavePersistenceService
 
     private sealed class GameSaveCollection
     {
+        public string LastPlayedSaveId { get; set; } = string.Empty;
+
         public List<GameSaveSlotEntry> Saves { get; set; } = new();
     }
 }

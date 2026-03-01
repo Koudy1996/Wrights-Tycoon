@@ -148,6 +148,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const int SavePayloadVersion = 1;
 
     private readonly JsonSerializerSettings _saveJsonSettings = CreateSaveJsonSettings();
+    private static readonly ResolutionOption[] CommonResolutionOptions =
+    {
+        new(1280, 720),
+        new(1280, 800),
+        new(1366, 768),
+        new(1440, 900),
+        new(1600, 900),
+        new(1680, 1050),
+        new(1920, 1080),
+        new(1920, 1200),
+        new(2560, 1440),
+        new(2560, 1600),
+        new(2880, 1800),
+        new(3200, 1800),
+        new(3840, 2160),
+    };
 
     private GameSavePersistenceService? _savePersistence;
     private WrightTycoonBuildManifest _buildManifest = new();
@@ -156,6 +172,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private Vector2 _loadMenuScroll;
     private string _saveActionMessage = string.Empty;
     private string _playerCompanyName = "Player Company";
+    private readonly List<ResolutionOption> _availableResolutionOptions = new();
+    private string[] _availableResolutionLabels = Array.Empty<string>();
+    private int _selectedResolutionOptionIndex;
+    private string _optionsActionMessage = string.Empty;
 
     private void Awake()
     {
@@ -194,6 +214,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (_runtimeScreen == RuntimeScreen.LoadMenu)
         {
             DrawLoadMenuScreen(virtualScreenSize);
+            return;
+        }
+
+        if (_runtimeScreen == RuntimeScreen.OptionsMenu)
+        {
+            DrawOptionsScreen(virtualScreenSize);
             return;
         }
 
@@ -479,12 +505,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawIntroBackground(virtualScreenSize);
 
         var panelWidth = Mathf.Min(560f, virtualScreenSize.x - 40f);
-        var panelHeight = Mathf.Min(380f, virtualScreenSize.y - 40f);
+        var panelHeight = Mathf.Min(496f, virtualScreenSize.y - 40f);
         var panelRect = new Rect(
             (virtualScreenSize.x - panelWidth) * 0.5f,
             (virtualScreenSize.y - panelHeight) * 0.5f,
             panelWidth,
             panelHeight);
+
+        var hasContinueSave = _savePersistence is not null && _savePersistence.TryGetContinueEntry(out _);
 
         GUILayout.BeginArea(panelRect, GUI.skin.box);
         GUILayout.Label("Wright Tycoon");
@@ -499,6 +527,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.Space(10f);
 
+        var previousEnabled = GUI.enabled;
+        GUI.enabled = hasContinueSave;
+        if (GUILayout.Button("Continue", GUILayout.Height(44f)))
+        {
+            ContinueLastPlayedSave();
+        }
+
+        GUI.enabled = previousEnabled;
+
         if (GUILayout.Button("New Game", GUILayout.Height(44f)))
         {
             StartNewGameFromMenu();
@@ -507,6 +544,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (GUILayout.Button("Load Game", GUILayout.Height(44f)))
         {
             _runtimeScreen = RuntimeScreen.LoadMenu;
+        }
+
+        if (GUILayout.Button("Options", GUILayout.Height(44f)))
+        {
+            OpenOptionsMenu();
         }
 
         if (GUILayout.Button("Exit", GUILayout.Height(44f)))
@@ -518,6 +560,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             GUILayout.Space(8f);
             DrawError("Initialization failed. Use Retry Initialization in gameplay view or fix project data paths.");
+        }
+        else if (!hasContinueSave)
+        {
+            GUILayout.Space(8f);
+            GUILayout.Label("No save available to continue.");
         }
 
         GUILayout.EndArea();
@@ -618,6 +665,174 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.EndScrollView();
         GUILayout.EndArea();
+    }
+
+    private void DrawOptionsScreen(Vector2 virtualScreenSize)
+    {
+        DrawIntroBackground(virtualScreenSize);
+        if (_availableResolutionLabels.Length == 0)
+        {
+            RefreshResolutionOptions();
+        }
+
+        var panelWidth = Mathf.Min(760f, virtualScreenSize.x - 40f);
+        var panelHeight = Mathf.Min(620f, virtualScreenSize.y - 40f);
+        var panelRect = new Rect(
+            (virtualScreenSize.x - panelWidth) * 0.5f,
+            (virtualScreenSize.y - panelHeight) * 0.5f,
+            panelWidth,
+            panelHeight);
+
+        GUILayout.BeginArea(panelRect, GUI.skin.box);
+        GUILayout.Label("Options");
+        GUILayout.Space(4f);
+        GUILayout.Label($"Current Resolution: {Screen.width} x {Screen.height}");
+        GUILayout.Label("Select a resolution and apply it. Text stays at 16 px or larger.");
+        GUILayout.Space(10f);
+
+        if (_availableResolutionLabels.Length > 0)
+        {
+            var columns = _availableResolutionLabels.Length >= 8 ? 2 : 1;
+            _selectedResolutionOptionIndex = GUILayout.SelectionGrid(
+                Mathf.Clamp(_selectedResolutionOptionIndex, 0, _availableResolutionLabels.Length - 1),
+                _availableResolutionLabels,
+                columns);
+        }
+        else
+        {
+            GUILayout.Label("No supported resolutions were detected.");
+        }
+
+        GUILayout.Space(12f);
+
+        if (GUILayout.Button("Apply Resolution", GUILayout.Height(44f)))
+        {
+            ApplySelectedResolution();
+        }
+
+        if (GUILayout.Button("Back", GUILayout.Height(44f)))
+        {
+            _runtimeScreen = RuntimeScreen.Intro;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_optionsActionMessage))
+        {
+            GUILayout.Space(10f);
+            GUILayout.Label(_optionsActionMessage);
+        }
+
+        if (Application.isEditor)
+        {
+            GUILayout.Space(8f);
+            GUILayout.Label("In the Unity Editor, resolution requests may not change the Game view size exactly.");
+        }
+
+        GUILayout.EndArea();
+    }
+
+    private void OpenOptionsMenu()
+    {
+        RefreshResolutionOptions();
+        _optionsActionMessage = string.Empty;
+        _runtimeScreen = RuntimeScreen.OptionsMenu;
+    }
+
+    private void RefreshResolutionOptions()
+    {
+        var displayWidth = Math.Max(Screen.currentResolution.width, Screen.width);
+        var displayHeight = Math.Max(Screen.currentResolution.height, Screen.height);
+
+        _availableResolutionOptions.Clear();
+        for (var index = 0; index < CommonResolutionOptions.Length; index++)
+        {
+            var option = CommonResolutionOptions[index];
+            if (option.Width > displayWidth || option.Height > displayHeight)
+            {
+                continue;
+            }
+
+            if (_availableResolutionOptions.Any(existing => existing.Width == option.Width && existing.Height == option.Height))
+            {
+                continue;
+            }
+
+            _availableResolutionOptions.Add(option);
+        }
+
+        if (!_availableResolutionOptions.Any(option => option.Width == Screen.width && option.Height == Screen.height))
+        {
+            _availableResolutionOptions.Add(new ResolutionOption(Screen.width, Screen.height));
+        }
+
+        _availableResolutionOptions.Sort((left, right) =>
+        {
+            var areaCompare = (left.Width * left.Height).CompareTo(right.Width * right.Height);
+            if (areaCompare != 0)
+            {
+                return areaCompare;
+            }
+
+            var widthCompare = left.Width.CompareTo(right.Width);
+            return widthCompare != 0 ? widthCompare : left.Height.CompareTo(right.Height);
+        });
+
+        _availableResolutionLabels = _availableResolutionOptions
+            .Select(option => option.Label)
+            .ToArray();
+
+        _selectedResolutionOptionIndex = GetClosestResolutionOptionIndex(Screen.width, Screen.height);
+    }
+
+    private int GetClosestResolutionOptionIndex(int width, int height)
+    {
+        if (_availableResolutionOptions.Count == 0)
+        {
+            return 0;
+        }
+
+        var bestIndex = 0;
+        var bestScore = long.MaxValue;
+
+        for (var index = 0; index < _availableResolutionOptions.Count; index++)
+        {
+            var option = _availableResolutionOptions[index];
+            var widthDelta = Math.Abs(option.Width - width);
+            var heightDelta = Math.Abs(option.Height - height);
+            var score = (long)widthDelta + heightDelta;
+            if (score >= bestScore)
+            {
+                continue;
+            }
+
+            bestScore = score;
+            bestIndex = index;
+        }
+
+        return bestIndex;
+    }
+
+    private void ApplySelectedResolution()
+    {
+        if (_availableResolutionOptions.Count == 0)
+        {
+            _optionsActionMessage = "No resolution options are available.";
+            return;
+        }
+
+        var index = Mathf.Clamp(_selectedResolutionOptionIndex, 0, _availableResolutionOptions.Count - 1);
+        var option = _availableResolutionOptions[index];
+
+        try
+        {
+            Screen.SetResolution(option.Width, option.Height, Screen.fullScreenMode);
+            _optionsActionMessage = $"Requested resolution: {option.Label}";
+            _selectedResolutionOptionIndex = index;
+        }
+        catch (Exception ex)
+        {
+            _optionsActionMessage = $"Resolution change failed: {ex.Message}";
+            Debug.LogError(ex);
+        }
     }
 
     private void DrawIntroBackground(Vector2 virtualScreenSize)
@@ -726,6 +941,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return $"{FormatSimulationDate(_currentDate)} - {company}";
     }
 
+    private void ContinueLastPlayedSave()
+    {
+        if (_savePersistence is null || !_savePersistence.TryGetContinueEntry(out var entry) || entry is null)
+        {
+            _saveActionMessage = "Continue failed: no save available.";
+            return;
+        }
+
+        LoadFromSaveEntry(entry);
+    }
+
     private void LoadFromSaveEntry(GameSaveSlotEntry entry)
     {
         try
@@ -745,6 +971,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
 
             loadGameState(payload);
+            _savePersistence?.MarkAsLastPlayed(entry.Id);
             _runtimeScreen = RuntimeScreen.Gameplay;
             _saveActionMessage = $"Loaded: {entry.SlotName} (Created: {entry.CreatedAtIso})";
             Debug.Log($"[Save] Loaded save: {entry.Id}");
@@ -5783,7 +6010,23 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         Intro = 0,
         LoadMenu = 1,
-        Gameplay = 2,
+        OptionsMenu = 2,
+        Gameplay = 3,
+    }
+
+    private readonly struct ResolutionOption
+    {
+        public ResolutionOption(int width, int height)
+        {
+            Width = width;
+            Height = height;
+        }
+
+        public int Width { get; }
+
+        public int Height { get; }
+
+        public string Label => $"{Width} x {Height}";
     }
 
     private sealed class RunnerGameSavePayload
