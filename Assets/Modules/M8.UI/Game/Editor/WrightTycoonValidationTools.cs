@@ -26,6 +26,9 @@ public static class WrightTycoonValidationTools
         var saveService = new GameSavePersistenceService(savePath);
         saveService.CreateManualSave("Validation Save", 0, "Validation Co", "{}");
         var saveCreated = File.Exists(savePath);
+        var saveRoundTripLoaded = new GameSavePersistenceService(savePath)
+            .GetOrderedForLoadMenu()
+            .Count == 1;
 
         if (File.Exists(savePath))
         {
@@ -57,10 +60,10 @@ public static class WrightTycoonValidationTools
         var logsRecreated = Directory.Exists(logsDirectory)
             && Directory.EnumerateFiles(logsDirectory).Any();
 
-        if (!recreatedRoot || !saveCreated || !emptyAfterSaveDelete || !generatedAssetRecreated || !logsRecreated)
+        if (!recreatedRoot || !saveCreated || !saveRoundTripLoaded || !emptyAfterSaveDelete || !generatedAssetRecreated || !logsRecreated)
         {
             throw new InvalidOperationException(
-                $"Runtime data validation failed. Root={recreatedRoot}, SaveCreated={saveCreated}, EmptyAfterDelete={emptyAfterSaveDelete}, GeneratedAssets={generatedAssetRecreated}, Logs={logsRecreated}.");
+                $"Runtime data validation failed. Root={recreatedRoot}, SaveCreated={saveCreated}, SaveRoundTripLoaded={saveRoundTripLoaded}, EmptyAfterDelete={emptyAfterSaveDelete}, GeneratedAssets={generatedAssetRecreated}, Logs={logsRecreated}.");
         }
 
         Debug.Log(

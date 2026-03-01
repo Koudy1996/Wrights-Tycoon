@@ -1030,7 +1030,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             ContractSpecificationFilter = _contractSpecificationFilter,
             ContractQuantityFilterMin = _contractQuantityFilterMin,
             ContractQuantityFilterMax = _contractQuantityFilterMax,
-            GovernmentContractNotebookState = CloneGovernmentContractNotebookState(_governmentContractNotebookState),
+            GovernmentContractNotebookState = CreateNotebookWindowSaveState(_governmentContractNotebookState),
             EngineParameters = _engineParameters.Clone(),
             BaseAirframeParameters = _baseAirframeParameters.Clone(),
             ContractActionMessage = _contractActionMessage,
@@ -1218,7 +1218,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _contractSpecificationFilter = data.ContractSpecificationFilter;
         _contractQuantityFilterMin = Mathf.Clamp(data.ContractQuantityFilterMin, 5, 500);
         _contractQuantityFilterMax = Mathf.Clamp(data.ContractQuantityFilterMax, 5, 500);
-        _governmentContractNotebookState = CloneGovernmentContractNotebookState(data.GovernmentContractNotebookState);
+        _governmentContractNotebookState = ReadNotebookWindowSaveState(data.GovernmentContractNotebookState);
         ApplyGovernmentContractNotebookState();
 
         if (data.EngineParameters is not null)
@@ -2351,6 +2351,41 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             Position = source.Position,
             Size = size,
         };
+    }
+
+    private static NotebookWindowSaveState CreateNotebookWindowSaveState(ContractUIState? state)
+    {
+        var normalized = CloneGovernmentContractNotebookState(state);
+        return new NotebookWindowSaveState
+        {
+            IsOpen = normalized.IsOpen,
+            PositionX = normalized.Position.x,
+            PositionY = normalized.Position.y,
+            SizeX = normalized.Size.x,
+            SizeY = normalized.Size.y,
+        };
+    }
+
+    private static ContractUIState ReadNotebookWindowSaveState(NotebookWindowSaveState? state)
+    {
+        if (state is null)
+        {
+            return CreateDefaultGovernmentContractNotebookState();
+        }
+
+        var position = new Vector2(
+            state.Position?.X ?? state.PositionX,
+            state.Position?.Y ?? state.PositionY);
+        var size = new Vector2(
+            state.Size?.X ?? state.SizeX,
+            state.Size?.Y ?? state.SizeY);
+
+        return CloneGovernmentContractNotebookState(new ContractUIState
+        {
+            IsOpen = state.IsOpen,
+            Position = position,
+            Size = size,
+        });
     }
 
     private void EnsureGovernmentContractNotebookWindow()
@@ -6118,7 +6153,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public int ContractQuantityFilterMax { get; set; }
 
-        public ContractUIState GovernmentContractNotebookState { get; set; } = new();
+        public NotebookWindowSaveState GovernmentContractNotebookState { get; set; } = new();
 
         public EngineParameters EngineParameters { get; set; } = new();
 
@@ -6149,6 +6184,30 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public string? FactoryActionMessage { get; set; }
 
         public string? ResearchActionMessage { get; set; }
+    }
+
+    private sealed class NotebookWindowSaveState
+    {
+        public bool IsOpen { get; set; }
+
+        public float PositionX { get; set; }
+
+        public float PositionY { get; set; }
+
+        public float SizeX { get; set; }
+
+        public float SizeY { get; set; }
+
+        public LegacyVector2State? Position { get; set; }
+
+        public LegacyVector2State? Size { get; set; }
+    }
+
+    private sealed class LegacyVector2State
+    {
+        public float X { get; set; }
+
+        public float Y { get; set; }
     }
 
     private sealed class SavedEngineDesignState
