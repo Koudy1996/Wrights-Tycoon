@@ -182,19 +182,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void OnGUI()
     {
+        using var guiScale = WrightTycoonGuiScaling.Begin();
+        var virtualScreenSize = guiScale.VirtualScreenSize;
+
         if (_runtimeScreen == RuntimeScreen.Intro)
         {
-            DrawIntroScreen();
+            DrawIntroScreen(virtualScreenSize);
             return;
         }
 
         if (_runtimeScreen == RuntimeScreen.LoadMenu)
         {
-            DrawLoadMenuScreen();
+            DrawLoadMenuScreen(virtualScreenSize);
             return;
         }
 
-        var root = new Rect(10f, 10f, Screen.width - 20f, Screen.height - 20f);
+        var root = new Rect(10f, 10f, virtualScreenSize.x - 20f, virtualScreenSize.y - 20f);
         DrawRect(root, new Color(0.08f, 0.12f, 0.18f, 0.98f));
 
         GUILayout.BeginArea(root);
@@ -471,15 +474,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _buildManifest = WrightTycoonBuildManifestService.LoadOrCreateRuntimeManifest();
     }
 
-    private void DrawIntroScreen()
+    private void DrawIntroScreen(Vector2 virtualScreenSize)
     {
-        DrawIntroBackground();
+        DrawIntroBackground(virtualScreenSize);
 
-        var panelWidth = Mathf.Min(560f, Screen.width - 40f);
-        var panelHeight = Mathf.Min(380f, Screen.height - 40f);
+        var panelWidth = Mathf.Min(560f, virtualScreenSize.x - 40f);
+        var panelHeight = Mathf.Min(380f, virtualScreenSize.y - 40f);
         var panelRect = new Rect(
-            (Screen.width - panelWidth) * 0.5f,
-            (Screen.height - panelHeight) * 0.5f,
+            (virtualScreenSize.x - panelWidth) * 0.5f,
+            (virtualScreenSize.y - panelHeight) * 0.5f,
             panelWidth,
             panelHeight);
 
@@ -555,11 +558,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Space(8f);
     }
 
-    private void DrawLoadMenuScreen()
+    private void DrawLoadMenuScreen(Vector2 virtualScreenSize)
     {
-        DrawIntroBackground();
+        DrawIntroBackground(virtualScreenSize);
 
-        var root = new Rect(20f, 20f, Screen.width - 40f, Screen.height - 40f);
+        var root = new Rect(20f, 20f, virtualScreenSize.x - 40f, virtualScreenSize.y - 40f);
         DrawRect(root, new Color(0.06f, 0.09f, 0.14f, 0.9f));
 
         GUILayout.BeginArea(root);
@@ -617,9 +620,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.EndArea();
     }
 
-    private void DrawIntroBackground()
+    private void DrawIntroBackground(Vector2 virtualScreenSize)
     {
-        var full = new Rect(0f, 0f, Screen.width, Screen.height);
+        var full = new Rect(0f, 0f, virtualScreenSize.x, virtualScreenSize.y);
 
         if (_introBackgroundTexture is not null)
         {

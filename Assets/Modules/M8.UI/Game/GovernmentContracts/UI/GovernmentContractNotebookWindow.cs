@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using WrightTycoon.Game.UI;
 
 namespace WrightTycoon.Game.GovernmentContracts;
 
@@ -20,7 +21,7 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
     private Rect _windowRect;
     private Vector2 _contentScroll;
     private bool _isResizing;
-    private Vector2 _resizeStartMouseScreen;
+    private Vector2 _resizeStartMouseVirtual;
     private Vector2 _resizeStartSize;
     private int _windowId;
     private string _title = "Government Contract Notebook";
@@ -137,15 +138,18 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
             return;
         }
 
-        ClampWindowToScreen();
+        var uiScale = WrightTycoonGuiScaling.CalculateScale();
+        var virtualScreenSize = WrightTycoonGuiScaling.GetVirtualScreenSize(uiScale);
+        ClampWindowToScreen(virtualScreenSize);
 
         var originalGuiColor = GUI.color;
         GUI.color = new Color(originalGuiColor.r, originalGuiColor.g, originalGuiColor.b, WindowOpacity);
 
         try
         {
+            using var _ = new WrightTycoonGuiScaling.Scope(uiScale);
             _windowRect = GUI.Window(_windowId, _windowRect, DrawWindowContents, _title);
-            ClampWindowToScreen();
+            ClampWindowToScreen(virtualScreenSize);
             _state = FromWindowRect(_windowRect, _state.IsOpen);
         }
         finally
@@ -190,10 +194,12 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
             return;
         }
 
-        if (currentEvent.type == EventType.MouseDown && resizeHandleRect.Contains(currentEvent.mousePosition))
+        var virtualMousePosition = WrightTycoonGuiScaling.GetVirtualMousePosition(WrightTycoonGuiScaling.CalculateScale());
+
+        if (currentEvent.type == EventType.MouseDown && resizeHandleRect.Contains(virtualMousePosition))
         {
             _isResizing = true;
-            _resizeStartMouseScreen = GUIUtility.GUIToScreenPoint(currentEvent.mousePosition);
+            _resizeStartMouseVirtual = virtualMousePosition;
             _resizeStartSize = new Vector2(_windowRect.width, _windowRect.height);
             currentEvent.Use();
             return;
@@ -201,8 +207,7 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
 
         if (_isResizing && currentEvent.type == EventType.MouseDrag)
         {
-            var currentMouseScreen = GUIUtility.GUIToScreenPoint(currentEvent.mousePosition);
-            var delta = currentMouseScreen - _resizeStartMouseScreen;
+            var delta = virtualMousePosition - _resizeStartMouseVirtual;
             _windowRect.width = Mathf.Clamp(_resizeStartSize.x + delta.x, _minimumSize.x, _maximumSize.x);
             _windowRect.height = Mathf.Clamp(_resizeStartSize.y + delta.y, _minimumSize.y, _maximumSize.y);
             currentEvent.Use();
@@ -216,13 +221,13 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
         }
     }
 
-    private void ClampWindowToScreen()
+    private void ClampWindowToScreen(Vector2 virtualScreenSize)
     {
-        _windowRect.width = Mathf.Clamp(_windowRect.width, _minimumSize.x, Mathf.Min(_maximumSize.x, Screen.width));
-        _windowRect.height = Mathf.Clamp(_windowRect.height, _minimumSize.y, Mathf.Min(_maximumSize.y, Screen.height));
+        _windowRect.width = Mathf.Clamp(_windowRect.width, _minimumSize.x, Mathf.Min(_maximumSize.x, virtualScreenSize.x));
+        _windowRect.height = Mathf.Clamp(_windowRect.height, _minimumSize.y, Mathf.Min(_maximumSize.y, virtualScreenSize.y));
 
-        var maxX = Mathf.Max(0f, Screen.width - _windowRect.width);
-        var maxY = Mathf.Max(0f, Screen.height - _windowRect.height);
+        var maxX = Mathf.Max(0f, virtualScreenSize.x - _windowRect.width);
+        var maxY = Mathf.Max(0f, virtualScreenSize.y - _windowRect.height);
         _windowRect.x = Mathf.Clamp(_windowRect.x, 0f, maxX);
         _windowRect.y = Mathf.Clamp(_windowRect.y, 0f, maxY);
     }

@@ -19,6 +19,7 @@ public static class WrightTycoonBuildPipeline
     private const string MacOutputFolder = "Builds/Mac/Release";
     private const string WindowsExecutableName = "WrightTycoon.exe";
     private const string MacApplicationName = "WrightTycoon.app";
+    private const string MacArchiveFileName = "WrightTycoon-macOS-Release.tar.gz";
     private const string LegacyLaunchScenePath = "Assets/WrightTycoon/Scenes/WrightTycoonLaunch.unity";
 
     [MenuItem("WrightTycoon/Build/Windows Release")]
@@ -164,6 +165,10 @@ public static class WrightTycoonBuildPipeline
         {
             MoveWindowsDeveloperBackupOutOfRelease(buildFolder);
         }
+        else if (target == BuildTarget.StandaloneOSX)
+        {
+            CreateMacDistributionArchive(buildFolder);
+        }
     }
 
     private static WrightTycoonBuildManifest CreateBuildManifest(BuildTarget target)
@@ -307,5 +312,190 @@ public static class WrightTycoonBuildPipeline
 
         Directory.Move(source, target);
         Debug.Log($"[Build] Moved developer-only backup payload to: {target}");
+    }
+
+    private static void CreateMacDistributionArchive(string buildFolder)
+    {
+        var platformRoot = Directory.GetParent(buildFolder)?.FullName;
+        if (string.IsNullOrWhiteSpace(platformRoot))
+        {
+            return;
+        }
+
+        var archivePath = Path.Combine(platformRoot, MacArchiveFileName);
+        if (File.Exists(archivePath))
+        {
+            File.Delete(archivePath);
+        }
+
+        using var fileStream = File.Create(archivePath);
+        using var gzipStream = new System.IO.Compression.GZipStream(
+            fileStream,
+            System.IO.Compression.CompressionLevel.Optimal);
+
+        var buildDirectory = new DirectoryInfo(buildFolder);
+        var relativeRootPath = buildDirectory.Parent?.FullName ?? platformRoot;
+        WriteDirectoryEntry(gzipStream, buildDirectory, relativeRootPath);
+        gzipStream.Write(new byte[1024], 0, 1024);
+        Debug.Log($"[Build] Created macOS distribution archive: {archivePath}");
+    }
+
+    private static void WriteDirectoryEntry(Stream archiveStream, DirectoryInfo directory, string relativeRootPath)
+    {
+        var relativePath = Path.GetRelativePath(relativeRootPath, directory.FullName)
+            .Replace('\\', '/')
+            .TrimEnd('/') + "/";
+        WriteTarHeader(
+            archiveStream,
+            relativePath,
+            0,
+            0x1ED,
+            '5',
+            directory.LastWriteTimeUtc);
+
+        foreach (var childDirectory in directory.GetDirectories().OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            WriteDirectoryEntry(archiveStream, childDirectory, relativeRootPath);
+        }
+
+        foreach (var file in directory.GetFiles().OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            WriteFileEntry(archiveStream, file, relativeRootPath);
+        }
+    }
+
+    private static void WriteFileEntry(Stream archiveStream, FileInfo file, string relativeRootPath)
+    {
+        var relativePath = Path.GetRelativePath(relativeRootPath, file.FullName).Replace('\\', '/');
+        var mode = DetermineMacArchiveFileMode(relativePath);
+
+        WriteTarHeader(
+            archiveStream,
+            relativePath,
+            file.Length,
+            mode,
+            '0',
+            file.LastWriteTimeUtc);
+
+        using (var inputStream = file.OpenRead())
+        {
+            inputStream.CopyTo(archiveStream);
+        }
+
+        var padding = 512 - (file.Length % 512);
+        if (padding is > 0 and < 512)
+        {
+            archiveStream.Write(new byte[padding], 0, (int)padding);
+        }
+    }
+
+    private static int DetermineMacArchiveFileMode(string relativePath)
+    {
+        var normalizedPath = relativePath.Replace('\\', '/');
+        if (normalizedPath.IndexOf("/WrightTycoon.app/Contents/MacOS/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            normalizedPath.IndexOf("/WrightTycoon.app/Contents/Frameworks/", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return 0x1ED; // 0755
+        }
+
+        return 0x1A4; // 0644
+    }
+
+    private static void WriteTarHeader(
+        Stream archiveStream,
+        string entryPath,
+        long size,
+        int mode,
+        char typeFlag,
+        DateTime lastWriteTimeUtc)
+    {
+        var header = new byte[512];
+        var normalizedPath = entryPath.Replace('\\', '/');
+        WriteTarPath(header, normalizedPath);
+        WriteTarOctal(header, 100, 8, mode);
+        WriteTarOctal(header, 108, 8, 0);
+        WriteTarOctal(header, 116, 8, 0);
+        WriteTarOctal(header, 124, 12, size);
+        var unixTime = new DateTimeOffset(lastWriteTimeUtc).ToUnixTimeSeconds();
+        WriteTarOctal(header, 136, 12, unixTime);
+
+        for (var index = 148; index < 156; index++)
+        {
+            header[index] = (byte)' ';
+        }
+
+        header[156] = (byte)typeFlag;
+        WriteTarString(header, 257, 6, "ustar");
+        WriteTarString(header, 263, 2, "00");
+
+        var checksum = header.Sum(value => value);
+        WriteTarChecksum(header, checksum);
+        archiveStream.Write(header, 0, header.Length);
+    }
+
+    private static void WriteTarPath(byte[] header, string entryPath)
+    {
+        var pathBytes = Encoding.UTF8.GetBytes(entryPath);
+        if (pathBytes.Length <= 100)
+        {
+            WriteTarBytes(header, 0, 100, pathBytes);
+            return;
+        }
+
+        var splitIndex = entryPath.LastIndexOf('/');
+        while (splitIndex > 0)
+        {
+            var prefix = entryPath[..splitIndex];
+            var name = entryPath[(splitIndex + 1)..];
+            var prefixBytes = Encoding.UTF8.GetBytes(prefix);
+            var nameBytes = Encoding.UTF8.GetBytes(name);
+            if (prefixBytes.Length <= 155 && nameBytes.Length <= 100)
+            {
+                WriteTarBytes(header, 0, 100, nameBytes);
+                WriteTarBytes(header, 345, 155, prefixBytes);
+                return;
+            }
+
+            splitIndex = entryPath.LastIndexOf('/', splitIndex - 1);
+        }
+
+        throw new IOException($"Tar entry path is too long: {entryPath}");
+    }
+
+    private static void WriteTarOctal(byte[] header, int offset, int length, long value)
+    {
+        var width = length - 1;
+        var octal = Convert.ToString(value, 8);
+        if (octal.Length > width)
+        {
+            throw new IOException($"Tar field overflow for value {value}.");
+        }
+
+        var padded = octal.PadLeft(width, '0');
+        var bytes = Encoding.ASCII.GetBytes(padded);
+        var start = offset + width - bytes.Length;
+        WriteTarBytes(header, start, bytes.Length, bytes);
+        header[offset + length - 1] = 0;
+    }
+
+    private static void WriteTarChecksum(byte[] header, int checksum)
+    {
+        var octal = Convert.ToString(checksum, 8).PadLeft(6, '0');
+        var bytes = Encoding.ASCII.GetBytes(octal);
+        WriteTarBytes(header, 148, bytes.Length, bytes);
+        header[154] = 0;
+        header[155] = (byte)' ';
+    }
+
+    private static void WriteTarString(byte[] header, int offset, int length, string value)
+    {
+        var bytes = Encoding.ASCII.GetBytes(value);
+        WriteTarBytes(header, offset, length, bytes);
+    }
+
+    private static void WriteTarBytes(byte[] header, int offset, int length, byte[] bytes)
+    {
+        var count = Math.Min(length, bytes.Length);
+        Array.Copy(bytes, 0, header, offset, count);
     }
 }
