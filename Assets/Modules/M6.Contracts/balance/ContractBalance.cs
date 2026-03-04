@@ -87,6 +87,14 @@ public static class ContractBalance
     public const double CampaignPriceGlobalOilCrisis = 0.92d;
     public const double CampaignPriceSecondOilCrisis = 0.94d;
 
+    public const int CampaignBonusBatchKoreaMinContracts = 8;
+    public const int CampaignBonusBatchKoreaMaxContracts = 12;
+    public const int CampaignBonusBatchVietnamMinContracts = 10;
+    public const int CampaignBonusBatchVietnamMaxContracts = 14;
+    public const int CampaignBonusBatchCivilCopies = 1;
+    public const int CampaignBonusBatchMilitaryBaseCopies = 4;
+    public const int CampaignBonusBatchMilitaryMaxCopies = 12;
+
     public static readonly double[] SpeedRequirementAltitudesMeters = { 0d, 5000d, 10000d };
 
     public static readonly string[] CompanyPrefixes =
@@ -335,6 +343,69 @@ public static class ContractBalance
             default:
                 return false;
         }
+    }
+
+    public static bool TryResolveHistoricalCampaignBonusBatchRange(string? balanceKey, out int minContracts, out int maxContracts)
+    {
+        minContracts = 0;
+        maxContracts = 0;
+        if (string.IsNullOrWhiteSpace(balanceKey))
+        {
+            return false;
+        }
+
+        switch (balanceKey.Trim())
+        {
+            case "contract.event.korea_war.bonus_batch":
+                minContracts = CampaignBonusBatchKoreaMinContracts;
+                maxContracts = CampaignBonusBatchKoreaMaxContracts;
+                return true;
+            case "contract.event.vietnam_war.bonus_batch":
+                minContracts = CampaignBonusBatchVietnamMinContracts;
+                maxContracts = CampaignBonusBatchVietnamMaxContracts;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    public static AircraftCategory[] BuildBonusBatchRequestedCategories(double militaryWeightMultiplier)
+    {
+        if (double.IsNaN(militaryWeightMultiplier) || double.IsInfinity(militaryWeightMultiplier))
+        {
+            throw new ArgumentOutOfRangeException(nameof(militaryWeightMultiplier), "Military weight multiplier must be finite.");
+        }
+
+        var categories = new List<AircraftCategory>(capacity: 64);
+        var militaryCopies = (int)System.Math.Round(
+            CampaignBonusBatchMilitaryBaseCopies * System.Math.Max(0d, militaryWeightMultiplier),
+            MidpointRounding.AwayFromZero);
+        if (militaryCopies < 1)
+        {
+            militaryCopies = 1;
+        }
+        else if (militaryCopies > CampaignBonusBatchMilitaryMaxCopies)
+        {
+            militaryCopies = CampaignBonusBatchMilitaryMaxCopies;
+        }
+
+        for (var copyIndex = 0; copyIndex < militaryCopies; copyIndex++)
+        {
+            for (var militaryIndex = 0; militaryIndex < MilitaryRequestedCategories.Length; militaryIndex++)
+            {
+                categories.Add(MilitaryRequestedCategories[militaryIndex]);
+            }
+        }
+
+        for (var copyIndex = 0; copyIndex < CampaignBonusBatchCivilCopies; copyIndex++)
+        {
+            for (var civilIndex = 0; civilIndex < CivilRequestedCategories.Length; civilIndex++)
+            {
+                categories.Add(CivilRequestedCategories[civilIndex]);
+            }
+        }
+
+        return categories.ToArray();
     }
 
     private static bool ContainsCategory(AircraftCategory[] configuredCategories, AircraftCategory category)

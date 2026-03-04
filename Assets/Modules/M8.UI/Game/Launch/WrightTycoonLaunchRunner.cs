@@ -30,6 +30,7 @@ namespace WrightTycoon.Game.Launch;
 public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 {
     private const int FixedFactoryToolRequirementLevel = 1;
+    private const string HistoricalCampaignBonusContractBatchEffectType = "bonus_contract_batch";
 
     [Header("Default Definition IDs")]
     [SerializeField] private string _engineDefinitionId = "eng.radial.main";
@@ -4436,7 +4437,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         _currentDate = _currentDate.NextMonth();
         _elapsedMonths++;
-        ProcessHistoricalCampaignForCurrentDate();
+        var historicalCampaignBonusBatches = ProcessHistoricalCampaignForCurrentDate();
 
         if (_researchBoard is not null)
         {
@@ -4452,11 +4453,30 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             var canceledBefore = _contractBoard.CanceledContracts.Count;
             var generated = _contractBoard.AdvanceMonthAndGenerateContracts();
+            var generatedHistoricalBonusContracts = InjectHistoricalCampaignBonusContractsForCurrentMonth(historicalCampaignBonusBatches);
             _lastGeneratedContracts.Clear();
             _lastGeneratedContracts.AddRange(generated);
+            if (generatedHistoricalBonusContracts.Count > 0)
+            {
+                _lastGeneratedContracts.AddRange(generatedHistoricalBonusContracts);
+            }
+
             var canceledDelta = _contractBoard.CanceledContracts.Count - canceledBefore;
-            _contractActionMessage = $"Advanced to {FormatSimulationDate(_currentDate)}. Generated {FormatUiInteger(generated.Count)} contracts, canceled {FormatUiInteger(canceledDelta)}.";
-            LogGeneratedContractMix(generated);
+            var totalGeneratedContracts = generated.Count + generatedHistoricalBonusContracts.Count;
+            if (generatedHistoricalBonusContracts.Count > 0)
+            {
+                _contractActionMessage =
+                    $"Advanced to {FormatSimulationDate(_currentDate)}. Generated {FormatUiInteger(totalGeneratedContracts)} contracts " +
+                    $"({FormatUiInteger(generated.Count)} regular + {FormatUiInteger(generatedHistoricalBonusContracts.Count)} historical bonus), " +
+                    $"canceled {FormatUiInteger(canceledDelta)}.";
+            }
+            else
+            {
+                _contractActionMessage =
+                    $"Advanced to {FormatSimulationDate(_currentDate)}. Generated {FormatUiInteger(generated.Count)} contracts, canceled {FormatUiInteger(canceledDelta)}.";
+            }
+
+            LogGeneratedContractMix(_lastGeneratedContracts);
         }
 
         if (_governmentContractBoard is not null)
@@ -4795,17 +4815,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         throw new FileNotFoundException("Historical campaign JSON file was not found in StreamingAssets or Data/Campaign.");
     }
 
-    private void ProcessHistoricalCampaignForCurrentDate()
+    private IReadOnlyList<HistoricalCampaignBonusBatchRequest> ProcessHistoricalCampaignForCurrentDate()
     {
         if (_historicalCampaign is null)
         {
-            return;
+            return Array.Empty<HistoricalCampaignBonusBatchRequest>();
         }
 
         var result = _historicalCampaign.TryTrigger(_currentDate, _historicalCampaignState);
         if (!result.HasTriggeredEvent)
         {
-            return;
+            return Array.Empty<HistoricalCampaignBonusBatchRequest>();
         }
 
         var triggeredEvent = result.TriggeredEvent!;
@@ -4813,11 +4833,267 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var image = _historicalCampaignImageLoader.LoadForTitle(triggeredEvent.Title);
         _historicalCampaignPopupWindow.Show(triggeredEvent, image);
         Debug.Log($"[Campaign] Popup shown: {triggeredEvent.Id}");
+
+        var bonusBatchRequests = BuildHistoricalCampaignBonusBatchRequests(triggeredEvent);
+        if (bonusBatchRequests.Count > 0)
+        {
+            var totalBonusContracts = 0;
+            for (var index = 0; index < bonusBatchRequests.Count; index++)
+            {
+                totalBonusContracts += bonusBatchRequests[index].RequestedContracts;
+            }
+
+            Debug.Log(
+                $"[Campaign] Queued {bonusBatchRequests.Count} bonus contract batch(es), total requested contracts={totalBonusContracts}, event={triggeredEvent.Id}.");
+        }
+
         _campaignActionMessage =
             $"Historical event triggered: {triggeredEvent.Title} ({FormatSimulationDate(triggeredEvent.GetDate())}).";
         Debug.Log(
             $"[Campaign] Event fired: {triggeredEvent.Id} | {triggeredEvent.Title} | {triggeredEvent.Year:D4}-{triggeredEvent.Month:D2}");
         LogHistoricalCampaignContractModifiers();
+        return bonusBatchRequests;
+    }
+
+    private List<HistoricalCampaignBonusBatchRequest> BuildHistoricalCampaignBonusBatchRequests(HistoricalCampaignEventDefinition triggeredEvent)
+    {
+        var bonusBatchRequests = new List<HistoricalCampaignBonusBatchRequest>();
+        if (triggeredEvent.Effects is null || triggeredEvent.Effects.Count == 0)
+        {
+            return bonusBatchRequests;
+        }
+
+        var targetMonthIndex = _contractBoard is null
+            ? _elapsedMonths
+            : _contractBoard.CurrentMonthIndex + 1;
+        var militaryWeightMultiplier = ResolveHistoricalCampaignMilitaryWeightMultiplier();
+
+        for (var effectIndex = 0; effectIndex < triggeredEvent.Effects.Count; effectIndex++)
+        {
+            var effect = triggeredEvent.Effects[effectIndex];
+            if (effect is null)
+            {
+                continue;
+            }
+
+            if (!string.Equals(effect.Type, HistoricalCampaignBonusContractBatchEffectType, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!ContractBalance.TryResolveHistoricalCampaignBonusBatchRange(effect.BalanceKey, out var minContracts, out var maxContracts))
+            {
+                Debug.LogWarning(
+                    $"[Campaign] Bonus contract batch skipped for event '{triggeredEvent.Id}'. Unknown balance key '{effect.BalanceKey}'.");
+                continue;
+            }
+
+            var requestedContracts = ResolveDeterministicBonusContractCount(
+                minContracts,
+                maxContracts,
+                triggeredEvent.Id,
+                targetMonthIndex,
+                effectIndex);
+            if (requestedContracts <= 0)
+            {
+                continue;
+            }
+
+            bonusBatchRequests.Add(new HistoricalCampaignBonusBatchRequest(
+                triggeredEvent.Id,
+                triggeredEvent.Title,
+                effect.BalanceKey?.Trim() ?? string.Empty,
+                effectIndex,
+                targetMonthIndex,
+                requestedContracts,
+                militaryWeightMultiplier));
+        }
+
+        return bonusBatchRequests;
+    }
+
+    private IReadOnlyList<Contract> InjectHistoricalCampaignBonusContractsForCurrentMonth(
+        IReadOnlyList<HistoricalCampaignBonusBatchRequest> bonusBatchRequests)
+    {
+        if (_contractBoard is null || bonusBatchRequests is null || bonusBatchRequests.Count == 0)
+        {
+            return Array.Empty<Contract>();
+        }
+
+        var monthIndex = _contractBoard.CurrentMonthIndex;
+        var bonusContracts = new List<Contract>(capacity: 32);
+        for (var batchIndex = 0; batchIndex < bonusBatchRequests.Count; batchIndex++)
+        {
+            var request = bonusBatchRequests[batchIndex];
+            if (request.TargetMonthIndex != monthIndex)
+            {
+                Debug.LogWarning(
+                    $"[Campaign] Bonus batch target month mismatch for event '{request.EventId}'. " +
+                    $"Expected {request.TargetMonthIndex}, current board month is {monthIndex}. Skipping.");
+                continue;
+            }
+
+            var categories = ContractBalance.BuildBonusBatchRequestedCategories(request.MilitaryWeightMultiplier);
+            var options = new ContractGeneratorOptions
+            {
+                MinContractsPerMonth = request.RequestedContracts,
+                MaxContractsPerMonth = request.RequestedContracts,
+                RequestedCategories = categories,
+            };
+
+            var seed = ComputeHistoricalCampaignBonusSeed(request.EventId, monthIndex, request.EffectIndex);
+            var generator = new ContractGenerator(seed, options, _historicalCampaignContractModifierSource);
+            var generatedBatch = generator.GenerateMonthlyContracts(monthIndex);
+            var remappedBatch = RemapHistoricalCampaignBonusContractIds(
+                generatedBatch,
+                request,
+                monthIndex,
+                bonusContracts.Count);
+            bonusContracts.AddRange(remappedBatch);
+
+            Debug.Log(
+                $"[Campaign] Bonus batch generated: event={request.EventId}, title={request.EventTitle}, key={request.BalanceKey}, " +
+                $"requested={request.RequestedContracts}, produced={remappedBatch.Count}, militaryWeight={request.MilitaryWeightMultiplier:F3}, seed={seed}.");
+        }
+
+        if (bonusContracts.Count == 0)
+        {
+            return Array.Empty<Contract>();
+        }
+
+        var injected = _contractBoard.InjectGeneratedContractsForCurrentMonth(bonusContracts);
+        Debug.Log($"[Campaign] Injected {injected} historical bonus contract(s) for {FormatSimulationDate(_currentDate)}.");
+        return bonusContracts;
+    }
+
+    private static IReadOnlyList<Contract> RemapHistoricalCampaignBonusContractIds(
+        IReadOnlyList<Contract> generatedBatch,
+        HistoricalCampaignBonusBatchRequest request,
+        int monthIndex,
+        int sequenceOffset)
+    {
+        var remappedBatch = new List<Contract>(generatedBatch.Count);
+        for (var generatedIndex = 0; generatedIndex < generatedBatch.Count; generatedIndex++)
+        {
+            var source = generatedBatch[generatedIndex];
+            var remappedId = BuildHistoricalCampaignBonusContractId(
+                request.EventId,
+                monthIndex,
+                request.EffectIndex,
+                sequenceOffset + generatedIndex);
+            var remappedContract = new Contract(
+                remappedId,
+                source.CompanyName,
+                source.QuantityUnits,
+                source.DeadlineMonths,
+                CloneContractRequirements(source.Requirements),
+                source.CreatedMonthIndex,
+                source.UnitPrice,
+                source.EstimatedMinimumUnitCost,
+                source.AppliedMarkup);
+            remappedBatch.Add(remappedContract);
+        }
+
+        return remappedBatch;
+    }
+
+    private static ContractRequirements CloneContractRequirements(ContractRequirements requirements)
+    {
+        ContractSpeedRequirement? minimumSpeed = null;
+        if (requirements.MinimumSpeed.HasValue)
+        {
+            minimumSpeed = new ContractSpeedRequirement(
+                requirements.MinimumSpeed.Value.AltitudeMeters,
+                requirements.MinimumSpeed.Value.MinimumSpeedMetersPerSecond);
+        }
+
+        var clone = new ContractRequirements
+        {
+            RequiredCategory = requirements.RequiredCategory,
+            MinimumReliability = requirements.MinimumReliability,
+            MaximumTotalWeightKilograms = requirements.MaximumTotalWeightKilograms,
+            MinimumRangeKilometers = requirements.MinimumRangeKilometers,
+            MinimumSpeed = minimumSpeed,
+            MinimumPayloadKilograms = requirements.MinimumPayloadKilograms,
+            MinimumCrew = requirements.MinimumCrew,
+            MaximumRequiredRunwayLengthMeters = requirements.MaximumRequiredRunwayLengthMeters,
+        };
+        clone.Validate();
+        return clone;
+    }
+
+    private double ResolveHistoricalCampaignMilitaryWeightMultiplier()
+    {
+        if (_historicalCampaignContractModifierSource is null)
+        {
+            return 1d;
+        }
+
+        var militaryWeightMultiplier = _historicalCampaignContractModifierSource
+            .GetCurrentModifiers()
+            .MilitaryCategoryWeightMultiplier;
+        if (double.IsNaN(militaryWeightMultiplier)
+            || double.IsInfinity(militaryWeightMultiplier)
+            || militaryWeightMultiplier <= 0d)
+        {
+            return 1d;
+        }
+
+        return militaryWeightMultiplier;
+    }
+
+    private static int ResolveDeterministicBonusContractCount(
+        int minContracts,
+        int maxContracts,
+        string eventId,
+        int monthIndex,
+        int effectIndex)
+    {
+        if (minContracts > maxContracts)
+        {
+            (minContracts, maxContracts) = (maxContracts, minContracts);
+        }
+
+        if (minContracts == maxContracts)
+        {
+            return minContracts;
+        }
+
+        var range = maxContracts - minContracts + 1;
+        var seed = ComputeHistoricalCampaignBonusSeed(eventId, monthIndex, effectIndex);
+        return minContracts + (seed % range);
+    }
+
+    private static int ComputeHistoricalCampaignBonusSeed(string? eventId, int monthIndex, int effectIndex)
+    {
+        unchecked
+        {
+            uint hash = 2166136261;
+            var normalizedEventId = string.IsNullOrWhiteSpace(eventId)
+                ? "historical_event"
+                : eventId.Trim();
+            for (var index = 0; index < normalizedEventId.Length; index++)
+            {
+                hash ^= normalizedEventId[index];
+                hash *= 16777619;
+            }
+
+            hash ^= (uint)monthIndex;
+            hash *= 16777619;
+            hash ^= (uint)effectIndex;
+            hash *= 16777619;
+
+            var seed = (int)(hash & 0x7FFFFFFF);
+            return seed == 0 ? 1 : seed;
+        }
+    }
+
+    private static string BuildHistoricalCampaignBonusContractId(string eventId, int monthIndex, int effectIndex, int sequence)
+    {
+        var normalizedEventId = string.IsNullOrWhiteSpace(eventId)
+            ? "event"
+            : eventId.Trim().Replace(' ', '_');
+        return $"ctr.bonus.{normalizedEventId}.{monthIndex:0000}.{effectIndex:00}.{sequence:0000}";
     }
 
     private string BuildHistoricalCampaignStatusLabel()
@@ -6298,6 +6574,42 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public string TypeResearchId { get; }
     }
+
+    private readonly struct HistoricalCampaignBonusBatchRequest
+    {
+        public HistoricalCampaignBonusBatchRequest(
+            string eventId,
+            string eventTitle,
+            string balanceKey,
+            int effectIndex,
+            int targetMonthIndex,
+            int requestedContracts,
+            double militaryWeightMultiplier)
+        {
+            EventId = eventId;
+            EventTitle = eventTitle;
+            BalanceKey = balanceKey;
+            EffectIndex = effectIndex;
+            TargetMonthIndex = targetMonthIndex;
+            RequestedContracts = requestedContracts;
+            MilitaryWeightMultiplier = militaryWeightMultiplier;
+        }
+
+        public string EventId { get; }
+
+        public string EventTitle { get; }
+
+        public string BalanceKey { get; }
+
+        public int EffectIndex { get; }
+
+        public int TargetMonthIndex { get; }
+
+        public int RequestedContracts { get; }
+
+        public double MilitaryWeightMultiplier { get; }
+    }
+
     private enum RuntimeScreen
     {
         Intro = 0,

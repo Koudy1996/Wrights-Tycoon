@@ -238,6 +238,60 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    public void Balance_ResolvesHistoricalCampaignBonusBatchRanges()
+    {
+        Assert.That(
+            ContractBalance.TryResolveHistoricalCampaignBonusBatchRange(
+                "contract.event.korea_war.bonus_batch",
+                out var koreaMin,
+                out var koreaMax),
+            Is.True);
+        Assert.That(koreaMin, Is.EqualTo(ContractBalance.CampaignBonusBatchKoreaMinContracts));
+        Assert.That(koreaMax, Is.EqualTo(ContractBalance.CampaignBonusBatchKoreaMaxContracts));
+
+        Assert.That(
+            ContractBalance.TryResolveHistoricalCampaignBonusBatchRange(
+                "contract.event.vietnam_war.bonus_batch",
+                out var vietnamMin,
+                out var vietnamMax),
+            Is.True);
+        Assert.That(vietnamMin, Is.EqualTo(ContractBalance.CampaignBonusBatchVietnamMinContracts));
+        Assert.That(vietnamMax, Is.EqualTo(ContractBalance.CampaignBonusBatchVietnamMaxContracts));
+    }
+
+    [Test]
+    public void Balance_BuildsBonusBatchCategoryPool_WithMilitaryBias()
+    {
+        var categories = ContractBalance.BuildBonusBatchRequestedCategories(ContractBalance.CampaignMixVietnamWar);
+
+        var militaryCount = 0;
+        var civilCount = 0;
+        for (var index = 0; index < categories.Length; index++)
+        {
+            if (ContractBalance.IsMilitaryContractCategory(categories[index]))
+            {
+                militaryCount++;
+            }
+            else
+            {
+                civilCount++;
+            }
+        }
+
+        var expectedMilitaryCopies = (int)System.Math.Round(
+            ContractBalance.CampaignBonusBatchMilitaryBaseCopies * ContractBalance.CampaignMixVietnamWar,
+            System.MidpointRounding.AwayFromZero);
+        expectedMilitaryCopies = System.Math.Max(1, expectedMilitaryCopies);
+        expectedMilitaryCopies = System.Math.Min(ContractBalance.CampaignBonusBatchMilitaryMaxCopies, expectedMilitaryCopies);
+        var expectedMilitaryCount = expectedMilitaryCopies * ContractBalance.MilitaryRequestedCategories.Length;
+        var expectedCivilCount = ContractBalance.CampaignBonusBatchCivilCopies * ContractBalance.CivilRequestedCategories.Length;
+
+        Assert.That(militaryCount, Is.EqualTo(expectedMilitaryCount));
+        Assert.That(civilCount, Is.EqualTo(expectedCivilCount));
+        Assert.That(militaryCount, Is.GreaterThan(civilCount));
+    }
+
+    [Test]
     public void Evaluator_BlocksDelivery_WhenAircraftBelowRequirements()
     {
         var evaluator = new ContractEvaluator();
@@ -375,6 +429,53 @@ public sealed class ContractSystemTests
         Assert.That(board.OpenContracts.Count, Is.EqualTo(0));
         Assert.That(board.DeliveredContracts.Count, Is.EqualTo(1));
         Assert.That(board.DeliveredContracts[0].Status, Is.EqualTo(ContractStatus.Delivered));
+    }
+
+    [Test]
+    public void Board_InjectsGeneratedContractsForCurrentMonth_WhenContractsAreValid()
+    {
+        var board = new ContractBoard(new StubGenerator(), new ContractEvaluator());
+        _ = board.AdvanceMonthAndGenerateContracts();
+
+        var injectedContract = new Contract(
+            "ctr.injected.0001",
+            "Bonus Logistics",
+            quantityUnits: 40,
+            deadlineMonths: 14,
+            new ContractRequirements
+            {
+                RequiredCategory = AircraftCategory.MilitaryTactical,
+                MinimumReliability = 0.8d,
+            },
+            createdMonthIndex: board.CurrentMonthIndex);
+
+        var injectedCount = board.InjectGeneratedContractsForCurrentMonth(new[] { injectedContract });
+
+        Assert.That(injectedCount, Is.EqualTo(1));
+        Assert.That(board.OpenContracts, Has.Count.EqualTo(1));
+        Assert.That(board.OpenContracts[0].Id, Is.EqualTo("ctr.injected.0001"));
+    }
+
+    [Test]
+    public void Board_RejectsInjectedContracts_WhenCreatedMonthDoesNotMatch()
+    {
+        var board = new ContractBoard(new StubGenerator(), new ContractEvaluator());
+        _ = board.AdvanceMonthAndGenerateContracts();
+
+        var wrongMonthContract = new Contract(
+            "ctr.injected.wrong-month",
+            "Bonus Logistics",
+            quantityUnits: 40,
+            deadlineMonths: 14,
+            new ContractRequirements
+            {
+                RequiredCategory = AircraftCategory.MilitaryTactical,
+                MinimumReliability = 0.8d,
+            },
+            createdMonthIndex: board.CurrentMonthIndex + 1);
+
+        Assert.Throws<System.InvalidOperationException>(() =>
+            board.InjectGeneratedContractsForCurrentMonth(new[] { wrongMonthContract }));
     }
 
     [Test]

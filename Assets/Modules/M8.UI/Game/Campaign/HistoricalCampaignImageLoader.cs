@@ -11,13 +11,12 @@ public sealed class HistoricalCampaignImageLoader : IDisposable
 
     private readonly Dictionary<string, Texture2D?> _cache = new(StringComparer.Ordinal);
     private readonly HashSet<string> _loggedMissingTitles = new(StringComparer.Ordinal);
-    private Texture2D? _fallbackTexture;
 
     public Texture2D? LoadForTitle(string title)
     {
         if (string.IsNullOrWhiteSpace(title))
         {
-            return GetFallbackTexture();
+            return null;
         }
 
         var normalizedTitle = title.Trim();
@@ -26,7 +25,8 @@ public sealed class HistoricalCampaignImageLoader : IDisposable
             return cachedTexture;
         }
 
-        var texture = TryLoadTexture(normalizedTitle);
+        var candidateBaseNames = BuildCandidateBaseNames(normalizedTitle);
+        var texture = TryLoadTexture(candidateBaseNames);
         if (texture is not null)
         {
             _cache[normalizedTitle] = texture;
@@ -37,7 +37,7 @@ public sealed class HistoricalCampaignImageLoader : IDisposable
             Debug.LogWarning($"[Campaign] No image found for historical event title '{normalizedTitle}'.");
         }
 
-        return texture ?? GetFallbackTexture();
+        return texture;
     }
 
     public void Dispose()
@@ -52,12 +52,6 @@ public sealed class HistoricalCampaignImageLoader : IDisposable
 
         _cache.Clear();
         _loggedMissingTitles.Clear();
-
-        if (_fallbackTexture is not null)
-        {
-            UnityEngine.Object.Destroy(_fallbackTexture);
-            _fallbackTexture = null;
-        }
     }
 
     private static IEnumerable<string> EnumerateSearchDirectories()
@@ -70,20 +64,24 @@ public sealed class HistoricalCampaignImageLoader : IDisposable
         yield return Path.Combine(projectRoot, "Data", "Campaign");
     }
 
-    private static IEnumerable<string> EnumerateCandidatePaths(string normalizedTitle)
+    private static IEnumerable<string> EnumerateCandidatePaths(IReadOnlyList<string> candidateBaseNames)
     {
         foreach (var directory in EnumerateSearchDirectories())
         {
-            for (var index = 0; index < SupportedExtensions.Length; index++)
+            for (var nameIndex = 0; nameIndex < candidateBaseNames.Count; nameIndex++)
             {
-                yield return Path.Combine(directory, normalizedTitle + SupportedExtensions[index]);
+                var baseName = candidateBaseNames[nameIndex];
+                for (var extensionIndex = 0; extensionIndex < SupportedExtensions.Length; extensionIndex++)
+                {
+                    yield return Path.Combine(directory, baseName + SupportedExtensions[extensionIndex]);
+                }
             }
         }
     }
 
-    private static Texture2D? TryLoadTexture(string normalizedTitle)
+    private static Texture2D? TryLoadTexture(IReadOnlyList<string> candidateBaseNames)
     {
-        foreach (var candidatePath in EnumerateCandidatePaths(normalizedTitle))
+        foreach (var candidatePath in EnumerateCandidatePaths(candidateBaseNames))
         {
             if (!File.Exists(candidatePath))
             {
@@ -102,7 +100,7 @@ public sealed class HistoricalCampaignImageLoader : IDisposable
 
             try
             {
-                var matchingPath = FindCaseInsensitiveTitleMatch(directory, normalizedTitle);
+                var matchingPath = FindCaseInsensitiveTitleMatch(directory, candidateBaseNames);
                 if (!string.IsNullOrWhiteSpace(matchingPath))
                 {
                     return LoadTextureFromPath(matchingPath);
@@ -114,10 +112,60 @@ public sealed class HistoricalCampaignImageLoader : IDisposable
             }
         }
 
+        foreach (var rootDirectory in EnumerateBroadSearchRoots())
+        {
+            if (!Directory.Exists(rootDirectory))
+            {
+                continue;
+            }
+
+            try
+            {
+                var matchingPath = FindCaseInsensitiveTitleMatchRecursive(rootDirectory, candidateBaseNames);
+                if (!string.IsNullOrWhiteSpace(matchingPath))
+                {
+                    return LoadTextureFromPath(matchingPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Campaign] Failed while recursively scanning '{rootDirectory}': {ex.Message}");
+            }
+        }
+
         return null;
     }
 
-    private static string? FindCaseInsensitiveTitleMatch(string directory, string normalizedTitle)
+    public static string BuildAlternateFileName(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return "event_image";
+        }
+
+        return ToSeparatedLowercase(title.Trim(), separator: '_');
+    }
+
+    private static string[] BuildCandidateBaseNames(string normalizedTitle)
+    {
+        var names = new List<string>(capacity: 4);
+        AddCandidateName(names, normalizedTitle);
+        AddCandidateName(names, ToSeparatedLowercase(normalizedTitle, separator: '_'));
+        AddCandidateName(names, ToSeparatedLowercase(normalizedTitle, separator: '-'));
+        AddCandidateName(names, ToConcatenatedLowercase(normalizedTitle));
+        return names.ToArray();
+    }
+
+    private static IEnumerable<string> EnumerateBroadSearchRoots()
+    {
+        yield return Application.streamingAssetsPath;
+        yield return Application.dataPath;
+
+        var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+        yield return Path.Combine(projectRoot, "Data");
+    }
+
+    private static string? FindCaseInsensitiveTitleMatch(string directory, IReadOnlyList<string> candidateBaseNames)
     {
         var files = Directory.GetFiles(directory);
         for (var index = 0; index < files.Length; index++)
@@ -130,7 +178,29 @@ public sealed class HistoricalCampaignImageLoader : IDisposable
             }
 
             var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(candidatePath);
-            if (string.Equals(fileNameWithoutExtension, normalizedTitle, StringComparison.OrdinalIgnoreCase))
+            if (MatchesCandidateBaseName(fileNameWithoutExtension, candidateBaseNames))
+            {
+                return candidatePath;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? FindCaseInsensitiveTitleMatchRecursive(string rootDirectory, IReadOnlyList<string> candidateBaseNames)
+    {
+        var files = Directory.GetFiles(rootDirectory, "*.*", SearchOption.AllDirectories);
+        for (var index = 0; index < files.Length; index++)
+        {
+            var candidatePath = files[index];
+            var extension = Path.GetExtension(candidatePath);
+            if (!IsSupportedExtension(extension))
+            {
+                continue;
+            }
+
+            var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(candidatePath);
+            if (MatchesCandidateBaseName(fileNameWithoutExtension, candidateBaseNames))
             {
                 return candidatePath;
             }
@@ -182,39 +252,81 @@ public sealed class HistoricalCampaignImageLoader : IDisposable
         }
     }
 
-    private Texture2D GetFallbackTexture()
+    private static bool MatchesCandidateBaseName(string fileNameWithoutExtension, IReadOnlyList<string> candidateBaseNames)
     {
-        if (_fallbackTexture is not null)
+        for (var index = 0; index < candidateBaseNames.Count; index++)
         {
-            return _fallbackTexture;
-        }
-
-        const int width = 16;
-        const int height = 16;
-        var texture = new Texture2D(width, height, TextureFormat.RGBA32, mipChain: false);
-        var pixels = new Color[width * height];
-        var topColor = new Color(0.20f, 0.28f, 0.38f, 1f);
-        var bottomColor = new Color(0.08f, 0.11f, 0.16f, 1f);
-
-        for (var y = 0; y < height; y++)
-        {
-            var t = y / (float)(height - 1);
-            var rowColor = Color.Lerp(topColor, bottomColor, t);
-            for (var x = 0; x < width; x++)
+            if (string.Equals(fileNameWithoutExtension, candidateBaseNames[index], StringComparison.OrdinalIgnoreCase))
             {
-                var stripe = ((x + y) % 6) == 0;
-                pixels[(y * width) + x] = stripe
-                    ? Color.Lerp(rowColor, Color.white, 0.08f)
-                    : rowColor;
+                return true;
             }
         }
 
-        texture.SetPixels(pixels);
-        texture.Apply(updateMipmaps: false, makeNoLongerReadable: true);
-        texture.name = "HistoricalCampaign_Fallback";
-        texture.wrapMode = TextureWrapMode.Clamp;
-        texture.filterMode = FilterMode.Bilinear;
-        _fallbackTexture = texture;
-        return texture;
+        return false;
+    }
+
+    private static void AddCandidateName(List<string> names, string candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return;
+        }
+
+        for (var index = 0; index < names.Count; index++)
+        {
+            if (string.Equals(names[index], candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        names.Add(candidate);
+    }
+
+    private static string ToSeparatedLowercase(string value, char separator)
+    {
+        var characters = new List<char>(value.Length);
+        var lastWasSeparator = false;
+        for (var index = 0; index < value.Length; index++)
+        {
+            var current = value[index];
+            if (char.IsLetterOrDigit(current))
+            {
+                characters.Add(char.ToLowerInvariant(current));
+                lastWasSeparator = false;
+            }
+            else if (!lastWasSeparator)
+            {
+                characters.Add(separator);
+                lastWasSeparator = true;
+            }
+        }
+
+        while (characters.Count > 0 && characters[0] == separator)
+        {
+            characters.RemoveAt(0);
+        }
+
+        while (characters.Count > 0 && characters[^1] == separator)
+        {
+            characters.RemoveAt(characters.Count - 1);
+        }
+
+        return new string(characters.ToArray());
+    }
+
+    private static string ToConcatenatedLowercase(string value)
+    {
+        var characters = new List<char>(value.Length);
+        for (var index = 0; index < value.Length; index++)
+        {
+            var current = value[index];
+            if (char.IsLetterOrDigit(current))
+            {
+                characters.Add(char.ToLowerInvariant(current));
+            }
+        }
+
+        return new string(characters.ToArray());
     }
 }

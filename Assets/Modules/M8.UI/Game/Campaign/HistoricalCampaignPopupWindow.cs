@@ -19,12 +19,14 @@ public sealed class HistoricalCampaignPopupWindow
     private string _title = string.Empty;
     private string _dateText = string.Empty;
     private string _articleText = string.Empty;
+    private string _alternateImageFileName = string.Empty;
     private Texture2D? _image;
     private bool _isOpen;
     private GUIStyle? _headlineStyle;
     private GUIStyle? _dateStyle;
     private GUIStyle? _articleStyle;
     private GUIStyle? _placeholderStyle;
+    private GUIStyle? _placeholderHintStyle;
     private GUIStyle? _windowTitleStyle;
 
     public bool IsOpen => _isOpen;
@@ -34,6 +36,7 @@ public sealed class HistoricalCampaignPopupWindow
         _title = definition.Title;
         _dateText = $"{definition.Year:D4}-{definition.Month:D2}";
         _articleText = definition.ArticleText;
+        _alternateImageFileName = HistoricalCampaignImageLoader.BuildAlternateFileName(definition.Title);
         _image = image;
         _articleScroll = Vector2.zero;
         _isOpen = true;
@@ -122,7 +125,13 @@ public sealed class HistoricalCampaignPopupWindow
             return;
         }
 
-        GUI.Label(imageRect, "Image unavailable", GetPlaceholderStyle());
+        var messageRect = new Rect(imageRect.x + 16f, imageRect.y + 24f, imageRect.width - 32f, 32f);
+        var hintRect = new Rect(imageRect.x + 16f, imageRect.y + 62f, imageRect.width - 32f, imageRect.height - 78f);
+        GUI.Label(messageRect, "No event image found", GetPlaceholderStyle());
+        GUI.Label(
+            hintRect,
+            $"Accepted: {_title}.png\nAlso works: {_alternateImageFileName}.png",
+            GetPlaceholderHintStyle());
     }
 
     private static void DrawBorder(Rect rect, Color color)
@@ -198,14 +207,33 @@ public sealed class HistoricalCampaignPopupWindow
             return _placeholderStyle;
         }
 
-        _placeholderStyle = new GUIStyle(GUI.skin.box)
+        _placeholderStyle = new GUIStyle(GUI.skin.label)
         {
             alignment = TextAnchor.MiddleCenter,
-            fontStyle = FontStyle.Italic,
+            fontSize = 18,
+            fontStyle = FontStyle.Bold,
             wordWrap = true,
         };
 
         return _placeholderStyle;
+    }
+
+    private GUIStyle GetPlaceholderHintStyle()
+    {
+        if (_placeholderHintStyle is not null)
+        {
+            return _placeholderHintStyle;
+        }
+
+        _placeholderHintStyle = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.UpperCenter,
+            fontStyle = FontStyle.Italic,
+            fontSize = 13,
+            wordWrap = true,
+        };
+
+        return _placeholderHintStyle;
     }
 
     private GUIStyle GetWindowTitleStyle()

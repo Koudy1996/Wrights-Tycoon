@@ -47,6 +47,46 @@ public sealed class ContractBoard
         return generated;
     }
 
+    public int InjectGeneratedContractsForCurrentMonth(IReadOnlyList<Contract> contracts)
+    {
+        if (contracts is null)
+        {
+            throw new ArgumentNullException(nameof(contracts));
+        }
+
+        var injectedCount = 0;
+        for (var index = 0; index < contracts.Count; index++)
+        {
+            var contract = contracts[index];
+            if (contract is null)
+            {
+                throw new InvalidOperationException("Injected contract cannot be null.");
+            }
+
+            contract.Validate();
+            if (contract.CreatedMonthIndex != CurrentMonthIndex)
+            {
+                throw new InvalidOperationException(
+                    $"Injected contract '{contract.Id}' has creation month {contract.CreatedMonthIndex}, expected {CurrentMonthIndex}.");
+            }
+
+            if (contract.Status != ContractStatus.Open)
+            {
+                throw new InvalidOperationException($"Injected contract '{contract.Id}' must be open.");
+            }
+
+            if (ContainsContractId(contract.Id))
+            {
+                throw new InvalidOperationException($"Injected contract id '{contract.Id}' already exists.");
+            }
+
+            _openContracts.Add(contract);
+            injectedCount++;
+        }
+
+        return injectedCount;
+    }
+
     public ContractEvaluationReport Evaluate(Contract contract, WrightTycoon.Core.Aircraft.Aircraft aircraft) => _evaluator.Evaluate(contract, aircraft);
 
     public ContractDeliveryResult TryDeliver(string contractId, WrightTycoon.Core.Aircraft.Aircraft aircraft)
@@ -284,6 +324,35 @@ public sealed class ContractBoard
         }
 
         return null;
+    }
+
+    private bool ContainsContractId(string contractId)
+    {
+        for (var openIndex = 0; openIndex < _openContracts.Count; openIndex++)
+        {
+            if (string.Equals(_openContracts[openIndex].Id, contractId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        for (var deliveredIndex = 0; deliveredIndex < _deliveredContracts.Count; deliveredIndex++)
+        {
+            if (string.Equals(_deliveredContracts[deliveredIndex].Id, contractId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        for (var canceledIndex = 0; canceledIndex < _canceledContracts.Count; canceledIndex++)
+        {
+            if (string.Equals(_canceledContracts[canceledIndex].Id, contractId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void AgeAndCancelExpiredContracts(int monthIndex)
