@@ -184,22 +184,31 @@ public sealed class ContractGenerator : IContractGenerator
     {
         _categoryRotation.Clear();
         var modifiers = _campaignModifierSource?.GetCurrentModifiers();
-        if (modifiers is null || !modifiers.HasCategoryMixAdjustment)
+
+        for (var index = 0; index < _options.RequestedCategories.Count; index++)
+        {
+            var category = _options.RequestedCategories[index];
+            if (modifiers is not null && !modifiers.IsCategoryUnlocked(category))
+            {
+                continue;
+            }
+
+            var copies = 1;
+            if (modifiers is not null && modifiers.HasCategoryMixAdjustment)
+            {
+                copies = ContractBalance.ResolveHistoricalCampaignCategoryPoolCopies(
+                    modifiers.ResolveCategoryWeightMultiplier(category));
+            }
+
+            for (var copyIndex = 0; copyIndex < copies; copyIndex++)
+            {
+                _categoryRotation.Add(category);
+            }
+        }
+
+        if (_categoryRotation.Count == 0)
         {
             _categoryRotation.AddRange(_options.RequestedCategories);
-        }
-        else
-        {
-            for (var index = 0; index < _options.RequestedCategories.Count; index++)
-            {
-                var category = _options.RequestedCategories[index];
-                var copies = ContractBalance.ResolveHistoricalCampaignCategoryPoolCopies(
-                    modifiers.ResolveCategoryWeightMultiplier(category));
-                for (var copyIndex = 0; copyIndex < copies; copyIndex++)
-                {
-                    _categoryRotation.Add(category);
-                }
-            }
         }
 
         Shuffle(_categoryRotation);

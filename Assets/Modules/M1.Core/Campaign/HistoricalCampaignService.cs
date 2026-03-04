@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Simulation;
 
 namespace WrightTycoon.Core.Campaign;
@@ -10,6 +11,7 @@ public sealed class HistoricalCampaignService
 {
     private const string ContractMixModifierEffectType = "contract_mix_modifier";
     private const string ContractPriceModifierEffectType = "contract_price_modifier";
+    private const string UnlockCategoryEffectType = "unlock_category";
 
     private readonly IReadOnlyList<HistoricalCampaignEventDefinition> _allEvents;
     private readonly IReadOnlyList<HistoricalCampaignEventDefinition> _scheduledEvents;
@@ -135,6 +137,11 @@ public sealed class HistoricalCampaignService
         }
 
         var modifiers = new HistoricalCampaignContractModifiers();
+        for (var categoryIndex = 0; categoryIndex < ContractBalance.HistoricalCampaignInitiallyLockedCategories.Length; categoryIndex++)
+        {
+            modifiers.LockCategory(ContractBalance.HistoricalCampaignInitiallyLockedCategories[categoryIndex]);
+        }
+
         for (var eventIndex = 0; eventIndex < _scheduledEvents.Count; eventIndex++)
         {
             var definition = _scheduledEvents[eventIndex];
@@ -165,10 +172,32 @@ public sealed class HistoricalCampaignService
                     ContractBalance.TryResolveHistoricalCampaignPriceMultiplier(effect.BalanceKey, out var priceMultiplier))
                 {
                     modifiers.ApplyPriceMultiplier(effect.Target, priceMultiplier);
+                    continue;
+                }
+
+                if (!string.Equals(effect.Type, UnlockCategoryEffectType, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (TryResolveAircraftCategory(effect.Target, out var category))
+                {
+                    modifiers.UnlockCategory(category);
                 }
             }
         }
 
         return modifiers;
+    }
+
+    private static bool TryResolveAircraftCategory(string? rawCategory, out AircraftCategory category)
+    {
+        category = default;
+        if (string.IsNullOrWhiteSpace(rawCategory))
+        {
+            return false;
+        }
+
+        return Enum.TryParse(rawCategory.Trim(), ignoreCase: true, out category);
     }
 }

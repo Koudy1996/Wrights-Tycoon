@@ -159,6 +159,11 @@ public static class ContractBalance
         AircraftCategory.MilitaryStrategicSupport,
     };
 
+    public static readonly AircraftCategory[] HistoricalCampaignInitiallyLockedCategories =
+    {
+        AircraftCategory.HeavyTransportWideBody,
+    };
+
     // Editable category groups for runway-constrained contracts.
     // Categories may appear in more than one group to enable multiple valid runway requirements.
     public static readonly AircraftCategory[] ShortRunwayCategories =

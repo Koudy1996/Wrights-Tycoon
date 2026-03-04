@@ -238,6 +238,34 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    public void Generator_SkipsLockedCategories_WhenCampaignLocksCategory()
+    {
+        var options = new ContractGeneratorOptions
+        {
+            MinContractsPerMonth = 1,
+            MaxContractsPerMonth = 1,
+            RequestedCategories = new[]
+            {
+                AircraftCategory.HeavyTransportWideBody,
+                AircraftCategory.RegionalJet,
+            },
+        };
+
+        var modifiers = new HistoricalCampaignContractModifiers();
+        modifiers.LockCategory(AircraftCategory.HeavyTransportWideBody);
+        var generator = new ContractGenerator(
+            seed: 9931,
+            options: options,
+            campaignModifierSource: new StubHistoricalCampaignContractModifierSource(modifiers));
+
+        for (var monthIndex = 0; monthIndex < 12; monthIndex++)
+        {
+            var contract = generator.GenerateMonthlyContracts(monthIndex)[0];
+            Assert.That(contract.Requirements.RequiredCategory, Is.EqualTo(AircraftCategory.RegionalJet));
+        }
+    }
+
+    [Test]
     public void Balance_ResolvesHistoricalCampaignBonusBatchRanges()
     {
         Assert.That(

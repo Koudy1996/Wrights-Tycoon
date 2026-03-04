@@ -500,6 +500,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _contractQuantityFilterMin = 5;
         _contractQuantityFilterMax = 500;
         _historicalCampaignState.ReplaceFiredEventIds(null);
+        NormalizeSelectedAircraftCategoryForHistoricalCampaign();
         _historicalCampaignArchive.Clear();
         _historicalCampaignArchiveScroll = Vector2.zero;
         _historicalCampaignPopupWindow.Close();
@@ -1290,6 +1291,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _contractQuantityFilterMax = Mathf.Clamp(data.ContractQuantityFilterMax, 5, 500);
         _governmentContractNotebookState = ReadNotebookWindowSaveState(data.GovernmentContractNotebookState);
         _historicalCampaignState.ReplaceFiredEventIds(data.FiredHistoricalCampaignEventIds);
+        NormalizeSelectedAircraftCategoryForHistoricalCampaign();
         RestoreHistoricalCampaignArchive(data.HistoricalCampaignArchiveEntries);
         _campaignActionMessage = string.Empty;
         _historicalCampaignPopupWindow.Close();
@@ -1832,10 +1834,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         DrawSection("Type");
+        NormalizeSelectedAircraftCategoryForHistoricalCampaign();
+        var availableAircraftCategories = GetUnlockedAircraftCategoriesForCurrentState();
         _typeName = BuildTypeDisplayName();
         GUILayout.Label($"Type Name (auto): {_typeName}");
         GUILayout.Label($"Type ID (auto): {BuildTypeId()}");
-        _selectedAircraftCategory = DrawAircraftCategorySelector("Aircraft Category", _selectedAircraftCategory);
+        _selectedAircraftCategory = DrawAircraftCategorySelector(
+            "Aircraft Category",
+            _selectedAircraftCategory,
+            availableAircraftCategories);
         _typeCrewCount = DrawIntSlider(
             "Crew Members",
             _typeCrewCount,
@@ -5234,6 +5241,53 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         Debug.Log($"[Contracts] Monthly mix: civil={civilCount}, military={militaryCount}");
     }
 
+    private IReadOnlyList<AircraftCategory> GetUnlockedAircraftCategoriesForCurrentState()
+    {
+        var profiles = AircraftCategoryCatalog.GetAllProfiles();
+        var unlockedCategories = new List<AircraftCategory>(profiles.Count);
+        for (var index = 0; index < profiles.Count; index++)
+        {
+            var category = profiles[index].Category;
+            if (!IsAircraftCategoryUnlockedForCurrentState(category))
+            {
+                continue;
+            }
+
+            unlockedCategories.Add(category);
+        }
+
+        return unlockedCategories;
+    }
+
+    private bool IsAircraftCategoryUnlockedForCurrentState(AircraftCategory category)
+    {
+        if (_historicalCampaignContractModifierSource is null)
+        {
+            return true;
+        }
+
+        return _historicalCampaignContractModifierSource.GetCurrentModifiers().IsCategoryUnlocked(category);
+    }
+
+    private void NormalizeSelectedAircraftCategoryForHistoricalCampaign()
+    {
+        if (IsAircraftCategoryUnlockedForCurrentState(_selectedAircraftCategory))
+        {
+            return;
+        }
+
+        var unlockedCategories = GetUnlockedAircraftCategoriesForCurrentState();
+        if (unlockedCategories.Count == 0)
+        {
+            return;
+        }
+
+        var previousCategory = _selectedAircraftCategory;
+        _selectedAircraftCategory = unlockedCategories[0];
+        Debug.Log(
+            $"[Campaign] Category '{previousCategory}' is currently locked. Switched selection to '{_selectedAircraftCategory}'.");
+    }
+
     private static void DrawSection(string title)
     {
         GUILayout.Space(6f);
@@ -5887,24 +5941,48 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return (ContractSpecificationFilter)nextIndex;
     }
 
-    private static AircraftCategory DrawAircraftCategorySelector(string label, AircraftCategory currentCategory)
+    private static AircraftCategory DrawAircraftCategorySelector(
+        string label,
+        AircraftCategory currentCategory,
+        IReadOnlyList<AircraftCategory> availableCategories)
     {
         GUILayout.Label(label);
         var profiles = AircraftCategoryCatalog.GetAllProfiles();
-        var labels = profiles.Select(profile => profile.DisplayName).ToArray();
-        var selectedIndex = 0;
+        var categories = new List<AircraftCategory>(profiles.Count);
+        var labels = new List<string>(profiles.Count);
         for (var index = 0; index < profiles.Count; index++)
         {
-            if (profiles[index].Category == currentCategory)
+            var profile = profiles[index];
+            if (availableCategories is not null
+                && availableCategories.Count > 0
+                && !availableCategories.Contains(profile.Category))
+            {
+                continue;
+            }
+
+            categories.Add(profile.Category);
+            labels.Add(profile.DisplayName);
+        }
+
+        if (categories.Count == 0)
+        {
+            categories.Add(currentCategory);
+            labels.Add(AircraftCategoryCatalog.GetProfile(currentCategory).DisplayName);
+        }
+
+        var selectedIndex = 0;
+        for (var index = 0; index < categories.Count; index++)
+        {
+            if (categories[index] == currentCategory)
             {
                 selectedIndex = index;
                 break;
             }
         }
 
-        var nextIndex = GUILayout.SelectionGrid(selectedIndex, labels, 1);
-        nextIndex = Mathf.Clamp(nextIndex, 0, profiles.Count - 1);
-        return profiles[nextIndex].Category;
+        var nextIndex = GUILayout.SelectionGrid(selectedIndex, labels.ToArray(), 1);
+        nextIndex = Mathf.Clamp(nextIndex, 0, categories.Count - 1);
+        return categories[nextIndex];
     }
 
     private static void DrawContractRequirements(ContractRequirements requirements)

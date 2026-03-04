@@ -3,6 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Campaign;
+using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Simulation;
 
 namespace WrightTycoon.Core.Tests.Campaign;
@@ -122,6 +123,34 @@ public sealed class HistoricalCampaignServiceTests
         Assert.That(modifiers.MilitaryPriceMultiplier, Is.EqualTo(ContractBalance.CampaignPriceKoreaWar).Within(1e-9));
         Assert.That(modifiers.CivilPriceMultiplier, Is.EqualTo(ContractBalance.CampaignPriceGlobalOilCrisis).Within(1e-9));
         Assert.That(modifiers.HasCategoryMixAdjustment, Is.True);
+    }
+
+    [Test]
+    public void Service_KeepsWideBodyLockedUntilUnlockEventFires()
+    {
+        var repository = new HistoricalCampaignJsonRepository();
+        var json = WrapEvents(
+            CreateEventJson(
+                "evt.wide_body_unlock",
+                "Wide Body",
+                1960,
+                1,
+                "Article text.",
+                "unlock_category",
+                "HeavyTransportWideBody",
+                ""));
+
+        var service = repository.LoadFromJson(json);
+        var state = new HistoricalCampaignState();
+
+        var beforeUnlock = service.BuildActiveContractModifiers(state);
+
+        Assert.That(beforeUnlock.IsCategoryUnlocked(AircraftCategory.HeavyTransportWideBody), Is.False);
+        Assert.That(beforeUnlock.IsCategoryUnlocked(AircraftCategory.RegionalJet), Is.True);
+
+        Assert.That(service.TryTrigger(new SimulationDate(1960, 1), state).HasTriggeredEvent, Is.True);
+        var afterUnlock = service.BuildActiveContractModifiers(state);
+        Assert.That(afterUnlock.IsCategoryUnlocked(AircraftCategory.HeavyTransportWideBody), Is.True);
     }
 
     private static string WrapEvents(params string[] eventJsonBlocks) =>

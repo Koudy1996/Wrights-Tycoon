@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Simulation;
 
 namespace WrightTycoon.Core.Campaign;
@@ -7,6 +8,7 @@ namespace WrightTycoon.Core.Campaign;
 public static class HistoricalCampaignValidator
 {
     public const int ArticleWordLimit = 100;
+    private const string UnlockCategoryEffectType = "unlock_category";
 
     public static void ValidateDefinitions(IReadOnlyList<HistoricalCampaignEventDefinition> definitions)
     {
@@ -55,6 +57,15 @@ public static class HistoricalCampaignValidator
                 var effect = definition.Effects[effectIndex]
                     ?? throw new InvalidOperationException($"Historical campaign effect at events[{eventIndex}].effects[{effectIndex}] is null.");
                 ValidateRequiredText(effect.Type, $"events[{eventIndex}].effects[{effectIndex}].type");
+                if (string.Equals(effect.Type.Trim(), UnlockCategoryEffectType, StringComparison.OrdinalIgnoreCase))
+                {
+                    ValidateRequiredText(effect.Target, $"events[{eventIndex}].effects[{effectIndex}].target");
+                    if (!Enum.TryParse<AircraftCategory>(effect.Target!.Trim(), ignoreCase: true, out _))
+                    {
+                        throw new InvalidOperationException(
+                            $"Historical campaign effect 'unlock_category' at events[{eventIndex}].effects[{effectIndex}] has unknown category '{effect.Target}'.");
+                    }
+                }
             }
         }
     }
