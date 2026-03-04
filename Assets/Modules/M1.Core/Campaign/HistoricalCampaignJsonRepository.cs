@@ -9,9 +9,9 @@ public sealed class HistoricalCampaignJsonRepository
 {
     private readonly JsonSerializerSettings _serializerSettings;
 
-    public HistoricalCampaignJsonRepository(JsonSerializerSettings? serializerSettings = null)
+    public HistoricalCampaignJsonRepository()
     {
-        _serializerSettings = serializerSettings ?? CreateDefaultJsonSettings();
+        _serializerSettings = CreateDefaultJsonSettings();
     }
 
     public HistoricalCampaignService LoadFromFile(string path)

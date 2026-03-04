@@ -6,6 +6,11 @@ namespace WrightTycoon.Game.Campaign;
 public sealed class HistoricalCampaignPopupWindow
 {
     private static readonly Vector2 DefaultSize = new(560f, 480f);
+    private const float HeaderHeight = 24f;
+    private static readonly Color WindowBodyColor = new(0.08f, 0.10f, 0.13f, 1f);
+    private static readonly Color ContentPanelColor = new(0.11f, 0.14f, 0.18f, 1f);
+    private static readonly Color HeaderColor = new(0.16f, 0.19f, 0.24f, 1f);
+    private static readonly Color BorderColor = new(0.30f, 0.36f, 0.44f, 1f);
 
     private readonly int _windowId = $"{nameof(HistoricalCampaignPopupWindow)}_Runtime".GetHashCode();
 
@@ -20,6 +25,7 @@ public sealed class HistoricalCampaignPopupWindow
     private GUIStyle? _dateStyle;
     private GUIStyle? _articleStyle;
     private GUIStyle? _placeholderStyle;
+    private GUIStyle? _windowTitleStyle;
 
     public bool IsOpen => _isOpen;
 
@@ -46,23 +52,16 @@ public sealed class HistoricalCampaignPopupWindow
         }
 
         ClampToScreen(virtualScreenSize);
-
-        var originalColor = GUI.color;
-        GUI.color = new Color(originalColor.r, originalColor.g, originalColor.b, 0.98f);
-
-        try
-        {
-            _windowRect = GUI.Window(_windowId, _windowRect, DrawWindowContents, "Historical Bulletin");
-            ClampToScreen(virtualScreenSize);
-        }
-        finally
-        {
-            GUI.color = originalColor;
-        }
+        _windowRect = GUI.Window(_windowId, _windowRect, DrawWindowContents, "Historical Bulletin");
+        ClampToScreen(virtualScreenSize);
     }
 
     private void DrawWindowContents(int windowId)
     {
+        DrawSolidRect(new Rect(0f, HeaderHeight, _windowRect.width, _windowRect.height - HeaderHeight), WindowBodyColor);
+        DrawSolidRect(new Rect(0f, 0f, _windowRect.width, HeaderHeight), HeaderColor);
+        GUI.Label(new Rect(12f, 2f, _windowRect.width - 56f, 20f), "Historical Bulletin", GetWindowTitleStyle());
+
         var closeButtonRect = new Rect(_windowRect.width - 34f, 4f, 30f, 20f);
         if (GUI.Button(closeButtonRect, "X"))
         {
@@ -71,6 +70,7 @@ public sealed class HistoricalCampaignPopupWindow
         }
 
         var contentRect = new Rect(12f, 30f, _windowRect.width - 24f, _windowRect.height - 42f);
+        DrawSolidRect(contentRect, ContentPanelColor);
         GUILayout.BeginArea(contentRect);
 
         GUILayout.Label(_title, GetHeadlineStyle());
@@ -80,15 +80,7 @@ public sealed class HistoricalCampaignPopupWindow
 
         var imageHeight = Mathf.Clamp(_windowRect.height * 0.34f, 120f, 180f);
         var imageRect = GUILayoutUtility.GetRect(10f, imageHeight, GUILayout.ExpandWidth(true), GUILayout.Height(imageHeight));
-        if (_image is not null)
-        {
-            GUI.Box(imageRect, GUIContent.none);
-            GUI.DrawTexture(imageRect, _image, ScaleMode.ScaleAndCrop);
-        }
-        else
-        {
-            GUI.Box(imageRect, "Image unavailable", GetPlaceholderStyle());
-        }
+        DrawImagePanel(imageRect);
 
         GUILayout.Space(8f);
         _articleScroll = GUILayout.BeginScrollView(_articleScroll, GUILayout.ExpandHeight(true));
@@ -116,6 +108,37 @@ public sealed class HistoricalCampaignPopupWindow
         var maxY = Mathf.Max(0f, virtualScreenSize.y - _windowRect.height);
         _windowRect.x = Mathf.Clamp(_windowRect.x, 0f, maxX);
         _windowRect.y = Mathf.Clamp(_windowRect.y, 0f, maxY);
+    }
+
+    private void DrawImagePanel(Rect imageRect)
+    {
+        DrawSolidRect(imageRect, new Color(0.05f, 0.06f, 0.08f, 1f));
+        DrawBorder(imageRect, BorderColor);
+
+        if (_image is not null)
+        {
+            var insetRect = new Rect(imageRect.x + 2f, imageRect.y + 2f, imageRect.width - 4f, imageRect.height - 4f);
+            GUI.DrawTexture(insetRect, _image, ScaleMode.ScaleAndCrop);
+            return;
+        }
+
+        GUI.Label(imageRect, "Image unavailable", GetPlaceholderStyle());
+    }
+
+    private static void DrawBorder(Rect rect, Color color)
+    {
+        DrawSolidRect(new Rect(rect.x, rect.y, rect.width, 1f), color);
+        DrawSolidRect(new Rect(rect.x, rect.yMax - 1f, rect.width, 1f), color);
+        DrawSolidRect(new Rect(rect.x, rect.y, 1f, rect.height), color);
+        DrawSolidRect(new Rect(rect.xMax - 1f, rect.y, 1f, rect.height), color);
+    }
+
+    private static void DrawSolidRect(Rect rect, Color color)
+    {
+        var previousColor = GUI.color;
+        GUI.color = color;
+        GUI.DrawTexture(rect, Texture2D.whiteTexture, ScaleMode.StretchToFill);
+        GUI.color = previousColor;
     }
 
     private GUIStyle GetHeadlineStyle()
@@ -183,5 +206,23 @@ public sealed class HistoricalCampaignPopupWindow
         };
 
         return _placeholderStyle;
+    }
+
+    private GUIStyle GetWindowTitleStyle()
+    {
+        if (_windowTitleStyle is not null)
+        {
+            return _windowTitleStyle;
+        }
+
+        _windowTitleStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 15,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleCenter,
+            wordWrap = false,
+        };
+
+        return _windowTitleStyle;
     }
 }

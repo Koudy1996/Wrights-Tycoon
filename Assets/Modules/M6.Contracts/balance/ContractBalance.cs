@@ -251,8 +251,8 @@ public static class ContractBalance
             throw new ArgumentOutOfRangeException(nameof(weightMultiplier), "Weight multiplier must be finite.");
         }
 
-        var clampedMultiplier = Math.Max(0d, weightMultiplier);
-        var copies = (int)Math.Round(
+        var clampedMultiplier = System.Math.Max(0d, weightMultiplier);
+        var copies = (int)System.Math.Round(
             CampaignWeightedCategoryPoolBaseCopies * clampedMultiplier,
             MidpointRounding.AwayFromZero);
         if (copies < CampaignWeightedCategoryPoolMinimumCopies)

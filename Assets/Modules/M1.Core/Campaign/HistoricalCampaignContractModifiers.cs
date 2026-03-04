@@ -74,5 +74,5 @@ public sealed class HistoricalCampaignContractModifiers
         multiplier > 0d;
 
     private static bool IsApproximatelyOne(double value) =>
-        Math.Abs(value - 1d) <= 1e-9d;
+        System.Math.Abs(value - 1d) <= 1e-9d;
 }
