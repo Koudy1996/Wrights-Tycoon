@@ -9,6 +9,7 @@ using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Accounting;
 using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Contracts;
 using WrightTycoon.Core.Data;
@@ -18,6 +19,7 @@ using WrightTycoon.Core.GovernmentContracts;
 using WrightTycoon.Core.Physics;
 using WrightTycoon.Core.Simulation;
 using WrightTycoon.Core.Research;
+using WrightTycoon.Game.Campaign;
 using WrightTycoon.Game.GovernmentContracts;
 using WrightTycoon.Game.RuntimeData;
 using WrightTycoon.Game.UI;
@@ -52,15 +54,20 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly Dictionary<string, string> _selectedWarehouseDesignByContractId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _deliveredContractProfitById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TypeResearchModifierPoints> _researchModifiersByResearchId = new(StringComparer.Ordinal);
+    private readonly HistoricalCampaignState _historicalCampaignState = new();
+    private readonly List<HistoricalCampaignArchiveEntry> _historicalCampaignArchive = new();
 
     private readonly FactoryAccountingCalculator _factoryAccountingCalculator = new();
     private readonly ContractPricingCalculator _contractPricingCalculator = new();
     private readonly ResearchCalculator _researchCalculator = new();
     private readonly AircraftPreview3DRenderer _aircraftPreview3DRenderer = new();
+    private readonly HistoricalCampaignImageLoader _historicalCampaignImageLoader = new();
+    private readonly HistoricalCampaignPopupWindow _historicalCampaignPopupWindow = new();
 
     private EngineBuilder? _engineBuilder;
     private AirframeBuilder? _airframeBuilder;
     private AircraftFactory? _aircraftFactory;
+    private HistoricalCampaignService? _historicalCampaign;
     private ContractBoard? _contractBoard;
     private ContractWarehouseDeliveryService? _contractWarehouseDeliveryService;
     private GovernmentContractBoard? _governmentContractBoard;
@@ -85,6 +92,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private string _contractActionMessage = string.Empty;
     private string _governmentContractActionMessage = string.Empty;
     private string _governmentDeliveryActionMessage = string.Empty;
+    private string _campaignActionMessage = string.Empty;
     private GovernmentContractNotebookWindow? _governmentContractNotebookWindow;
     private ContractUIState _governmentContractNotebookState = CreateDefaultGovernmentContractNotebookState();
     private string _factoryActionMessage = string.Empty;
@@ -136,6 +144,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private bool _initialized;
     private Vector2 _leftScroll;
     private Vector2 _rightScroll;
+    private Vector2 _historicalCampaignArchiveScroll;
     private readonly Dictionary<string, string> _doubleSliderInputBuffer = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _intSliderInputBuffer = new(StringComparer.Ordinal);
     private readonly Dictionary<string, bool> _doubleSliderHadFocus = new(StringComparer.Ordinal);
@@ -188,6 +197,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private void OnDestroy()
     {
         _aircraftPreview3DRenderer.Dispose();
+        _historicalCampaignImageLoader.Dispose();
     }
 
     private void Update()
@@ -269,6 +279,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var cash = _accountingSystem?.Cash ?? 0d;
         DrawSignedCurrencyInline($"Cash: {FormatCurrency(cash)}", cash, 220f);
         GUILayout.EndHorizontal();
+
+        var historicalCampaignStatus = BuildHistoricalCampaignStatusLabel();
+        if (!string.IsNullOrWhiteSpace(historicalCampaignStatus))
+        {
+            GUILayout.BeginHorizontal(GUI.skin.box);
+            GUILayout.Label(historicalCampaignStatus);
+            GUILayout.EndHorizontal();
+        }
+
+        DrawHistoricalCampaignArchivePanel();
 
         if (!string.IsNullOrWhiteSpace(_saveActionMessage))
         {
@@ -352,6 +372,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.EndHorizontal();
         GUILayout.EndArea();
+
+        _historicalCampaignPopupWindow.Draw(virtualScreenSize);
     }
 
     private void TryInitialize()
@@ -381,6 +403,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             && _engineBuilder is not null
             && _airframeBuilder is not null
             && _aircraftFactory is not null
+            && _historicalCampaign is not null
             && _engineDefinitions.Count > 0
             && _airframeDefinitions.Count > 0)
         {
@@ -397,6 +420,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (_engineDefinitions.Count == 0 || _airframeDefinitions.Count == 0)
         {
             throw new InvalidOperationException("No engine/airframe definitions found.");
+        }
+
+        var historicalCampaignPath = ResolveHistoricalCampaignPath();
+        _historicalCampaign = new HistoricalCampaignJsonRepository().LoadFromFile(historicalCampaignPath);
+        Debug.Log(
+            $"[Campaign] Loaded {_historicalCampaign.ScheduledEvents.Count} scheduled events " +
+            $"({_historicalCampaign.AllEvents.Count} definitions) from {historicalCampaignPath}.");
+        for (var index = 0; index < _historicalCampaign.LoadWarnings.Count; index++)
+        {
+            Debug.LogWarning($"[Campaign] {_historicalCampaign.LoadWarnings[index]}");
         }
 
         _engineBuilder = new EngineBuilder(new EngineCalculator(), _atmosphereModel);
@@ -451,6 +484,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _contractActionMessage = string.Empty;
         _governmentContractActionMessage = string.Empty;
         _governmentDeliveryActionMessage = string.Empty;
+        _campaignActionMessage = string.Empty;
         _factoryActionMessage = string.Empty;
         _researchActionMessage = string.Empty;
         _saveActionMessage = string.Empty;
@@ -458,6 +492,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _contractSpecificationFilter = ContractSpecificationFilter.All;
         _contractQuantityFilterMin = 5;
         _contractQuantityFilterMax = 500;
+        _historicalCampaignState.ReplaceFiredEventIds(null);
+        _historicalCampaignArchive.Clear();
+        _historicalCampaignArchiveScroll = Vector2.zero;
+        _historicalCampaignPopupWindow.Close();
 
         if (_governmentContractBoard is not null)
         {
@@ -1047,6 +1085,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             ContractQuantityFilterMin = _contractQuantityFilterMin,
             ContractQuantityFilterMax = _contractQuantityFilterMax,
             GovernmentContractNotebookState = CreateNotebookWindowSaveState(_governmentContractNotebookState),
+            FiredHistoricalCampaignEventIds = _historicalCampaignState.CreateSnapshot().ToList(),
+            HistoricalCampaignArchiveEntries = _historicalCampaignArchive
+                .Select(entry => new HistoricalCampaignArchiveEntry
+                {
+                    Title = entry.Title,
+                    Year = entry.Year,
+                    Month = entry.Month,
+                })
+                .ToList(),
             EngineParameters = _engineParameters.Clone(),
             BaseAirframeParameters = _baseAirframeParameters.Clone(),
             ContractActionMessage = _contractActionMessage,
@@ -1235,6 +1282,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _contractQuantityFilterMin = Mathf.Clamp(data.ContractQuantityFilterMin, 5, 500);
         _contractQuantityFilterMax = Mathf.Clamp(data.ContractQuantityFilterMax, 5, 500);
         _governmentContractNotebookState = ReadNotebookWindowSaveState(data.GovernmentContractNotebookState);
+        _historicalCampaignState.ReplaceFiredEventIds(data.FiredHistoricalCampaignEventIds);
+        RestoreHistoricalCampaignArchive(data.HistoricalCampaignArchiveEntries);
+        _campaignActionMessage = string.Empty;
+        _historicalCampaignPopupWindow.Close();
         ApplyGovernmentContractNotebookState();
 
         if (data.EngineParameters is not null)
@@ -4379,6 +4430,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         _currentDate = _currentDate.NextMonth();
         _elapsedMonths++;
+        ProcessHistoricalCampaignForCurrentDate();
 
         if (_researchBoard is not null)
         {
@@ -4696,6 +4748,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             RunwayTypeOverride = _typeRunwayType,
         };
     }
+
     private (string EngineJsonPath, string AirframeJsonPath) ResolveDefinitionPaths()
     {
         var streamingPath = Path.Combine(Application.streamingAssetsPath, "Data", "Examples");
@@ -4715,6 +4768,141 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         throw new FileNotFoundException("Definition JSON files were not found in StreamingAssets or Data/Examples.");
+    }
+
+    private static string ResolveHistoricalCampaignPath()
+    {
+        var streamingPath = Path.Combine(Application.streamingAssetsPath, "Data", "Campaign", "events.json");
+        if (File.Exists(streamingPath))
+        {
+            return streamingPath;
+        }
+
+        var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+        var rootPath = Path.Combine(projectRoot, "Data", "Campaign", "events.json");
+        if (File.Exists(rootPath))
+        {
+            return rootPath;
+        }
+
+        throw new FileNotFoundException("Historical campaign JSON file was not found in StreamingAssets or Data/Campaign.");
+    }
+
+    private void ProcessHistoricalCampaignForCurrentDate()
+    {
+        if (_historicalCampaign is null)
+        {
+            return;
+        }
+
+        var result = _historicalCampaign.TryTrigger(_currentDate, _historicalCampaignState);
+        if (!result.HasTriggeredEvent)
+        {
+            return;
+        }
+
+        var triggeredEvent = result.TriggeredEvent!;
+        AppendHistoricalCampaignArchiveEntry(triggeredEvent);
+        var image = _historicalCampaignImageLoader.LoadForTitle(triggeredEvent.Title);
+        _historicalCampaignPopupWindow.Show(triggeredEvent, image);
+        Debug.Log($"[Campaign] Popup shown: {triggeredEvent.Id}");
+        _campaignActionMessage =
+            $"Historical event triggered: {triggeredEvent.Title} ({FormatSimulationDate(triggeredEvent.GetDate())}).";
+        Debug.Log(
+            $"[Campaign] Event fired: {triggeredEvent.Id} | {triggeredEvent.Title} | {triggeredEvent.Year:D4}-{triggeredEvent.Month:D2}");
+    }
+
+    private string BuildHistoricalCampaignStatusLabel()
+    {
+        if (_historicalCampaign is null)
+        {
+            return string.Empty;
+        }
+
+        var nextEvent = _historicalCampaign.GetNextUpcomingUnfiredEvent(_currentDate, _historicalCampaignState);
+        if (!string.IsNullOrWhiteSpace(_campaignActionMessage))
+        {
+            if (nextEvent is null)
+            {
+                return $"{_campaignActionMessage} No further events are scheduled from the current date.";
+            }
+
+            return
+                $"{_campaignActionMessage} Next: '{nextEvent.Title}' in {FormatSimulationDate(nextEvent.GetDate())}.";
+        }
+
+        if (nextEvent is null)
+        {
+            return "Historical campaign: no further events are scheduled from the current date.";
+        }
+
+        return $"Historical campaign: next event '{nextEvent.Title}' in {FormatSimulationDate(nextEvent.GetDate())}.";
+    }
+
+    private void DrawHistoricalCampaignArchivePanel()
+    {
+        if (_historicalCampaignArchive.Count == 0)
+        {
+            return;
+        }
+
+        GUILayout.BeginVertical(GUI.skin.box);
+        GUILayout.Label($"Historical archive ({_historicalCampaignArchive.Count})");
+        _historicalCampaignArchiveScroll = GUILayout.BeginScrollView(
+            _historicalCampaignArchiveScroll,
+            GUILayout.Height(92f));
+
+        for (var index = _historicalCampaignArchive.Count - 1; index >= 0; index--)
+        {
+            var entry = _historicalCampaignArchive[index];
+            GUILayout.Label($"{FormatSimulationDate(entry.GetDate())} - {entry.Title}");
+        }
+
+        GUILayout.EndScrollView();
+        GUILayout.EndVertical();
+    }
+
+    private void AppendHistoricalCampaignArchiveEntry(HistoricalCampaignEventDefinition definition)
+    {
+        _historicalCampaignArchive.Add(HistoricalCampaignArchiveEntry.FromEvent(definition));
+        _historicalCampaignArchiveScroll = Vector2.zero;
+        Debug.Log($"[Campaign] Archive appended: {definition.Title} | {definition.Year:D4}-{definition.Month:D2}");
+    }
+
+    private void RestoreHistoricalCampaignArchive(IReadOnlyList<HistoricalCampaignArchiveEntry>? archiveEntries)
+    {
+        _historicalCampaignArchive.Clear();
+        _historicalCampaignArchiveScroll = Vector2.zero;
+
+        if (archiveEntries is null)
+        {
+            return;
+        }
+
+        for (var index = 0; index < archiveEntries.Count; index++)
+        {
+            var entry = archiveEntries[index];
+            if (entry is null || string.IsNullOrWhiteSpace(entry.Title))
+            {
+                continue;
+            }
+
+            try
+            {
+                _ = new SimulationDate(entry.Year, entry.Month);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                continue;
+            }
+
+            _historicalCampaignArchive.Add(new HistoricalCampaignArchiveEntry
+            {
+                Title = entry.Title.Trim(),
+                Year = entry.Year,
+                Month = entry.Month,
+            });
+        }
     }
 
     private static void DrawSection(string title)
@@ -6186,6 +6374,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public List<StringStringStateEntry> SelectedWarehouseDesignByContractId { get; set; } = new();
 
         public List<StringDoubleStateEntry> DeliveredContractProfitById { get; set; } = new();
+
+        public List<string> FiredHistoricalCampaignEventIds { get; set; } = new();
+
+        public List<HistoricalCampaignArchiveEntry> HistoricalCampaignArchiveEntries { get; set; } = new();
 
         public ContractBoardSnapshot? ContractBoardSnapshot { get; set; }
 

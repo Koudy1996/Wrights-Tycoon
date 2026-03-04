@@ -1,0 +1,209 @@
+{
+  "events": [
+    {
+      "id": "evt.jet_age",
+      "title": "Aviation Enters the Jet Age",
+      "year": 1947,
+      "month": 10,
+      "articleText": "Jet propulsion moves from wartime prototype to commercial promise. Manufacturers now face a faster design frontier, and airlines begin planning for a new era of speed.",
+      "effects": [
+        {
+          "type": "technology_shift",
+          "target": "jet_propulsion"
+        }
+      ]
+    },
+    {
+      "id": "evt.korea_war_begins",
+      "title": "War Breaks Out in Korea",
+      "year": 1950,
+      "month": 6,
+      "articleText": "Fighting on the Korean peninsula sharply increases demand for tactical aircraft, transports, and rapid rearmament across allied procurement channels.",
+      "effects": [
+        {
+          "type": "contract_mix_modifier",
+          "target": "military",
+          "balanceKey": "contract.event.korea_war.mix"
+        },
+        {
+          "type": "bonus_contract_batch",
+          "target": "military",
+          "balanceKey": "contract.event.korea_war.bonus_batch"
+        }
+      ]
+    },
+    {
+      "id": "evt.korea_armistice",
+      "title": "Armistice Ends Korean War",
+      "year": 1953,
+      "month": 7,
+      "articleText": "The Korean armistice cools urgent wartime demand. Procurement remains active, but emergency pressure eases and civil planning regains attention.",
+      "effects": [
+        {
+          "type": "contract_mix_modifier",
+          "target": "civil",
+          "balanceKey": "contract.event.korea_armistice.mix"
+        }
+      ]
+    },
+    {
+      "id": "evt.wide_body_concept",
+      "title": "The Wide-Body Transport Concept",
+      "year": 1960,
+      "month": 1,
+      "articleText": "Design studies for larger twin-aisle transports gain momentum. Higher-capacity air travel and cargo operations begin to influence long-range fleet planning.",
+      "effects": [
+        {
+          "type": "unlock_category",
+          "target": "HeavyTransportWideBody"
+        }
+      ]
+    },
+    {
+      "id": "evt.vietnam_escalation",
+      "title": "War Escalates in Vietnam",
+      "year": 1965,
+      "month": 3,
+      "articleText": "Escalation in Vietnam drives fresh demand for tactical aircraft, support fleets, and dependable military production capacity.",
+      "effects": [
+        {
+          "type": "contract_mix_modifier",
+          "target": "military",
+          "balanceKey": "contract.event.vietnam_war.mix"
+        },
+        {
+          "type": "bonus_contract_batch",
+          "target": "military",
+          "balanceKey": "contract.event.vietnam_war.bonus_batch"
+        }
+      ]
+    },
+    {
+      "id": "evt.global_air_travel_expands",
+      "title": "Expansion of Global Air Travel",
+      "year": 1969,
+      "month": 1,
+      "articleText": "Passenger volumes rise quickly as jet networks widen. Airlines push for larger fleets, smoother operations, and broader international coverage.",
+      "effects": [
+        {
+          "type": "contract_mix_modifier",
+          "target": "civil",
+          "balanceKey": "contract.event.global_air_travel.mix"
+        }
+      ]
+    },
+    {
+      "id": "evt.oil_crisis",
+      "title": "Global Oil Crisis",
+      "year": 1973,
+      "month": 10,
+      "articleText": "Fuel prices jump and airlines face sudden cost pressure. Efficiency becomes a board-level concern, pushing buyers toward lower burn designs.",
+      "effects": [
+        {
+          "type": "unlock_contract_parameter",
+          "target": "fuel_consumption"
+        },
+        {
+          "type": "contract_price_modifier",
+          "target": "civil",
+          "balanceKey": "contract.event.oil_crisis.price"
+        }
+      ]
+    },
+    {
+      "id": "evt.second_oil_crisis",
+      "title": "Second Oil Crisis",
+      "year": 1979,
+      "month": 6,
+      "articleText": "A second fuel shock reinforces the industry shift toward economy, reliability, and careful route profitability.",
+      "effects": [
+        {
+          "type": "contract_price_modifier",
+          "target": "civil",
+          "balanceKey": "contract.event.second_oil_crisis.price"
+        }
+      ]
+    },
+    {
+      "id": "evt.advanced_aero_research",
+      "title": "Advanced Aerodynamics Research",
+      "year": 1982,
+      "month": 1,
+      "articleText": "Wind tunnel methods, cleaner structures, and better computational tools help manufacturers chase higher performance with lower drag.",
+      "effects": [
+        {
+          "type": "technology_shift",
+          "target": "aerodynamics"
+        }
+      ]
+    },
+    {
+      "id": "evt.cold_war_ends",
+      "title": "End of the Cold War Era",
+      "year": 1989,
+      "month": 11,
+      "articleText": "Geopolitical tensions ease, changing long-term defense expectations and redirecting attention toward civil markets and commercial efficiency.",
+      "effects": [
+        {
+          "type": "contract_mix_modifier",
+          "target": "civil",
+          "balanceKey": "contract.event.cold_war_end.mix"
+        }
+      ]
+    },
+    {
+      "id": "evt.digital_avionics",
+      "title": "Digital Avionics Revolution",
+      "year": 1995,
+      "month": 1,
+      "articleText": "Glass cockpits, smarter systems, and digital integration begin reshaping aircraft capability, maintenance, and buyer expectations.",
+      "effects": [
+        {
+          "type": "technology_shift",
+          "target": "avionics"
+        }
+      ]
+    },
+    {
+      "id": "evt.global_aviation_crisis",
+      "title": "Global Aviation Crisis",
+      "year": 2001,
+      "month": 9,
+      "articleText": "Air travel demand drops sharply after a global shock. Airline caution rises, planning slows, and the market turns defensive.",
+      "effects": [
+        {
+          "type": "contract_mix_modifier",
+          "target": "civil",
+          "balanceKey": "contract.event.global_aviation_crisis.mix"
+        }
+      ]
+    },
+    {
+      "id": "evt.global_financial_crisis",
+      "title": "Global Financial Crisis",
+      "year": 2008,
+      "month": 9,
+      "articleText": "Credit tightens, fleet renewal slows, and buyers delay major commitments while financial uncertainty spreads across global markets.",
+      "effects": [
+        {
+          "type": "contract_mix_modifier",
+          "target": "civil",
+          "balanceKey": "contract.event.financial_crisis.mix"
+        }
+      ]
+    },
+    {
+      "id": "evt.new_generation_efficient_aircraft",
+      "title": "New Generation Efficient Aircraft",
+      "year": 2015,
+      "month": 1,
+      "articleText": "New airframes and engines set stronger expectations for efficiency, operating cost, and long-term environmental performance.",
+      "effects": [
+        {
+          "type": "technology_shift",
+          "target": "efficiency"
+        }
+      ]
+    }
+  ]
+}
