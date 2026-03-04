@@ -68,6 +68,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private AirframeBuilder? _airframeBuilder;
     private AircraftFactory? _aircraftFactory;
     private HistoricalCampaignService? _historicalCampaign;
+    private HistoricalCampaignRuntimeContractModifierSource? _historicalCampaignContractModifierSource;
     private ContractBoard? _contractBoard;
     private ContractWarehouseDeliveryService? _contractWarehouseDeliveryService;
     private GovernmentContractBoard? _governmentContractBoard;
@@ -455,7 +456,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         SyncTypeAirframeFromBase();
         RebuildEnginePreview();
 
-        _contractBoard = new ContractBoard(new ContractGenerator(), new ContractEvaluator());
+        _historicalCampaignContractModifierSource = _historicalCampaign is null
+            ? null
+            : new HistoricalCampaignRuntimeContractModifierSource(_historicalCampaign, _historicalCampaignState);
+        _contractBoard = new ContractBoard(
+            new ContractGenerator(campaignModifierSource: _historicalCampaignContractModifierSource),
+            new ContractEvaluator());
         _productionFactory = new AircraftProductionFactory();
         _contractWarehouseDeliveryService = new ContractWarehouseDeliveryService(_contractBoard, _productionFactory);
         var governmentRandom = new SystemGovernmentContractRandomProvider();
@@ -4450,6 +4456,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _lastGeneratedContracts.AddRange(generated);
             var canceledDelta = _contractBoard.CanceledContracts.Count - canceledBefore;
             _contractActionMessage = $"Advanced to {FormatSimulationDate(_currentDate)}. Generated {FormatUiInteger(generated.Count)} contracts, canceled {FormatUiInteger(canceledDelta)}.";
+            LogGeneratedContractMix(generated);
         }
 
         if (_governmentContractBoard is not null)
@@ -4810,6 +4817,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             $"Historical event triggered: {triggeredEvent.Title} ({FormatSimulationDate(triggeredEvent.GetDate())}).";
         Debug.Log(
             $"[Campaign] Event fired: {triggeredEvent.Id} | {triggeredEvent.Title} | {triggeredEvent.Year:D4}-{triggeredEvent.Month:D2}");
+        LogHistoricalCampaignContractModifiers();
     }
 
     private string BuildHistoricalCampaignStatusLabel()
@@ -4903,6 +4911,51 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 Month = entry.Month,
             });
         }
+    }
+
+    private void LogHistoricalCampaignContractModifiers()
+    {
+        if (_historicalCampaignContractModifierSource is null)
+        {
+            return;
+        }
+
+        var modifiers = _historicalCampaignContractModifierSource.GetCurrentModifiers();
+        Debug.Log(
+            $"[Campaign] Active contract modifiers: civilMix={modifiers.CivilCategoryWeightMultiplier:F3}, " +
+            $"militaryMix={modifiers.MilitaryCategoryWeightMultiplier:F3}, " +
+            $"civilPrice={modifiers.CivilPriceMultiplier:F3}, " +
+            $"militaryPrice={modifiers.MilitaryPriceMultiplier:F3}");
+    }
+
+    private static void LogGeneratedContractMix(IReadOnlyList<Contract> generatedContracts)
+    {
+        if (generatedContracts is null || generatedContracts.Count == 0)
+        {
+            return;
+        }
+
+        var militaryCount = 0;
+        var civilCount = 0;
+        for (var index = 0; index < generatedContracts.Count; index++)
+        {
+            var category = generatedContracts[index].Requirements.RequiredCategory;
+            if (!category.HasValue)
+            {
+                continue;
+            }
+
+            if (ContractBalance.IsMilitaryContractCategory(category.Value))
+            {
+                militaryCount++;
+            }
+            else
+            {
+                civilCount++;
+            }
+        }
+
+        Debug.Log($"[Contracts] Monthly mix: civil={civilCount}, military={militaryCount}");
     }
 
     private static void DrawSection(string title)

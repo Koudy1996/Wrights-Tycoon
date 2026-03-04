@@ -1,5 +1,6 @@
 using System;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Math;
 
@@ -7,6 +8,13 @@ namespace WrightTycoon.Core.Contracts;
 
 public sealed class ContractPricingCalculator
 {
+    private readonly IHistoricalCampaignContractModifierSource? _campaignModifierSource;
+
+    public ContractPricingCalculator(IHistoricalCampaignContractModifierSource? campaignModifierSource = null)
+    {
+        _campaignModifierSource = campaignModifierSource;
+    }
+
     public ContractPricingQuote CalculateQuote(ContractRequirements requirements, int quantityUnits)
     {
         if (requirements is null)
@@ -27,15 +35,21 @@ public sealed class ContractPricingCalculator
         var markup = quantityUnits < ContractBalance.LargeOrderMinQuantityUnits
             ? ContractBalance.SmallOrderContractMarkup
             : ContractBalance.LargeOrderContractMarkup;
+        var priceMultiplier = ResolvePriceMultiplier(requirements.RequiredCategory);
+        var adjustedMarkup = ((1d + markup) * priceMultiplier) - 1d;
+        if (adjustedMarkup < ContractBalance.CampaignAdjustedMarkupFloor)
+        {
+            adjustedMarkup = ContractBalance.CampaignAdjustedMarkupFloor;
+        }
 
-        var unitPrice = estimatedMinimumUnitCost * (1d + markup);
+        var unitPrice = estimatedMinimumUnitCost * (1d + adjustedMarkup);
         var totalPrice = unitPrice * quantityUnits;
 
         return new ContractPricingQuote(
             RoundCurrency(estimatedMinimumUnitCost),
             RoundCurrency(unitPrice),
             RoundCurrency(totalPrice),
-            markup);
+            adjustedMarkup);
     }
 
     public double EstimateMinimumUnitProductionCost(ContractRequirements requirements)
@@ -304,6 +318,17 @@ public sealed class ContractPricingCalculator
     {
         sum += value;
         count++;
+    }
+
+    private double ResolvePriceMultiplier(AircraftCategory? category)
+    {
+        var modifiers = _campaignModifierSource?.GetCurrentModifiers();
+        if (modifiers is null)
+        {
+            return 1d;
+        }
+
+        return modifiers.ResolvePriceMultiplier(category);
     }
 
     private static double RoundCurrency(double value) =>

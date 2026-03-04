@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using NUnit.Framework;
+using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Simulation;
 
@@ -83,6 +84,46 @@ public sealed class HistoricalCampaignServiceTests
         Assert.That(nextUpcoming!.Id, Is.EqualTo("evt.future"));
     }
 
+    [Test]
+    public void Service_BuildsActiveContractModifiersFromFiredEvents()
+    {
+        var repository = new HistoricalCampaignJsonRepository();
+        var json = WrapEvents(
+            CreateEventJson(
+                "evt.korea",
+                "Korea",
+                1950,
+                6,
+                "Article text.",
+                "contract_mix_modifier",
+                "military",
+                "contract.event.korea_war.mix",
+                "contract_price_modifier",
+                "military",
+                "contract.event.korea_war.price"),
+            CreateEventJson(
+                "evt.oil",
+                "Oil",
+                1973,
+                10,
+                "Article text.",
+                "contract_price_modifier",
+                "civil",
+                "contract.event.oil_crisis.price"));
+
+        var service = repository.LoadFromJson(json);
+        var state = new HistoricalCampaignState();
+        Assert.That(service.TryTrigger(new SimulationDate(1950, 6), state).HasTriggeredEvent, Is.True);
+        Assert.That(service.TryTrigger(new SimulationDate(1973, 10), state).HasTriggeredEvent, Is.True);
+
+        var modifiers = service.BuildActiveContractModifiers(state);
+
+        Assert.That(modifiers.MilitaryCategoryWeightMultiplier, Is.EqualTo(ContractBalance.CampaignMixKoreaWar).Within(1e-9));
+        Assert.That(modifiers.MilitaryPriceMultiplier, Is.EqualTo(ContractBalance.CampaignPriceKoreaWar).Within(1e-9));
+        Assert.That(modifiers.CivilPriceMultiplier, Is.EqualTo(ContractBalance.CampaignPriceGlobalOilCrisis).Within(1e-9));
+        Assert.That(modifiers.HasCategoryMixAdjustment, Is.True);
+    }
+
     private static string WrapEvents(params string[] eventJsonBlocks) =>
         "{\n" +
         "  \"events\": [\n" +
@@ -95,7 +136,8 @@ public sealed class HistoricalCampaignServiceTests
         string title,
         int year,
         int month,
-        string articleText) =>
+        string articleText,
+        params string[] effects) =>
         "    {\n" +
         $"      \"id\": \"{id}\",\n" +
         $"      \"title\": \"{title}\",\n" +
@@ -103,9 +145,38 @@ public sealed class HistoricalCampaignServiceTests
         $"      \"month\": {month},\n" +
         $"      \"articleText\": \"{articleText}\",\n" +
         "      \"effects\": [\n" +
-        "        {\n" +
-        "          \"type\": \"test_marker\"\n" +
-        "        }\n" +
-        "      ]\n" +
+        BuildEffectsJson(effects) +
+        "\n      ]\n" +
         "    }";
+
+    private static string BuildEffectsJson(string[] effects)
+    {
+        if (effects is null || effects.Length == 0)
+        {
+            return "        {\n" +
+                   "          \"type\": \"test_marker\"\n" +
+                   "        }";
+        }
+
+        if (effects.Length % 3 != 0)
+        {
+            throw new ArgumentException("Effects must be supplied as type/target/balanceKey triplets.", nameof(effects));
+        }
+
+        var blocks = Enumerable.Range(0, effects.Length / 3)
+            .Select(index =>
+            {
+                var offset = index * 3;
+                var type = effects[offset];
+                var target = effects[offset + 1];
+                var balanceKey = effects[offset + 2];
+                return "        {\n" +
+                       $"          \"type\": \"{type}\",\n" +
+                       $"          \"target\": \"{target}\",\n" +
+                       $"          \"balanceKey\": \"{balanceKey}\"\n" +
+                       "        }";
+            });
+
+        return string.Join(",\n", blocks);
+    }
 }

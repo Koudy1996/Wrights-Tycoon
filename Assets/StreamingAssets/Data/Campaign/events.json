@@ -26,6 +26,11 @@
           "balanceKey": "contract.event.korea_war.mix"
         },
         {
+          "type": "contract_price_modifier",
+          "target": "military",
+          "balanceKey": "contract.event.korea_war.price"
+        },
+        {
           "type": "bonus_contract_batch",
           "target": "military",
           "balanceKey": "contract.event.korea_war.bonus_batch"
@@ -43,6 +48,11 @@
           "type": "contract_mix_modifier",
           "target": "civil",
           "balanceKey": "contract.event.korea_armistice.mix"
+        },
+        {
+          "type": "contract_price_modifier",
+          "target": "military",
+          "balanceKey": "contract.event.korea_armistice.price"
         }
       ]
     },
@@ -70,6 +80,11 @@
           "type": "contract_mix_modifier",
           "target": "military",
           "balanceKey": "contract.event.vietnam_war.mix"
+        },
+        {
+          "type": "contract_price_modifier",
+          "target": "military",
+          "balanceKey": "contract.event.vietnam_war.price"
         },
         {
           "type": "bonus_contract_batch",

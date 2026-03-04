@@ -68,6 +68,24 @@ public static class ContractBalance
     public const double PricingMinimumUnitCostFloor = 25000d;
     public const double SmallOrderContractMarkup = 0.25d;
     public const double LargeOrderContractMarkup = 0.20d;
+    public const double CampaignAdjustedMarkupFloor = 0.02d;
+    public const int CampaignWeightedCategoryPoolBaseCopies = 4;
+    public const int CampaignWeightedCategoryPoolMinimumCopies = 1;
+    public const int CampaignWeightedCategoryPoolMaximumCopies = 12;
+
+    public const double CampaignMixKoreaWar = 2.25d;
+    public const double CampaignMixKoreaArmistice = 1.35d;
+    public const double CampaignMixVietnamWar = 2.10d;
+    public const double CampaignMixGlobalAirTravelExpansion = 1.60d;
+    public const double CampaignMixColdWarEnd = 1.30d;
+    public const double CampaignMixGlobalAviationCrisis = 0.70d;
+    public const double CampaignMixGlobalFinancialCrisis = 0.75d;
+
+    public const double CampaignPriceKoreaWar = 1.12d;
+    public const double CampaignPriceKoreaArmistice = 0.92d;
+    public const double CampaignPriceVietnamWar = 1.15d;
+    public const double CampaignPriceGlobalOilCrisis = 0.92d;
+    public const double CampaignPriceSecondOilCrisis = 0.94d;
 
     public static readonly double[] SpeedRequirementAltitudesMeters = { 0d, 5000d, 10000d };
 
@@ -111,6 +129,24 @@ public static class ContractBalance
         AircraftCategory.HeavyTransportWideBody,
         AircraftCategory.SpecialCivil,
         AircraftCategory.BusinessVipJet,
+        AircraftCategory.MilitaryTactical,
+        AircraftCategory.MilitaryStrategicSupport,
+    };
+
+    public static readonly AircraftCategory[] CivilRequestedCategories =
+    {
+        AircraftCategory.LightSportAndRecreational,
+        AircraftCategory.LightMultiRolePiston,
+        AircraftCategory.TurbopropRegional,
+        AircraftCategory.RegionalJet,
+        AircraftCategory.MediumTransportNarrowBody,
+        AircraftCategory.HeavyTransportWideBody,
+        AircraftCategory.SpecialCivil,
+        AircraftCategory.BusinessVipJet,
+    };
+
+    public static readonly AircraftCategory[] MilitaryRequestedCategories =
+    {
         AircraftCategory.MilitaryTactical,
         AircraftCategory.MilitaryStrategicSupport,
     };
@@ -206,6 +242,99 @@ public static class ContractBalance
         }
 
         return allowedRunwayLengths[index];
+    }
+
+    public static int ResolveHistoricalCampaignCategoryPoolCopies(double weightMultiplier)
+    {
+        if (double.IsNaN(weightMultiplier) || double.IsInfinity(weightMultiplier))
+        {
+            throw new ArgumentOutOfRangeException(nameof(weightMultiplier), "Weight multiplier must be finite.");
+        }
+
+        var clampedMultiplier = Math.Max(0d, weightMultiplier);
+        var copies = (int)Math.Round(
+            CampaignWeightedCategoryPoolBaseCopies * clampedMultiplier,
+            MidpointRounding.AwayFromZero);
+        if (copies < CampaignWeightedCategoryPoolMinimumCopies)
+        {
+            copies = CampaignWeightedCategoryPoolMinimumCopies;
+        }
+        else if (copies > CampaignWeightedCategoryPoolMaximumCopies)
+        {
+            copies = CampaignWeightedCategoryPoolMaximumCopies;
+        }
+
+        return copies;
+    }
+
+    public static bool IsCivilContractCategory(AircraftCategory category) => ContainsCategory(CivilRequestedCategories, category);
+
+    public static bool IsMilitaryContractCategory(AircraftCategory category) => ContainsCategory(MilitaryRequestedCategories, category);
+
+    public static bool TryResolveHistoricalCampaignMixWeightMultiplier(string? balanceKey, out double multiplier)
+    {
+        multiplier = 1d;
+        if (string.IsNullOrWhiteSpace(balanceKey))
+        {
+            return false;
+        }
+
+        switch (balanceKey.Trim())
+        {
+            case "contract.event.korea_war.mix":
+                multiplier = CampaignMixKoreaWar;
+                return true;
+            case "contract.event.korea_armistice.mix":
+                multiplier = CampaignMixKoreaArmistice;
+                return true;
+            case "contract.event.vietnam_war.mix":
+                multiplier = CampaignMixVietnamWar;
+                return true;
+            case "contract.event.global_air_travel.mix":
+                multiplier = CampaignMixGlobalAirTravelExpansion;
+                return true;
+            case "contract.event.cold_war_end.mix":
+                multiplier = CampaignMixColdWarEnd;
+                return true;
+            case "contract.event.global_aviation_crisis.mix":
+                multiplier = CampaignMixGlobalAviationCrisis;
+                return true;
+            case "contract.event.financial_crisis.mix":
+                multiplier = CampaignMixGlobalFinancialCrisis;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    public static bool TryResolveHistoricalCampaignPriceMultiplier(string? balanceKey, out double multiplier)
+    {
+        multiplier = 1d;
+        if (string.IsNullOrWhiteSpace(balanceKey))
+        {
+            return false;
+        }
+
+        switch (balanceKey.Trim())
+        {
+            case "contract.event.korea_war.price":
+                multiplier = CampaignPriceKoreaWar;
+                return true;
+            case "contract.event.korea_armistice.price":
+                multiplier = CampaignPriceKoreaArmistice;
+                return true;
+            case "contract.event.vietnam_war.price":
+                multiplier = CampaignPriceVietnamWar;
+                return true;
+            case "contract.event.oil_crisis.price":
+                multiplier = CampaignPriceGlobalOilCrisis;
+                return true;
+            case "contract.event.second_oil_crisis.price":
+                multiplier = CampaignPriceSecondOilCrisis;
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static bool ContainsCategory(AircraftCategory[] configuredCategories, AircraftCategory category)

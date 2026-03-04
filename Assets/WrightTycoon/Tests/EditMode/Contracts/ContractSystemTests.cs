@@ -3,6 +3,7 @@ using NUnit.Framework;
 using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Contracts;
 using WrightTycoon.Core.Engines;
@@ -173,6 +174,69 @@ public sealed class ContractSystemTests
         Assert.That(smallQuote.TotalPrice, Is.EqualTo(smallQuote.UnitPrice * 60).Within(0.1d));
         Assert.That(largeQuote.TotalPrice, Is.EqualTo(largeQuote.UnitPrice * 200).Within(0.1d));
     }
+
+    [Test]
+    public void PricingCalculator_AppliesCampaignPriceMultiplierToMilitaryContracts()
+    {
+        var boostedModifiers = new HistoricalCampaignContractModifiers();
+        boostedModifiers.ApplyPriceMultiplier("military", ContractBalance.CampaignPriceVietnamWar);
+        var calculator = new ContractPricingCalculator(new StubHistoricalCampaignContractModifierSource(boostedModifiers));
+
+        var requirements = new ContractRequirements
+        {
+            RequiredCategory = AircraftCategory.MilitaryTactical,
+            MinimumReliability = 0.9d,
+            MinimumRangeKilometers = 1600d,
+            MinimumPayloadKilograms = 2200d,
+        };
+
+        var quoted = calculator.CalculateQuote(requirements, quantityUnits: 60);
+        var expectedMarkup = ((1d + ContractBalance.SmallOrderContractMarkup) * ContractBalance.CampaignPriceVietnamWar) - 1d;
+
+        Assert.That(quoted.AppliedMarkup, Is.EqualTo(expectedMarkup).Within(1e-9));
+        Assert.That(quoted.UnitPrice, Is.GreaterThan(quoted.EstimatedMinimumUnitCost));
+    }
+
+    [Test]
+    public void Generator_ShiftsTowardMilitaryCategories_WhenCampaignMixIsActive()
+    {
+        var options = new ContractGeneratorOptions
+        {
+            MinContractsPerMonth = 1,
+            MaxContractsPerMonth = 1,
+            RequestedCategories = new[]
+            {
+                AircraftCategory.LightSportAndRecreational,
+                AircraftCategory.MilitaryTactical,
+            },
+        };
+
+        var modifiers = new HistoricalCampaignContractModifiers();
+        modifiers.ApplyCategoryMixMultiplier("civil", ContractBalance.CampaignMixGlobalAviationCrisis);
+        modifiers.ApplyCategoryMixMultiplier("military", ContractBalance.CampaignMixVietnamWar);
+        var generator = new ContractGenerator(
+            seed: 4499,
+            options: options,
+            campaignModifierSource: new StubHistoricalCampaignContractModifierSource(modifiers));
+
+        var militaryCount = 0;
+        var civilCount = 0;
+        for (var monthIndex = 0; monthIndex < 24; monthIndex++)
+        {
+            var contract = generator.GenerateMonthlyContracts(monthIndex)[0];
+            if (ContractBalance.IsMilitaryContractCategory(contract.Requirements.RequiredCategory!.Value))
+            {
+                militaryCount++;
+            }
+            else
+            {
+                civilCount++;
+            }
+        }
+
+        Assert.That(militaryCount, Is.GreaterThan(civilCount));
+    }
+
     [Test]
     public void Evaluator_BlocksDelivery_WhenAircraftBelowRequirements()
     {
@@ -772,6 +836,18 @@ public sealed class ContractSystemTests
             _alreadyGenerated = true;
             return _contracts;
         }
+    }
+
+    private sealed class StubHistoricalCampaignContractModifierSource : IHistoricalCampaignContractModifierSource
+    {
+        private readonly HistoricalCampaignContractModifiers _modifiers;
+
+        public StubHistoricalCampaignContractModifierSource(HistoricalCampaignContractModifiers modifiers)
+        {
+            _modifiers = modifiers;
+        }
+
+        public HistoricalCampaignContractModifiers GetCurrentModifiers() => _modifiers;
     }
 }
 

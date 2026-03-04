@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Categories;
 
 namespace WrightTycoon.Core.Contracts;
@@ -19,8 +20,9 @@ public sealed class ContractGenerator : IContractGenerator
 
     private readonly Random _random;
     private readonly ContractGeneratorOptions _options;
+    private readonly IHistoricalCampaignContractModifierSource? _campaignModifierSource;
     private readonly List<AircraftCategory> _categoryRotation = new();
-    private readonly ContractPricingCalculator _pricingCalculator = new();
+    private readonly ContractPricingCalculator _pricingCalculator;
     private int _sequence;
     private int _categoryRotationIndex;
     private int _generatedOrderCount;
@@ -42,10 +44,15 @@ public sealed class ContractGenerator : IContractGenerator
         High = 1,
     }
 
-    public ContractGenerator(int seed = 6003901, ContractGeneratorOptions? options = null)
+    public ContractGenerator(
+        int seed = 6003901,
+        ContractGeneratorOptions? options = null,
+        IHistoricalCampaignContractModifierSource? campaignModifierSource = null)
     {
         _random = new Random(seed);
         _options = options ?? new ContractGeneratorOptions();
+        _campaignModifierSource = campaignModifierSource;
+        _pricingCalculator = new ContractPricingCalculator(_campaignModifierSource);
         _options.Validate();
         ResetCategoryRotation();
     }
@@ -57,6 +64,7 @@ public sealed class ContractGenerator : IContractGenerator
             throw new ArgumentOutOfRangeException(nameof(monthIndex), "Month index must be greater than or equal to zero.");
         }
 
+        ResetCategoryRotation();
         var contractCount = NextInclusive(_options.MinContractsPerMonth, _options.MaxContractsPerMonth);
         var generated = new List<Contract>(contractCount);
         for (var index = 0; index < contractCount; index++)
@@ -175,7 +183,25 @@ public sealed class ContractGenerator : IContractGenerator
     private void ResetCategoryRotation()
     {
         _categoryRotation.Clear();
-        _categoryRotation.AddRange(_options.RequestedCategories);
+        var modifiers = _campaignModifierSource?.GetCurrentModifiers();
+        if (modifiers is null || !modifiers.HasCategoryMixAdjustment)
+        {
+            _categoryRotation.AddRange(_options.RequestedCategories);
+        }
+        else
+        {
+            for (var index = 0; index < _options.RequestedCategories.Count; index++)
+            {
+                var category = _options.RequestedCategories[index];
+                var copies = ContractBalance.ResolveHistoricalCampaignCategoryPoolCopies(
+                    modifiers.ResolveCategoryWeightMultiplier(category));
+                for (var copyIndex = 0; copyIndex < copies; copyIndex++)
+                {
+                    _categoryRotation.Add(category);
+                }
+            }
+        }
+
         Shuffle(_categoryRotation);
         _categoryRotationIndex = 0;
     }

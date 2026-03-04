@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Simulation;
 
 namespace WrightTycoon.Core.Campaign;
 
 public sealed class HistoricalCampaignService
 {
+    private const string ContractMixModifierEffectType = "contract_mix_modifier";
+    private const string ContractPriceModifierEffectType = "contract_price_modifier";
+
     private readonly IReadOnlyList<HistoricalCampaignEventDefinition> _allEvents;
     private readonly IReadOnlyList<HistoricalCampaignEventDefinition> _scheduledEvents;
     private readonly IReadOnlyDictionary<int, HistoricalCampaignEventDefinition> _scheduledEventsByMonthKey;
@@ -121,5 +125,50 @@ public sealed class HistoricalCampaignService
         }
 
         return null;
+    }
+
+    public HistoricalCampaignContractModifiers BuildActiveContractModifiers(HistoricalCampaignState state)
+    {
+        if (state is null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        var modifiers = new HistoricalCampaignContractModifiers();
+        for (var eventIndex = 0; eventIndex < _scheduledEvents.Count; eventIndex++)
+        {
+            var definition = _scheduledEvents[eventIndex];
+            if (!state.HasFired(definition.Id))
+            {
+                continue;
+            }
+
+            for (var effectIndex = 0; effectIndex < definition.Effects.Count; effectIndex++)
+            {
+                var effect = definition.Effects[effectIndex];
+                if (effect is null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(effect.Type, ContractMixModifierEffectType, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (ContractBalance.TryResolveHistoricalCampaignMixWeightMultiplier(effect.BalanceKey, out var mixMultiplier))
+                    {
+                        modifiers.ApplyCategoryMixMultiplier(effect.Target, mixMultiplier);
+                    }
+
+                    continue;
+                }
+
+                if (string.Equals(effect.Type, ContractPriceModifierEffectType, StringComparison.OrdinalIgnoreCase) &&
+                    ContractBalance.TryResolveHistoricalCampaignPriceMultiplier(effect.BalanceKey, out var priceMultiplier))
+                {
+                    modifiers.ApplyPriceMultiplier(effect.Target, priceMultiplier);
+                }
+            }
+        }
+
+        return modifiers;
     }
 }
