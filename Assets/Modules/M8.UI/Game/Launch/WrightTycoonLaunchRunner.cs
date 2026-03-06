@@ -1554,7 +1554,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (!TryResolveEngineDefinitionForType(requestedType, out var selectedDefinitionIndex))
         {
-            DrawError($"No engine definitions found for {requestedType}. Add one in engine-definitions.json.");
+            DrawError($"No engine definitions found for {requestedType} in {_currentDate.Year}. Add one in engine-definitions.json.");
             return;
         }
 
@@ -4623,9 +4623,23 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
+        NormalizeEngineSelectionForCurrentDate();
+        if (_selectedEngineDefinitionIndex < 0 || _selectedEngineDefinitionIndex >= _engineDefinitions.Count)
+        {
+            return;
+        }
+
+        var selectedDefinition = _engineDefinitions[_selectedEngineDefinitionIndex];
+        if (!IsEngineDefinitionAvailableForCurrentDate(selectedDefinition))
+        {
+            _enginePreviewError =
+                $"Engine '{selectedDefinition.DisplayName}' unlocks in {selectedDefinition.AvailableFromYear}. Current year is {_currentDate.Year}.";
+            return;
+        }
+
         try
         {
-            _enginePreview = _engineBuilder.Build(_engineDefinitions[_selectedEngineDefinitionIndex], _engineParameters);
+            _enginePreview = _engineBuilder.Build(selectedDefinition, _engineParameters);
         }
         catch (Exception ex)
         {
@@ -4695,6 +4709,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         var saved = _savedEngines[index];
+        if (!IsEngineDefinitionAvailableForCurrentDate(saved.Definition))
+        {
+            _enginePreviewError =
+                $"Engine '{saved.Definition.DisplayName}' unlocks in {saved.Definition.AvailableFromYear}. Current year is {_currentDate.Year}.";
+            return;
+        }
+
         _engineDesignName = saved.Name;
         _engineParameters = saved.Parameters.Clone();
         _selectedEngineDefinitionIndex = FindIndexById(_engineDefinitions.Select(d => d.Id).ToArray(), saved.Definition.Id);
@@ -4708,7 +4729,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var compatibleIndices = new List<int>();
         for (var index = 0; index < _savedEngines.Count; index++)
         {
-            var engineType = _savedEngines[index].Definition.EngineType;
+            var savedEngine = _savedEngines[index];
+            if (!IsEngineDefinitionAvailableForCurrentDate(savedEngine.Definition))
+            {
+                continue;
+            }
+
+            var engineType = savedEngine.Definition.EngineType;
             if (AircraftEngineFamilyCompatibility.IsEngineTypeAllowed(_familyAllowedEngineFamily, engineType))
             {
                 compatibleIndices.Add(index);
@@ -5351,6 +5378,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _currentDate = overriddenDate;
             _lastLoggedTechnologyModifierYear = int.MinValue;
             LogHistoricalCampaignTechnologyModifiersIfYearChanged();
+            RebuildEnginePreview();
             _historicalCampaignDebugMessage = $"Debug date set to {FormatSimulationDate(_currentDate)}.";
             Debug.Log($"[Campaign][Debug] Date override applied: {_currentDate}");
         }
@@ -5379,6 +5407,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         SyncHistoricalCampaignDebugInputsToCurrentDate();
         _lastLoggedTechnologyModifierYear = int.MinValue;
         LogHistoricalCampaignTechnologyModifiersIfYearChanged();
+        RebuildEnginePreview();
         var bonusBatchRequests = ProcessHistoricalCampaignForCurrentDate();
         var injectedContracts = InjectHistoricalCampaignBonusContractsForCurrentMonth(bonusBatchRequests);
         if (injectedContracts.Count > 0)
@@ -6379,20 +6408,53 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[nextIndex];
     }
 
-    private static EngineType DrawJetTurbineTypeSelector(string label, EngineType currentType)
+    private EngineType DrawJetTurbineTypeSelector(string label, EngineType currentType)
     {
         GUILayout.Label(label);
-        var values = new[] { EngineType.Turbojet, EngineType.Turbofan };
-        var labels = new[] { "Turbojet", "Turbofan" };
+        var values = GetAvailableJetTurbineTypesForCurrentDate();
+        if (values.Length == 0)
+        {
+            GUILayout.Label("No jet turbine definitions are available in the current year.");
+            return currentType;
+        }
+
+        var labels = new string[values.Length];
+        for (var index = 0; index < values.Length; index++)
+        {
+            labels[index] = values[index] == EngineType.Turbofan ? "Turbofan" : "Turbojet";
+        }
+
         var index = Array.IndexOf(values, currentType);
         if (index < 0)
         {
-            index = 1;
+            index = 0;
         }
 
-        var nextIndex = GUILayout.SelectionGrid(index, labels, 2);
+        var nextIndex = GUILayout.SelectionGrid(index, labels, Mathf.Min(2, values.Length));
         nextIndex = Mathf.Clamp(nextIndex, 0, values.Length - 1);
         return values[nextIndex];
+    }
+
+    private EngineType[] GetAvailableJetTurbineTypesForCurrentDate()
+    {
+        var turbojetAvailable = IsEngineTypeAvailableForCurrentDate(EngineType.Turbojet);
+        var turbofanAvailable = IsEngineTypeAvailableForCurrentDate(EngineType.Turbofan);
+        if (turbojetAvailable && turbofanAvailable)
+        {
+            return new[] { EngineType.Turbojet, EngineType.Turbofan };
+        }
+
+        if (turbojetAvailable)
+        {
+            return new[] { EngineType.Turbojet };
+        }
+
+        if (turbofanAvailable)
+        {
+            return new[] { EngineType.Turbofan };
+        }
+
+        return Array.Empty<EngineType>();
     }
 
     private static BoostType DrawPistonBoostSelector(string label, BoostType currentBoost)
@@ -6432,7 +6494,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var candidates = new List<int>();
         for (var index = 0; index < _engineDefinitions.Count; index++)
         {
-            if (_engineDefinitions[index].EngineType == requestedType)
+            var definition = _engineDefinitions[index];
+            if (definition.EngineType == requestedType && IsEngineDefinitionAvailableForCurrentDate(definition))
             {
                 candidates.Add(index);
             }
@@ -6442,7 +6505,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             for (var index = 0; index < _engineDefinitions.Count; index++)
             {
-                var engineType = _engineDefinitions[index].EngineType;
+                var definition = _engineDefinitions[index];
+                if (!IsEngineDefinitionAvailableForCurrentDate(definition))
+                {
+                    continue;
+                }
+
+                var engineType = definition.EngineType;
                 if (_engineDesignerFamily == EngineDesignerFamily.Piston && IsPistonFamily(engineType))
                 {
                     candidates.Add(index);
@@ -6465,6 +6534,38 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             : candidates[0];
         return true;
     }
+
+    private void NormalizeEngineSelectionForCurrentDate()
+    {
+        var requestedType = _engineDesignerFamily == EngineDesignerFamily.Piston
+            ? _selectedPistonArrangement
+            : _selectedJetTurbineType;
+        if (!TryResolveEngineDefinitionForType(requestedType, out var selectedDefinitionIndex))
+        {
+            return;
+        }
+
+        _selectedEngineDefinitionIndex = selectedDefinitionIndex;
+        _engineDefinitionId = _engineDefinitions[_selectedEngineDefinitionIndex].Id;
+        SyncEngineSelectorsFromDefinition(_engineDefinitions[_selectedEngineDefinitionIndex].EngineType);
+    }
+
+    private bool IsEngineTypeAvailableForCurrentDate(EngineType engineType)
+    {
+        for (var index = 0; index < _engineDefinitions.Count; index++)
+        {
+            var definition = _engineDefinitions[index];
+            if (definition.EngineType == engineType && IsEngineDefinitionAvailableForCurrentDate(definition))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool IsEngineDefinitionAvailableForCurrentDate(EngineDefinition definition) =>
+        definition.AvailableFromYear <= _currentDate.Year;
 
     private void SyncEngineSelectorsFromDefinition(EngineType definitionType)
     {

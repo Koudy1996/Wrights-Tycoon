@@ -37,6 +37,8 @@ public sealed class EngineDefinition
 
     public double ComplexityFactor { get; init; } = 1d;
 
+    public int AvailableFromYear { get; init; } = 1;
+
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(Id))
@@ -62,5 +64,9 @@ public sealed class EngineDefinition
         Numeric.ThrowIfNegative(CostPerOutputUnit, nameof(CostPerOutputUnit));
         Numeric.ThrowIfNegative(BaseProductionManDays, nameof(BaseProductionManDays));
         Numeric.ThrowIfNegative(ComplexityFactor, nameof(ComplexityFactor));
+        if (AvailableFromYear < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(AvailableFromYear), "Available-from year must be greater than or equal to 1.");
+        }
     }
 }
