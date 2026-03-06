@@ -153,6 +153,152 @@ public sealed class HistoricalCampaignServiceTests
         Assert.That(afterUnlock.IsCategoryUnlocked(AircraftCategory.HeavyTransportWideBody), Is.True);
     }
 
+    [Test]
+    public void Service_UnlocksFuelConsumptionContractParameter_WhenUnlockEventFires()
+    {
+        var repository = new HistoricalCampaignJsonRepository();
+        var json = WrapEvents(
+            CreateEventJson(
+                "evt.oil_unlock",
+                "Oil Unlock",
+                1973,
+                10,
+                "Article text.",
+                "unlock_contract_parameter",
+                "fuel_consumption",
+                ""));
+
+        var service = repository.LoadFromJson(json);
+        var state = new HistoricalCampaignState();
+
+        var beforeUnlock = service.BuildActiveContractModifiers(state);
+        Assert.That(
+            beforeUnlock.IsContractParameterUnlocked(ContractBalance.HistoricalCampaignContractParameterFuelConsumption),
+            Is.False);
+
+        Assert.That(service.TryTrigger(new SimulationDate(1973, 10), state).HasTriggeredEvent, Is.True);
+
+        var afterUnlock = service.BuildActiveContractModifiers(state);
+        Assert.That(
+            afterUnlock.IsContractParameterUnlocked(ContractBalance.HistoricalCampaignContractParameterFuelConsumption),
+            Is.True);
+    }
+
+    [Test]
+    public void Repository_RejectsUnknownContractParameterUnlockTargets()
+    {
+        var repository = new HistoricalCampaignJsonRepository();
+        var json = WrapEvents(
+            CreateEventJson(
+                "evt.invalid_unlock",
+                "Invalid Unlock",
+                1973,
+                10,
+                "Article text.",
+                "unlock_contract_parameter",
+                "unknown_parameter",
+                ""));
+
+        var exception = Assert.Throws<InvalidOperationException>(() => repository.LoadFromJson(json));
+        Assert.That(exception!.Message, Does.Contain("unknown parameter"));
+    }
+
+    [Test]
+    public void Repository_RejectsUnsupportedEffectTypes()
+    {
+        var repository = new HistoricalCampaignJsonRepository();
+        var json = WrapEvents(
+            CreateEventJson(
+                "evt.unsupported_effect",
+                "Unsupported Effect",
+                1973,
+                10,
+                "Article text.",
+                "unsupported_effect",
+                "civil",
+                "contract.event.oil_crisis.price"));
+
+        var exception = Assert.Throws<InvalidOperationException>(() => repository.LoadFromJson(json));
+        Assert.That(exception!.Message, Does.Contain("unsupported type"));
+    }
+
+    [Test]
+    public void Repository_RejectsContractMixEffectWithoutBalanceKey()
+    {
+        var repository = new HistoricalCampaignJsonRepository();
+        var json = WrapEvents(
+            CreateEventJson(
+                "evt.missing_mix_balance",
+                "Missing Mix Balance",
+                1973,
+                10,
+                "Article text.",
+                "contract_mix_modifier",
+                "civil",
+                ""));
+
+        var exception = Assert.Throws<InvalidOperationException>(() => repository.LoadFromJson(json));
+        Assert.That(exception!.Message, Does.Contain("balanceKey"));
+    }
+
+    [Test]
+    public void Repository_RejectsContractMixEffectWithInvalidTarget()
+    {
+        var repository = new HistoricalCampaignJsonRepository();
+        var json = WrapEvents(
+            CreateEventJson(
+                "evt.invalid_mix_target",
+                "Invalid Mix Target",
+                1973,
+                10,
+                "Article text.",
+                "contract_mix_modifier",
+                "cargo",
+                "contract.event.global_air_travel.mix"));
+
+        var exception = Assert.Throws<InvalidOperationException>(() => repository.LoadFromJson(json));
+        Assert.That(exception!.Message, Does.Contain("must be 'civil' or 'military'"));
+    }
+
+    [Test]
+    public void Repository_RejectsEventsOutsideSupportedYearRange()
+    {
+        var repository = new HistoricalCampaignJsonRepository();
+        var json = WrapEvents(
+            CreateEventJson(
+                "evt.out_of_range_year",
+                "Out Of Range",
+                2025,
+                1,
+                "Article text.",
+                "technology_shift",
+                "avionics",
+                ""));
+
+        var exception = Assert.Throws<InvalidOperationException>(() => repository.LoadFromJson(json));
+        Assert.That(exception!.Message, Does.Contain("range"));
+    }
+
+    [Test]
+    public void Repository_AcceptsTechnologyShiftEffectsWithTarget()
+    {
+        var repository = new HistoricalCampaignJsonRepository();
+        var json = WrapEvents(
+            CreateEventJson(
+                "evt.technology_shift",
+                "Technology Shift",
+                1995,
+                1,
+                "Article text.",
+                "technology_shift",
+                "avionics",
+                ""));
+
+        var service = repository.LoadFromJson(json);
+        Assert.That(service.ScheduledEvents, Has.Count.EqualTo(1));
+        Assert.That(service.ScheduledEvents[0].Effects[0].Type, Is.EqualTo("technology_shift"));
+    }
+
     private static string WrapEvents(params string[] eventJsonBlocks) =>
         "{\n" +
         "  \"events\": [\n" +

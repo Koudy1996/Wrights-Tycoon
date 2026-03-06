@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Simulation;
 
@@ -8,7 +9,17 @@ namespace WrightTycoon.Core.Campaign;
 public static class HistoricalCampaignValidator
 {
     public const int ArticleWordLimit = 100;
+    public const int MinimumSupportedYear = CoreBalance.HistoricalCampaignTechnology.StartYear;
+    public const int MaximumSupportedYear = CoreBalance.HistoricalCampaignTechnology.EndYear;
+
+    private const string ContractMixModifierEffectType = "contract_mix_modifier";
+    private const string ContractPriceModifierEffectType = "contract_price_modifier";
+    private const string BonusContractBatchEffectType = "bonus_contract_batch";
     private const string UnlockCategoryEffectType = "unlock_category";
+    private const string UnlockContractParameterEffectType = "unlock_contract_parameter";
+    private const string TechnologyShiftEffectType = "technology_shift";
+    private const string CivilTarget = "civil";
+    private const string MilitaryTarget = "military";
 
     public static void ValidateDefinitions(IReadOnlyList<HistoricalCampaignEventDefinition> definitions)
     {
@@ -33,6 +44,7 @@ public static class HistoricalCampaignValidator
             ValidateRequiredText(definition.ArticleText, $"events[{eventIndex}].articleText");
 
             _ = new SimulationDate(definition.Year, definition.Month);
+            ValidateSupportedYearRange(definition.Year, $"events[{eventIndex}].year");
 
             var normalizedId = definition.Id.Trim();
             if (!seenIds.Add(normalizedId))
@@ -57,7 +69,39 @@ public static class HistoricalCampaignValidator
                 var effect = definition.Effects[effectIndex]
                     ?? throw new InvalidOperationException($"Historical campaign effect at events[{eventIndex}].effects[{effectIndex}] is null.");
                 ValidateRequiredText(effect.Type, $"events[{eventIndex}].effects[{effectIndex}].type");
-                if (string.Equals(effect.Type.Trim(), UnlockCategoryEffectType, StringComparison.OrdinalIgnoreCase))
+
+                var effectType = effect.Type.Trim();
+                if (string.Equals(effectType, ContractMixModifierEffectType, StringComparison.OrdinalIgnoreCase))
+                {
+                    ValidateCivilOrMilitaryTarget(effect.Target, $"events[{eventIndex}].effects[{effectIndex}].target");
+                    ValidateRequiredText(effect.BalanceKey, $"events[{eventIndex}].effects[{effectIndex}].balanceKey");
+                    if (!ContractBalance.TryResolveHistoricalCampaignMixWeightMultiplier(effect.BalanceKey, out _))
+                    {
+                        throw new InvalidOperationException(
+                            $"Historical campaign effect 'contract_mix_modifier' at events[{eventIndex}].effects[{effectIndex}] has unknown balanceKey '{effect.BalanceKey}'.");
+                    }
+                }
+                else if (string.Equals(effectType, ContractPriceModifierEffectType, StringComparison.OrdinalIgnoreCase))
+                {
+                    ValidateCivilOrMilitaryTarget(effect.Target, $"events[{eventIndex}].effects[{effectIndex}].target");
+                    ValidateRequiredText(effect.BalanceKey, $"events[{eventIndex}].effects[{effectIndex}].balanceKey");
+                    if (!ContractBalance.TryResolveHistoricalCampaignPriceMultiplier(effect.BalanceKey, out _))
+                    {
+                        throw new InvalidOperationException(
+                            $"Historical campaign effect 'contract_price_modifier' at events[{eventIndex}].effects[{effectIndex}] has unknown balanceKey '{effect.BalanceKey}'.");
+                    }
+                }
+                else if (string.Equals(effectType, BonusContractBatchEffectType, StringComparison.OrdinalIgnoreCase))
+                {
+                    ValidateCivilOrMilitaryTarget(effect.Target, $"events[{eventIndex}].effects[{effectIndex}].target");
+                    ValidateRequiredText(effect.BalanceKey, $"events[{eventIndex}].effects[{effectIndex}].balanceKey");
+                    if (!ContractBalance.TryResolveHistoricalCampaignBonusBatchRange(effect.BalanceKey, out _, out _))
+                    {
+                        throw new InvalidOperationException(
+                            $"Historical campaign effect 'bonus_contract_batch' at events[{eventIndex}].effects[{effectIndex}] has unknown balanceKey '{effect.BalanceKey}'.");
+                    }
+                }
+                else if (string.Equals(effectType, UnlockCategoryEffectType, StringComparison.OrdinalIgnoreCase))
                 {
                     ValidateRequiredText(effect.Target, $"events[{eventIndex}].effects[{effectIndex}].target");
                     if (!Enum.TryParse<AircraftCategory>(effect.Target!.Trim(), ignoreCase: true, out _))
@@ -65,6 +109,24 @@ public static class HistoricalCampaignValidator
                         throw new InvalidOperationException(
                             $"Historical campaign effect 'unlock_category' at events[{eventIndex}].effects[{effectIndex}] has unknown category '{effect.Target}'.");
                     }
+                }
+                else if (string.Equals(effect.Type.Trim(), UnlockContractParameterEffectType, StringComparison.OrdinalIgnoreCase))
+                {
+                    ValidateRequiredText(effect.Target, $"events[{eventIndex}].effects[{effectIndex}].target");
+                    if (!ContractBalance.TryNormalizeHistoricalCampaignContractParameter(effect.Target, out _))
+                    {
+                        throw new InvalidOperationException(
+                            $"Historical campaign effect 'unlock_contract_parameter' at events[{eventIndex}].effects[{effectIndex}] has unknown parameter '{effect.Target}'.");
+                    }
+                }
+                else if (string.Equals(effectType, TechnologyShiftEffectType, StringComparison.OrdinalIgnoreCase))
+                {
+                    ValidateRequiredText(effect.Target, $"events[{eventIndex}].effects[{effectIndex}].target");
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"Historical campaign effect at events[{eventIndex}].effects[{effectIndex}] has unsupported type '{effect.Type}'.");
                 }
             }
         }
@@ -112,5 +174,28 @@ public static class HistoricalCampaignValidator
         {
             throw new InvalidOperationException($"Historical campaign field '{fieldName}' is required.");
         }
+    }
+
+    private static void ValidateSupportedYearRange(int year, string fieldName)
+    {
+        if (year < MinimumSupportedYear || year > MaximumSupportedYear)
+        {
+            throw new InvalidOperationException(
+                $"Historical campaign field '{fieldName}' must be in range [{MinimumSupportedYear}, {MaximumSupportedYear}].");
+        }
+    }
+
+    private static void ValidateCivilOrMilitaryTarget(string? target, string fieldName)
+    {
+        ValidateRequiredText(target, fieldName);
+        var normalized = target!.Trim();
+        if (string.Equals(normalized, CivilTarget, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, MilitaryTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Historical campaign field '{fieldName}' must be '{CivilTarget}' or '{MilitaryTarget}', got '{target}'.");
     }
 }

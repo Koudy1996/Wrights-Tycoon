@@ -9,6 +9,7 @@ using ProcessStartInfo = System.Diagnostics.ProcessStartInfo;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
+using WrightTycoon.Core.Campaign;
 using WrightTycoon.Game.RuntimeData;
 
 namespace WrightTycoon.Game.Editor;
@@ -32,6 +33,15 @@ public static class WrightTycoonBuildPipeline
     public static void BuildMacReleaseMenu()
     {
         BuildMacRelease();
+    }
+
+    [MenuItem("WrightTycoon/Validate/Historical Campaign Assets")]
+    public static void ValidateHistoricalCampaignAssetsInProjectMenu()
+    {
+        var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+        var campaignDirectory = ResolveCampaignDirectoryInProject(projectRoot);
+        ValidateHistoricalCampaignAssetsInDirectory(campaignDirectory, $"project campaign directory '{campaignDirectory}'");
+        Debug.Log($"[Build] Historical campaign project assets validated in '{campaignDirectory}'.");
     }
 
     public static void BuildWindowsRelease()
@@ -112,7 +122,7 @@ public static class WrightTycoonBuildPipeline
             scenes = scenes,
             locationPathName = outputPath,
             target = target,
-            options = BuildOptions.None
+            options = BuildOptions.CleanBuildCache
         };
 
         Debug.Log($"[Build] Starting {buildLabel} build to: {outputPath}");
@@ -151,6 +161,8 @@ public static class WrightTycoonBuildPipeline
 
     private static void FinalizeReleaseLayout(string buildFolder, BuildTarget target)
     {
+        ValidateHistoricalCampaignAssetsInBuild(buildFolder, target);
+
         WrightTycoonRuntimePaths.EnsurePlayerInfoLayout(buildFolder);
 
         var manifest = CreateBuildManifest(target);
@@ -169,6 +181,112 @@ public static class WrightTycoonBuildPipeline
         {
             CreateMacDistributionArchive(buildFolder);
         }
+    }
+
+    private static void ValidateHistoricalCampaignAssetsInBuild(string buildFolder, BuildTarget target)
+    {
+        var campaignDirectory = ResolveCampaignDirectoryInBuild(buildFolder, target);
+        ValidateHistoricalCampaignAssetsInDirectory(campaignDirectory, $"build output directory '{campaignDirectory}'");
+    }
+
+    private static void ValidateHistoricalCampaignAssetsInDirectory(string campaignDirectory, string contextLabel)
+    {
+        if (!Directory.Exists(campaignDirectory))
+        {
+            throw new DirectoryNotFoundException(
+                $"Historical campaign directory was not found in {contextLabel}.");
+        }
+
+        var eventsPath = Path.Combine(campaignDirectory, "events.json");
+        if (!File.Exists(eventsPath))
+        {
+            throw new FileNotFoundException(
+                $"Historical campaign events file was not found in {contextLabel}: '{eventsPath}'.");
+        }
+
+        var imagesDirectory = Path.Combine(campaignDirectory, "Images");
+        if (!Directory.Exists(imagesDirectory))
+        {
+            throw new DirectoryNotFoundException(
+                $"Historical campaign image directory was not found in {contextLabel}: '{imagesDirectory}'.");
+        }
+
+        var repository = new HistoricalCampaignJsonRepository();
+        if (!repository.TryLoadFromFile(eventsPath, out var service, out var loadError))
+        {
+            throw new InvalidOperationException(
+                $"Historical campaign events validation failed for {contextLabel}: {loadError}");
+        }
+
+        for (var warningIndex = 0; warningIndex < service!.LoadWarnings.Count; warningIndex++)
+        {
+            Debug.LogWarning($"[Build][Campaign] {service.LoadWarnings[warningIndex]}");
+        }
+
+        var missingImages = new List<string>();
+        for (var index = 0; index < service.ScheduledEvents.Count; index++)
+        {
+            var title = service.ScheduledEvents[index].Title.Trim();
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                continue;
+            }
+
+            var expectedImagePath = Path.Combine(imagesDirectory, title + ".png");
+            if (!File.Exists(expectedImagePath))
+            {
+                missingImages.Add(title + ".png");
+            }
+        }
+
+        if (missingImages.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Historical campaign images missing in {contextLabel} ({missingImages.Count}): {string.Join(", ", missingImages)}");
+        }
+
+        Debug.Log(
+            $"[Build] Historical campaign assets validated: {service.ScheduledEvents.Count} events and matching images in '{campaignDirectory}'.");
+    }
+
+    private static string ResolveCampaignDirectoryInBuild(string buildFolder, BuildTarget target)
+    {
+        return target switch
+        {
+            BuildTarget.StandaloneWindows64 => Path.Combine(
+                buildFolder,
+                "WrightTycoon_Data",
+                "StreamingAssets",
+                "Data",
+                "Campaign"),
+            BuildTarget.StandaloneOSX => Path.Combine(
+                buildFolder,
+                MacApplicationName,
+                "Contents",
+                "Resources",
+                "Data",
+                "StreamingAssets",
+                "Data",
+                "Campaign"),
+            _ => throw new NotSupportedException($"Historical campaign validation is not configured for target '{target}'.")
+        };
+    }
+
+    private static string ResolveCampaignDirectoryInProject(string projectRoot)
+    {
+        var streamingPath = Path.Combine(projectRoot, "Assets", "StreamingAssets", "Data", "Campaign");
+        if (Directory.Exists(streamingPath))
+        {
+            return streamingPath;
+        }
+
+        var rootPath = Path.Combine(projectRoot, "Data", "Campaign");
+        if (Directory.Exists(rootPath))
+        {
+            return rootPath;
+        }
+
+        return streamingPath;
     }
 
     private static WrightTycoonBuildManifest CreateBuildManifest(BuildTarget target)

@@ -150,6 +150,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private Vector2 _leftScroll;
     private Vector2 _rightScroll;
     private Vector2 _historicalCampaignArchiveScroll;
+    private bool _showHistoricalCampaignDebugPanel;
+    private string _historicalCampaignDebugYearInput = string.Empty;
+    private string _historicalCampaignDebugMonthInput = string.Empty;
+    private string _historicalCampaignDebugMessage = string.Empty;
     private readonly Dictionary<string, string> _doubleSliderInputBuffer = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _intSliderInputBuffer = new(StringComparer.Ordinal);
     private readonly Dictionary<string, bool> _doubleSliderHadFocus = new(StringComparer.Ordinal);
@@ -294,6 +298,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         DrawHistoricalCampaignArchivePanel();
+        DrawHistoricalCampaignDebugPanel();
 
         if (!string.IsNullOrWhiteSpace(_saveActionMessage))
         {
@@ -428,13 +433,26 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         var historicalCampaignPath = ResolveHistoricalCampaignPath();
-        _historicalCampaign = new HistoricalCampaignJsonRepository().LoadFromFile(historicalCampaignPath);
-        Debug.Log(
-            $"[Campaign] Loaded {_historicalCampaign.ScheduledEvents.Count} scheduled events " +
-            $"({_historicalCampaign.AllEvents.Count} definitions) from {historicalCampaignPath}.");
-        for (var index = 0; index < _historicalCampaign.LoadWarnings.Count; index++)
+        var historicalCampaignRepository = new HistoricalCampaignJsonRepository();
+        if (historicalCampaignRepository.TryLoadFromFile(
+                historicalCampaignPath,
+                out var loadedCampaign,
+                out var campaignLoadError))
         {
-            Debug.LogWarning($"[Campaign] {_historicalCampaign.LoadWarnings[index]}");
+            _historicalCampaign = loadedCampaign;
+            Debug.Log(
+                $"[Campaign] Loaded {_historicalCampaign.ScheduledEvents.Count} scheduled events " +
+                $"({_historicalCampaign.AllEvents.Count} definitions) from {historicalCampaignPath}.");
+            for (var index = 0; index < _historicalCampaign.LoadWarnings.Count; index++)
+            {
+                Debug.LogWarning($"[Campaign] {_historicalCampaign.LoadWarnings[index]}");
+            }
+        }
+        else
+        {
+            _historicalCampaign = null;
+            _campaignActionMessage = $"Historical campaign disabled: {campaignLoadError}";
+            Debug.LogError($"[Campaign] {_campaignActionMessage}");
         }
 
         _historicalCampaignTechnologyModifierSource = new HistoricalCampaignRuntimeTechnologyModifierSource(
@@ -503,10 +521,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _contractActionMessage = string.Empty;
         _governmentContractActionMessage = string.Empty;
         _governmentDeliveryActionMessage = string.Empty;
-        _campaignActionMessage = string.Empty;
+        if (_historicalCampaign is not null)
+        {
+            _campaignActionMessage = string.Empty;
+        }
         _factoryActionMessage = string.Empty;
         _researchActionMessage = string.Empty;
         _saveActionMessage = string.Empty;
+        _showHistoricalCampaignDebugPanel = false;
+        _historicalCampaignDebugMessage = string.Empty;
         _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
         _contractSpecificationFilter = ContractSpecificationFilter.All;
         _contractQuantityFilterMin = 5;
@@ -516,6 +539,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _historicalCampaignArchive.Clear();
         _historicalCampaignArchiveScroll = Vector2.zero;
         _historicalCampaignPopupWindow.Close();
+        SyncHistoricalCampaignDebugInputsToCurrentDate();
         LogHistoricalCampaignTechnologyModifiersIfYearChanged();
 
         if (_governmentContractBoard is not null)
@@ -1306,8 +1330,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _historicalCampaignState.ReplaceFiredEventIds(data.FiredHistoricalCampaignEventIds);
         NormalizeSelectedAircraftCategoryForHistoricalCampaign();
         RestoreHistoricalCampaignArchive(data.HistoricalCampaignArchiveEntries);
-        _campaignActionMessage = string.Empty;
+        if (_historicalCampaign is not null)
+        {
+            _campaignActionMessage = string.Empty;
+        }
+        _historicalCampaignDebugMessage = string.Empty;
         _historicalCampaignPopupWindow.Close();
+        SyncHistoricalCampaignDebugInputsToCurrentDate();
         ApplyGovernmentContractNotebookState();
 
         if (data.EngineParameters is not null)
@@ -5123,7 +5152,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         if (_historicalCampaign is null)
         {
-            return string.Empty;
+            return _campaignActionMessage;
         }
 
         var nextEvent = _historicalCampaign.GetNextUpcomingUnfiredEvent(_currentDate, _historicalCampaignState);
@@ -5166,6 +5195,61 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         GUILayout.EndScrollView();
+        GUILayout.EndVertical();
+    }
+
+    private void DrawHistoricalCampaignDebugPanel()
+    {
+        GUILayout.BeginVertical(GUI.skin.box);
+        if (GUILayout.Button(
+                _showHistoricalCampaignDebugPanel
+                    ? "Hide Historical Debug"
+                    : "Show Historical Debug"))
+        {
+            _showHistoricalCampaignDebugPanel = !_showHistoricalCampaignDebugPanel;
+        }
+
+        if (_showHistoricalCampaignDebugPanel)
+        {
+            GUILayout.Label("Historical campaign debug tools");
+            GUILayout.Label($"Current date: {FormatSimulationDate(_currentDate)}");
+
+            if (_historicalCampaign is null)
+            {
+                GUILayout.Label("Historical campaign service is unavailable.");
+            }
+            else
+            {
+                var nextEvent = _historicalCampaign.GetNextUpcomingUnfiredEvent(_currentDate, _historicalCampaignState);
+                GUILayout.Label(nextEvent is null
+                    ? "Next event: none"
+                    : $"Next event: {nextEvent.Title} ({nextEvent.Year:D4}-{nextEvent.Month:D2})");
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Year", GUILayout.Width(40f));
+                _historicalCampaignDebugYearInput = GUILayout.TextField(_historicalCampaignDebugYearInput, GUILayout.Width(80f));
+                GUILayout.Label("Month", GUILayout.Width(50f));
+                _historicalCampaignDebugMonthInput = GUILayout.TextField(_historicalCampaignDebugMonthInput, GUILayout.Width(60f));
+                if (GUILayout.Button("Set Date (Debug)", GUILayout.Width(150f)))
+                {
+                    ApplyHistoricalCampaignDebugDateOverride();
+                }
+
+                if (GUILayout.Button("Trigger Next Event (Debug)", GUILayout.Width(210f)))
+                {
+                    TriggerNextHistoricalCampaignEventForDebug();
+                }
+
+                GUILayout.EndHorizontal();
+                GUILayout.Label("Debug date override only moves simulation date; it does not replay skipped monthly simulation.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(_historicalCampaignDebugMessage))
+            {
+                GUILayout.Label(_historicalCampaignDebugMessage);
+            }
+        }
+
         GUILayout.EndVertical();
     }
 
@@ -5244,6 +5328,68 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             $"airframe={modifiers.AirframeEfficiencyMultiplier:F3}, " +
             $"aero={modifiers.AerodynamicsEfficiencyMultiplier:F3}, " +
             $"fuel={modifiers.FuelEfficiencyMultiplier:F3}");
+    }
+
+    private void SyncHistoricalCampaignDebugInputsToCurrentDate()
+    {
+        _historicalCampaignDebugYearInput = _currentDate.Year.ToString();
+        _historicalCampaignDebugMonthInput = _currentDate.Month.ToString("00");
+    }
+
+    private void ApplyHistoricalCampaignDebugDateOverride()
+    {
+        if (!int.TryParse(_historicalCampaignDebugYearInput?.Trim(), out var year) ||
+            !int.TryParse(_historicalCampaignDebugMonthInput?.Trim(), out var month))
+        {
+            _historicalCampaignDebugMessage = "Debug date override failed: year/month must be numeric.";
+            return;
+        }
+
+        try
+        {
+            var overriddenDate = new SimulationDate(year, month);
+            _currentDate = overriddenDate;
+            _lastLoggedTechnologyModifierYear = int.MinValue;
+            LogHistoricalCampaignTechnologyModifiersIfYearChanged();
+            _historicalCampaignDebugMessage = $"Debug date set to {FormatSimulationDate(_currentDate)}.";
+            Debug.Log($"[Campaign][Debug] Date override applied: {_currentDate}");
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            _historicalCampaignDebugMessage = $"Debug date override failed: {ex.Message}";
+        }
+    }
+
+    private void TriggerNextHistoricalCampaignEventForDebug()
+    {
+        if (_historicalCampaign is null)
+        {
+            _historicalCampaignDebugMessage = "Cannot trigger event: historical campaign service is unavailable.";
+            return;
+        }
+
+        var nextEvent = _historicalCampaign.GetNextUnfiredEvent(_historicalCampaignState);
+        if (nextEvent is null)
+        {
+            _historicalCampaignDebugMessage = "No unfired historical campaign events remain.";
+            return;
+        }
+
+        _currentDate = nextEvent.GetDate();
+        SyncHistoricalCampaignDebugInputsToCurrentDate();
+        _lastLoggedTechnologyModifierYear = int.MinValue;
+        LogHistoricalCampaignTechnologyModifiersIfYearChanged();
+        var bonusBatchRequests = ProcessHistoricalCampaignForCurrentDate();
+        var injectedContracts = InjectHistoricalCampaignBonusContractsForCurrentMonth(bonusBatchRequests);
+        if (injectedContracts.Count > 0)
+        {
+            _lastGeneratedContracts.AddRange(injectedContracts);
+        }
+
+        _historicalCampaignDebugMessage = injectedContracts.Count > 0
+            ? $"Triggered '{nextEvent.Title}' at {_currentDate}; injected {injectedContracts.Count} bonus contracts."
+            : $"Triggered '{nextEvent.Title}' at {_currentDate}.";
+        Debug.Log($"[Campaign][Debug] {_historicalCampaignDebugMessage}");
     }
 
     private static void LogGeneratedContractMix(IReadOnlyList<Contract> generatedContracts)
