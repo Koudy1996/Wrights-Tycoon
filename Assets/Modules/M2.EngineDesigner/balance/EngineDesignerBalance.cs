@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace WrightTycoon.Core.Balance;
 
 // M2 tuning surface: all engine designer constants in one editable place.
@@ -150,5 +153,34 @@ public static class EngineDesignerBalance
         public const double ComplexityPenaltyJet = 0.08d;
         public const double ComplexityPenaltyTurbojet = 0.1d;
         public const double ComplexityPenaltyTurbofan = 0.12d;
+    }
+
+    public static class HistoricalCampaignTechnology
+    {
+        public static readonly IReadOnlyList<YearlyBalancePoint> EnginePerformanceCurve = Array.AsReadOnly(new[]
+        {
+            new YearlyBalancePoint(1946, 0.60d),
+            new YearlyBalancePoint(1955, 0.68d),
+            new YearlyBalancePoint(1965, 0.76d),
+            new YearlyBalancePoint(1975, 0.83d),
+            new YearlyBalancePoint(1985, 0.89d),
+            new YearlyBalancePoint(1995, 0.94d),
+            new YearlyBalancePoint(2005, 0.975d),
+            new YearlyBalancePoint(2015, 0.995d),
+            new YearlyBalancePoint(2020, 1.0d),
+        });
+
+        public static readonly IReadOnlyList<YearlyBalancePoint> FuelEfficiencyCurve = Array.AsReadOnly(new[]
+        {
+            new YearlyBalancePoint(1946, 0.50d),
+            new YearlyBalancePoint(1955, 0.58d),
+            new YearlyBalancePoint(1965, 0.68d),
+            new YearlyBalancePoint(1975, 0.77d),
+            new YearlyBalancePoint(1985, 0.85d),
+            new YearlyBalancePoint(1995, 0.91d),
+            new YearlyBalancePoint(2005, 0.96d),
+            new YearlyBalancePoint(2015, 0.99d),
+            new YearlyBalancePoint(2020, 1.0d),
+        });
     }
 }

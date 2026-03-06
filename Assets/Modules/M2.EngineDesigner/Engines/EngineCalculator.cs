@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Math;
 using WrightTycoon.Core.Physics;
 using WrightTycoon.Core.Units;
@@ -31,7 +32,11 @@ public sealed class EngineCalculator : IEngineCalculator
 
     private static readonly double[] EvaluationAltitudes = CoreBalance.Atmosphere.EvaluationAltitudesMeters;
 
-    public EnginePerformanceReport Calculate(EngineDefinition definition, EngineParameters parameters, IAtmosphereModel atmosphereModel)
+    public EnginePerformanceReport Calculate(
+        EngineDefinition definition,
+        EngineParameters parameters,
+        IAtmosphereModel atmosphereModel,
+        HistoricalCampaignTechnologyModifiers? technologyModifiers = null)
     {
         if (definition is null)
         {
@@ -52,11 +57,13 @@ public sealed class EngineCalculator : IEngineCalculator
         parameters.Validate();
         ValidateContextualInputs(definition.EngineType, parameters);
         var effectiveParameters = NormalizeParametersForEngineType(definition.EngineType, parameters);
+        var effectiveTechnologyModifiers = HistoricalCampaignTechnologyModifiers.Sanitize(technologyModifiers);
 
         var outputKind = IsJetFamily(definition.EngineType) ? EngineOutputKind.ThrustNewtons : EngineOutputKind.PowerKilowatts;
         var baseSeaLevelOutput = outputKind == EngineOutputKind.PowerKilowatts
             ? CalculateSeaLevelPower(definition, effectiveParameters)
             : CalculateSeaLevelThrust(definition, effectiveParameters);
+        baseSeaLevelOutput *= effectiveTechnologyModifiers.EnginePerformanceMultiplier;
         var seaLevelOutput = ApplyJetAfterburnerOutputFactor(baseSeaLevelOutput, outputKind, effectiveParameters);
 
         var altitudePerformance = BuildAltitudePerformance(
@@ -65,7 +72,8 @@ public sealed class EngineCalculator : IEngineCalculator
             atmosphereModel,
             outputKind,
             seaLevelOutput,
-            baseSeaLevelOutput);
+            baseSeaLevelOutput,
+            effectiveTechnologyModifiers);
 
         var reliability = CalculateReliability(definition, effectiveParameters);
         var weight = CalculateWeight(definition, effectiveParameters, seaLevelOutput, outputKind);
@@ -92,7 +100,8 @@ public sealed class EngineCalculator : IEngineCalculator
         IAtmosphereModel atmosphereModel,
         EngineOutputKind outputKind,
         double seaLevelOutput,
-        double fuelReferenceSeaLevelOutput)
+        double fuelReferenceSeaLevelOutput,
+        HistoricalCampaignTechnologyModifiers technologyModifiers)
     {
         var isJet = IsJetFamily(definition.EngineType);
         var points = new EngineAltitudePerformance[EvaluationAltitudes.Length];
@@ -167,6 +176,7 @@ public sealed class EngineCalculator : IEngineCalculator
 
             fuelPerHour *= jetAfterburnerFuelFactor;
             fuelPerHour *= efficiencyFuelSpecificFactor;
+            fuelPerHour /= technologyModifiers.FuelEfficiencyMultiplier;
             points[index] = new EngineAltitudePerformance(altitude, outputAtAltitude, fuelPerHour, thrustAtAltitude);
         }
 

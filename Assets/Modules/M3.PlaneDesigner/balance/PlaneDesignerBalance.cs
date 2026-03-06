@@ -332,6 +332,35 @@ public static class PlaneDesignerBalance
             ReliabilityModifierDelta: 0.12d,
             FuelConsumptionMultiplier: 0.78d),
     });
+
+    public static class HistoricalCampaignTechnology
+    {
+        public static readonly IReadOnlyList<YearlyBalancePoint> AirframeEfficiencyCurve = Array.AsReadOnly(new[]
+        {
+            new YearlyBalancePoint(1946, 0.62d),
+            new YearlyBalancePoint(1955, 0.70d),
+            new YearlyBalancePoint(1965, 0.78d),
+            new YearlyBalancePoint(1975, 0.84d),
+            new YearlyBalancePoint(1985, 0.89d),
+            new YearlyBalancePoint(1995, 0.94d),
+            new YearlyBalancePoint(2005, 0.97d),
+            new YearlyBalancePoint(2015, 0.995d),
+            new YearlyBalancePoint(2020, 1.0d),
+        });
+
+        public static readonly IReadOnlyList<YearlyBalancePoint> AerodynamicsEfficiencyCurve = Array.AsReadOnly(new[]
+        {
+            new YearlyBalancePoint(1946, 0.56d),
+            new YearlyBalancePoint(1955, 0.64d),
+            new YearlyBalancePoint(1965, 0.74d),
+            new YearlyBalancePoint(1975, 0.82d),
+            new YearlyBalancePoint(1985, 0.88d),
+            new YearlyBalancePoint(1995, 0.93d),
+            new YearlyBalancePoint(2005, 0.97d),
+            new YearlyBalancePoint(2015, 0.995d),
+            new YearlyBalancePoint(2020, 1.0d),
+        });
+    }
 }
 
 public readonly record struct AircraftCategoryBalanceEntry(

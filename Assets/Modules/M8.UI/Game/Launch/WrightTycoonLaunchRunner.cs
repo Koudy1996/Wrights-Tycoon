@@ -57,6 +57,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly Dictionary<string, TypeResearchModifierPoints> _researchModifiersByResearchId = new(StringComparer.Ordinal);
     private readonly HistoricalCampaignState _historicalCampaignState = new();
     private readonly List<HistoricalCampaignArchiveEntry> _historicalCampaignArchive = new();
+    private readonly HistoricalCampaignTechnologyProgression _historicalCampaignTechnologyProgression = new();
 
     private readonly FactoryAccountingCalculator _factoryAccountingCalculator = new();
     private readonly ContractPricingCalculator _contractPricingCalculator = new();
@@ -70,6 +71,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private AircraftFactory? _aircraftFactory;
     private HistoricalCampaignService? _historicalCampaign;
     private HistoricalCampaignRuntimeContractModifierSource? _historicalCampaignContractModifierSource;
+    private HistoricalCampaignRuntimeTechnologyModifierSource? _historicalCampaignTechnologyModifierSource;
     private ContractBoard? _contractBoard;
     private ContractWarehouseDeliveryService? _contractWarehouseDeliveryService;
     private GovernmentContractBoard? _governmentContractBoard;
@@ -138,6 +140,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private double _typeFuelLiters = 1500d;
     private SimulationDate _currentDate = SimulationDate.WrightTycoonStart;
     private int _elapsedMonths;
+    private int _lastLoggedTechnologyModifierYear = int.MinValue;
     private ContractDeliverabilityFilter _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
     private ContractSpecificationFilter _contractSpecificationFilter = ContractSpecificationFilter.All;
     private int _contractQuantityFilterMin = 5;
@@ -434,8 +437,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             Debug.LogWarning($"[Campaign] {_historicalCampaign.LoadWarnings[index]}");
         }
 
-        _engineBuilder = new EngineBuilder(new EngineCalculator(), _atmosphereModel);
-        _airframeBuilder = new AirframeBuilder(new AirframeCalculator(_aerodynamicsCalculator, _atmosphereModel));
+        _historicalCampaignTechnologyModifierSource = new HistoricalCampaignRuntimeTechnologyModifierSource(
+            _historicalCampaignTechnologyProgression,
+            () => _currentDate);
+        _engineBuilder = new EngineBuilder(
+            new EngineCalculator(),
+            _atmosphereModel,
+            _historicalCampaignTechnologyModifierSource);
+        _airframeBuilder = new AirframeBuilder(
+            new AirframeCalculator(_aerodynamicsCalculator, _atmosphereModel),
+            _historicalCampaignTechnologyModifierSource);
         _aircraftFactory = new AircraftFactory(
             _engineBuilder,
             _airframeBuilder,
@@ -485,6 +496,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _lastFactoryReport = null;
         _currentDate = SimulationDate.WrightTycoonStart;
         _elapsedMonths = 0;
+        _lastLoggedTechnologyModifierYear = int.MinValue;
         _tab = 0;
         _financeSubTab = 0;
         _researchSubTab = 0;
@@ -504,6 +516,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _historicalCampaignArchive.Clear();
         _historicalCampaignArchiveScroll = Vector2.zero;
         _historicalCampaignPopupWindow.Close();
+        LogHistoricalCampaignTechnologyModifiersIfYearChanged();
 
         if (_governmentContractBoard is not null)
         {
@@ -2303,6 +2316,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     DrawMetric("Source Weight (kg)", selectedAircraftDesign.Aircraft.Performance.TotalWeight.Kilograms, "0.0");
                     DrawMetric("Source Range (km)", selectedAircraftDesign.Aircraft.Performance.RangeKilometers, "0.0");
                     DrawMetric("Source Payload (kg)", selectedAircraftDesign.Aircraft.Performance.PayloadCapacity.Kilograms, "0.0");
+                    DrawMetric("Source Cruise Fuel Burn (kg/h)", selectedAircraftDesign.Aircraft.Performance.AverageCruiseFuelBurnKilogramsPerHour, "0.0");
 
                     var contractUnitPrice = GetContractUnitPrice(contract);
                     var contractTotalPrice = GetContractTotalPrice(contract);
@@ -4444,6 +4458,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         _currentDate = _currentDate.NextMonth();
         _elapsedMonths++;
+        LogHistoricalCampaignTechnologyModifiersIfYearChanged();
         var historicalCampaignBonusBatches = ProcessHistoricalCampaignForCurrentDate();
 
         if (_researchBoard is not null)
@@ -5024,6 +5039,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             MinimumPayloadKilograms = requirements.MinimumPayloadKilograms,
             MinimumCrew = requirements.MinimumCrew,
             MaximumRequiredRunwayLengthMeters = requirements.MaximumRequiredRunwayLengthMeters,
+            MaximumFuelConsumptionKilogramsPerHour = requirements.MaximumFuelConsumptionKilogramsPerHour,
         };
         clone.Validate();
         return clone;
@@ -5204,11 +5220,30 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         var modifiers = _historicalCampaignContractModifierSource.GetCurrentModifiers();
+        var fuelConsumptionUnlocked = modifiers.IsContractParameterUnlocked(ContractBalance.HistoricalCampaignContractParameterFuelConsumption);
         Debug.Log(
             $"[Campaign] Active contract modifiers: civilMix={modifiers.CivilCategoryWeightMultiplier:F3}, " +
             $"militaryMix={modifiers.MilitaryCategoryWeightMultiplier:F3}, " +
             $"civilPrice={modifiers.CivilPriceMultiplier:F3}, " +
-            $"militaryPrice={modifiers.MilitaryPriceMultiplier:F3}");
+            $"militaryPrice={modifiers.MilitaryPriceMultiplier:F3}, " +
+            $"fuelParamUnlocked={fuelConsumptionUnlocked}");
+    }
+
+    private void LogHistoricalCampaignTechnologyModifiersIfYearChanged()
+    {
+        if (_historicalCampaignTechnologyModifierSource is null || _currentDate.Year == _lastLoggedTechnologyModifierYear)
+        {
+            return;
+        }
+
+        var modifiers = _historicalCampaignTechnologyModifierSource.GetCurrentModifiers();
+        _lastLoggedTechnologyModifierYear = _currentDate.Year;
+        Debug.Log(
+            $"[Campaign] Active tech modifiers ({_currentDate.Year:D4}): " +
+            $"engine={modifiers.EnginePerformanceMultiplier:F3}, " +
+            $"airframe={modifiers.AirframeEfficiencyMultiplier:F3}, " +
+            $"aero={modifiers.AerodynamicsEfficiencyMultiplier:F3}, " +
+            $"fuel={modifiers.FuelEfficiencyMultiplier:F3}");
     }
 
     private static void LogGeneratedContractMix(IReadOnlyList<Contract> generatedContracts)
@@ -6027,6 +6062,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (requirements.MaximumRequiredRunwayLengthMeters.HasValue)
         {
             GUILayout.Label($"Runway <= {FormatUiNumber(requirements.MaximumRequiredRunwayLengthMeters.Value, "0.0")} m");
+        }
+
+        if (requirements.MaximumFuelConsumptionKilogramsPerHour.HasValue)
+        {
+            GUILayout.Label($"Fuel burn <= {FormatUiNumber(requirements.MaximumFuelConsumptionKilogramsPerHour.Value, "0.0")} kg/h");
         }
     }
 

@@ -1,4 +1,5 @@
 using System;
+using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Data;
 using WrightTycoon.Core.Physics;
 
@@ -8,16 +9,22 @@ public sealed class EngineBuilder
 {
     private readonly IEngineCalculator _calculator;
     private readonly IAtmosphereModel _atmosphereModel;
+    private readonly IHistoricalCampaignTechnologyModifierSource? _technologyModifierSource;
 
-    public EngineBuilder(IEngineCalculator calculator, IAtmosphereModel atmosphereModel)
+    public EngineBuilder(
+        IEngineCalculator calculator,
+        IAtmosphereModel atmosphereModel,
+        IHistoricalCampaignTechnologyModifierSource? technologyModifierSource = null)
     {
         _calculator = calculator ?? throw new ArgumentNullException(nameof(calculator));
         _atmosphereModel = atmosphereModel ?? throw new ArgumentNullException(nameof(atmosphereModel));
+        _technologyModifierSource = technologyModifierSource;
     }
 
     public Engine Build(EngineDefinition definition, EngineParameters parameters)
     {
-        var report = _calculator.Calculate(definition, parameters, _atmosphereModel);
+        var technologyModifiers = _technologyModifierSource?.GetCurrentModifiers();
+        var report = _calculator.Calculate(definition, parameters, _atmosphereModel, technologyModifiers);
         return new Engine(definition, parameters, report);
     }
 

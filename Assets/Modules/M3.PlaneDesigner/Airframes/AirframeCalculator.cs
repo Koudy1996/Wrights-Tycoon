@@ -1,5 +1,6 @@
 using System;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Math;
 using WrightTycoon.Core.Physics;
 using WrightTycoon.Core.Units;
@@ -17,7 +18,10 @@ public sealed class AirframeCalculator : IAirframeCalculator
         _atmosphereModel = atmosphereModel ?? throw new ArgumentNullException(nameof(atmosphereModel));
     }
 
-    public AirframePerformanceReport Calculate(AirframeDefinition definition, AirframeParameters parameters)
+    public AirframePerformanceReport Calculate(
+        AirframeDefinition definition,
+        AirframeParameters parameters,
+        HistoricalCampaignTechnologyModifiers? technologyModifiers = null)
     {
         if (definition is null)
         {
@@ -31,6 +35,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
 
         definition.Validate();
         parameters.Validate();
+        var effectiveTechnologyModifiers = HistoricalCampaignTechnologyModifiers.Sanitize(technologyModifiers);
 
         var materialCostFactor = parameters.MaterialType switch
         {
@@ -139,6 +144,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
         }
 
         totalWeightKg = ApplySmallWoodTrussWeightModifier(totalWeightKg, parameters);
+        totalWeightKg /= effectiveTechnologyModifiers.AirframeEfficiencyMultiplier;
         var totalWeight = Mass.FromKilograms(totalWeightKg);
 
         var aerodynamicCleanlinessPercent = parameters.AerodynamicCleanlinessPercent;
@@ -309,6 +315,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
             dragCoefficient *= 1d - (PlaneDesignerBalance.Airframe.LaminarProfileDragReductionMaxRatio * laminarBlend);
         }
 
+        dragCoefficient /= effectiveTechnologyModifiers.AerodynamicsEfficiencyMultiplier;
         dragCoefficient = Numeric.Clamp(dragCoefficient, 0.014d, PlaneDesignerBalance.Performance.MaximumDragCoefficient);
         var effectiveDragAreaSquareMeters = dragCoefficient * airframeFrontalAreaSquareMeters;
 
@@ -331,6 +338,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
             liftCoefficient *= 1d - PlaneDesignerBalance.Airframe.SymmetricalAcrobaticProfileLiftPenaltyRatio;
         }
 
+        liftCoefficient *= effectiveTechnologyModifiers.AerodynamicsEfficiencyMultiplier;
         liftCoefficient = Numeric.Clamp(liftCoefficient, 0.5d, 1.8d);
 
         var wingLoading = totalWeightKg / System.Math.Max(parameters.WingAreaSquareMeters, 1d);
@@ -381,6 +389,8 @@ public sealed class AirframeCalculator : IAirframeCalculator
             WingProfileType.SymmetricalAcrobatic => 1d + PlaneDesignerBalance.Airframe.SymmetricalAcrobaticProfileCostIncreaseRatio,
             _ => 1d,
         };
+        productionCost /= effectiveTechnologyModifiers.AirframeEfficiencyMultiplier;
+        productionCost = System.Math.Max(0d, productionCost);
 
         var productionManDays = (definition.BaseProductionManDays * structureMdFactor)
             + (parameters.WingAreaSquareMeters * 0.55d)
@@ -393,6 +403,8 @@ public sealed class AirframeCalculator : IAirframeCalculator
                * PlaneDesignerBalance.Airframe.AerodynamicCleanlinessManDaysBaseShare
                * aerodynamicCleanlinessRatio
                * aerodynamicCleanlinessRatio);
+        productionManDays /= effectiveTechnologyModifiers.AirframeEfficiencyMultiplier;
+        productionManDays = System.Math.Max(0d, productionManDays);
 
         var reliabilityModifier = definition.BaseReliabilityModifier
             * materialReliability
