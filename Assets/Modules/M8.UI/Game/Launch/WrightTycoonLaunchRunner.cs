@@ -30,6 +30,7 @@ namespace WrightTycoon.Game.Launch;
 public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 {
     private const int FixedFactoryToolRequirementLevel = 1;
+    private const int ModernCampaignStartYear = 2020;
     private const string HistoricalCampaignBonusContractBatchEffectType = "bonus_contract_batch";
 
     [Header("Default Definition IDs")]
@@ -474,7 +475,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _airframeRepo);
     }
 
-    private void ResetRuntimeStateForNewGame()
+    private void ResetRuntimeStateForNewGame(SimulationDate? startDate = null)
     {
         _selectedEngineDefinitionIndex = FindIndexById(_engineDefinitions.Select(d => d.Id).ToArray(), _engineDefinitionId);
         _selectedAirframeDefinitionIndex = FindIndexById(_airframeDefinitions.Select(d => d.Id).ToArray(), _airframeDefinitionId);
@@ -512,7 +513,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _selectedSavedFamilyIndex = -1;
         _selectedSavedAircraftDesignIndex = -1;
         _lastFactoryReport = null;
-        _currentDate = SimulationDate.WrightTycoonStart;
+        _currentDate = startDate ?? SimulationDate.WrightTycoonStart;
         _elapsedMonths = 0;
         _lastLoggedTechnologyModifierYear = int.MinValue;
         _tab = 0;
@@ -535,6 +536,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _contractQuantityFilterMin = 5;
         _contractQuantityFilterMax = 500;
         _historicalCampaignState.ReplaceFiredEventIds(null);
+        ApplyHistoricalCampaignEventsUpToCurrentDate();
         NormalizeSelectedAircraftCategoryForHistoricalCampaign();
         _historicalCampaignArchive.Clear();
         _historicalCampaignArchiveScroll = Vector2.zero;
@@ -552,6 +554,28 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         ResetGovernmentContractNotebookWindow();
+    }
+
+    private void ApplyHistoricalCampaignEventsUpToCurrentDate()
+    {
+        if (_historicalCampaign is null)
+        {
+            return;
+        }
+
+        var currentMonthKey = HistoricalCampaignValidator.CreateMonthKey(_currentDate.Year, _currentDate.Month);
+        var scheduledEvents = _historicalCampaign.ScheduledEvents;
+        for (var index = 0; index < scheduledEvents.Count; index++)
+        {
+            var definition = scheduledEvents[index];
+            var eventMonthKey = HistoricalCampaignValidator.CreateMonthKey(definition.Year, definition.Month);
+            if (eventMonthKey > currentMonthKey)
+            {
+                continue;
+            }
+
+            _historicalCampaignState.TryMarkFired(definition.Id);
+        }
     }
 
     private void InitializeSaveSystem()
@@ -582,7 +606,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawIntroBackground(virtualScreenSize);
 
         var panelWidth = Mathf.Min(560f, virtualScreenSize.x - 40f);
-        var panelHeight = Mathf.Min(496f, virtualScreenSize.y - 40f);
+        var panelHeight = Mathf.Min(548f, virtualScreenSize.y - 40f);
         var panelRect = new Rect(
             (virtualScreenSize.x - panelWidth) * 0.5f,
             (virtualScreenSize.y - panelHeight) * 0.5f,
@@ -617,6 +641,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (GUILayout.Button("New Game", GUILayout.Height(44f)))
         {
             StartNewGameFromMenu();
+        }
+
+        if (GUILayout.Button("2020 Start", GUILayout.Height(44f)))
+        {
+            StartNewGameFromMenu(new SimulationDate(ModernCampaignStartYear, 1), "New 2020 campaign started.");
         }
 
         if (GUILayout.Button("Load Game", GUILayout.Height(44f)))
@@ -943,16 +972,21 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void StartNewGameFromMenu()
     {
+        StartNewGameFromMenu(SimulationDate.WrightTycoonStart, "New game started.");
+    }
+
+    private void StartNewGameFromMenu(SimulationDate startDate, string message)
+    {
         TryInitialize();
         if (!_initialized)
         {
             return;
         }
 
-        ResetRuntimeStateForNewGame();
+        ResetRuntimeStateForNewGame(startDate);
         _runtimeScreen = RuntimeScreen.Gameplay;
-        _saveActionMessage = "New game started.";
-        Debug.Log("[Save] New game started.");
+        _saveActionMessage = message;
+        Debug.Log($"[Save] {message}");
     }
 
     private void CreateManualSave()
@@ -6419,9 +6453,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         var labels = new string[values.Length];
-        for (var index = 0; index < values.Length; index++)
+        for (var optionIndex = 0; optionIndex < values.Length; optionIndex++)
         {
-            labels[index] = values[index] == EngineType.Turbofan ? "Turbofan" : "Turbojet";
+            labels[optionIndex] = values[optionIndex] == EngineType.Turbofan ? "Turbofan" : "Turbojet";
         }
 
         var index = Array.IndexOf(values, currentType);

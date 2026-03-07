@@ -10,6 +10,7 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
     private static readonly Vector2 PreviousCompactDefaultSize = new(560f, 340f);
     private static readonly Vector2 CompactDefaultSize = new(448f, 272f);
     private const float WindowOpacity = 1f;
+    private static readonly Color OpaqueWindowFillColor = new(0.08f, 0.11f, 0.15f, 1f);
 
     [SerializeField] private bool _openByDefault;
     [SerializeField] private Vector2 _defaultPosition = new(120f, -120f);
@@ -160,6 +161,8 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
 
     private void DrawWindowContents(int windowId)
     {
+        DrawOpaqueWindowBackground();
+
         var closeButtonRect = new Rect(_windowRect.width - 34f, 4f, 30f, 20f);
         if (GUI.Button(closeButtonRect, "X"))
         {
@@ -184,6 +187,14 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
         }
 
         _ = windowId;
+    }
+
+    private void DrawOpaqueWindowBackground()
+    {
+        var previous = GUI.color;
+        GUI.color = OpaqueWindowFillColor;
+        GUI.DrawTexture(new Rect(0f, 0f, _windowRect.width, _windowRect.height), Texture2D.whiteTexture);
+        GUI.color = previous;
     }
 
     private void HandleResize(Rect resizeHandleRect)
