@@ -4605,9 +4605,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var clampedBaselineYear = System.Math.Max(1, baselineYear);
         var baseline = _historicalCampaignTechnologyProgression.ResolveForYear(clampedBaselineYear);
         var current = _historicalCampaignTechnologyProgression.ResolveForDate(_currentDate);
-        var propulsionGain = CalculatePositiveProgressRatio(
-            baseline.PropulsionEfficiencyMultiplier,
-            current.PropulsionEfficiencyMultiplier);
+        var engineGain = CalculatePositiveProgressRatio(
+            baseline.EnginePerformanceMultiplier,
+            current.EnginePerformanceMultiplier);
         var aerodynamicsGain = CalculatePositiveProgressRatio(
             baseline.AerodynamicsEfficiencyMultiplier,
             current.AerodynamicsEfficiencyMultiplier);
@@ -4615,7 +4615,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             baseline.FuelEfficiencyMultiplier,
             current.FuelEfficiencyMultiplier);
 
-        return (propulsionGain + aerodynamicsGain + fuelGain) / 3d;
+        return (engineGain + aerodynamicsGain + fuelGain) / 3d;
     }
 
     private static double CalculatePositiveProgressRatio(double baselineMultiplier, double currentMultiplier)
