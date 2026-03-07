@@ -3257,7 +3257,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 DrawContractRequirements(contract.Requirements);
 
                 var availableDesignIds = warehouseSnapshot
-                    .Where(entry => entry.Value > 0 && catalog.ContainsKey(entry.Key))
+                    .Where(entry =>
+                        entry.Value > 0
+                        && catalog.ContainsKey(entry.Key)
+                        && IsCatalogItemCategoryCompatibleWithContract(contract, catalog[entry.Key]))
                     .Select(entry => entry.Key)
                     .OrderBy(id => catalog[id].DisplayName, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(id => id, StringComparer.Ordinal)
@@ -3266,7 +3269,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 if (availableDesignIds.Length == 0)
                 {
                     DrawError("Status: blocked");
-                    GUILayout.Label("- No usable aircraft in warehouse.");
+                    if (contract.Requirements.RequiredCategory.HasValue)
+                    {
+                        var requiredCategoryName =
+                            AircraftCategoryCatalog.GetProfile(contract.Requirements.RequiredCategory.Value).DisplayName;
+                        GUILayout.Label($"- No warehouse aircraft matches required category '{requiredCategoryName}'.");
+                    }
+                    else
+                    {
+                        GUILayout.Label("- No usable aircraft in warehouse.");
+                    }
+
                     if (warehouseSnapshot.Count > 0 && catalog.Count == 0)
                     {
                         GUILayout.Label("- Save at least one aircraft design in Airframe + Type tab.");
@@ -5569,6 +5582,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.Label("Aircraft factory lines consume 21 MD per employee per month.");
         GUILayout.Label("Overflow MD carries over. Engine factory auto-scales to exact demand; excess capacity is discarded.");
+        GUILayout.Label("Lines produce continuously until you unassign the type or remove the line.");
         GUILayout.Label($"Factory Tool Level: {FormatUiInteger(_productionFactory.FactoryToolLevel)}");
 
         var targetFactoryToolLevel = DrawIntSlider("Target Factory Tool Level", _productionFactory.FactoryToolLevel, _productionFactory.FactoryToolLevel, 10);
@@ -5665,30 +5679,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _productionFactory.SetEmployees(line.LineId, nextEmployees);
             }
 
-            var nextQueue = DrawIntSlider($"Queued Aircraft ({line.LineId})", line.QueuedUnits, 0, 5000);
-            if (nextQueue != line.QueuedUnits)
-            {
-                _productionFactory.SetQueuedUnits(line.LineId, nextQueue);
-            }
-
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("+10 Queue", GUILayout.Height(24f)))
-            {
-                _productionFactory.AddQueuedUnits(line.LineId, 10);
-            }
-
-            if (GUILayout.Button("+100 Queue", GUILayout.Height(24f)))
-            {
-                _productionFactory.AddQueuedUnits(line.LineId, 100);
-            }
-
-            if (GUILayout.Button("Clear Queue", GUILayout.Height(24f)))
-            {
-                _productionFactory.SetQueuedUnits(line.LineId, 0);
-            }
-
-            GUILayout.EndHorizontal();
-
             var targetLineTool = DrawIntSlider($"Target Line Tool Level ({line.LineId})", line.LineToolLevel, line.LineToolLevel, 10);
             if (targetLineTool > line.LineToolLevel && GUILayout.Button($"Upgrade {line.LineId} Tooling", GUILayout.Height(24f)))
             {
@@ -5727,7 +5717,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"Report Date: {FormatSimulationDate(_lastFactoryReport.Date)}");
         DrawMetric("Factory Tool Level", _lastFactoryReport.FactoryToolLevel, "0");
         DrawMetric("Produced Aircraft", _lastFactoryReport.TotalAircraftProduced, "0");
-        DrawMetric("Queued Aircraft After Month", _lastFactoryReport.TotalQueuedUnitsAfterProduction, "0");
         DrawMetric("Warehouse Aircraft Units", _lastFactoryReport.TotalWarehouseUnits, "0");
         DrawMetric("Available MD", _lastFactoryReport.TotalAvailableManDays, "0.0");
         DrawMetric("Used MD", _lastFactoryReport.TotalUsedManDays, "0.0");
@@ -5745,7 +5734,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 GUILayout.Label($"Category: {ResolveAircraftCategoryName(line.AssignedDesignId)}");
             }
 
-            GUILayout.Label($"Queue: {FormatUiInteger(line.StartQueueUnits)} -> {FormatUiInteger(line.EndQueueUnits)} | Produced: {FormatUiInteger(line.ProducedUnits)}");
+            GUILayout.Label($"Produced: {FormatUiInteger(line.ProducedUnits)}");
             GUILayout.Label($"Staff: {FormatUiInteger(line.Employees)} | Tool L{FormatUiInteger(line.LineToolLevel)} (Req L{FormatUiInteger(line.RequiredLineToolLevel)})");
             GUILayout.Label($"MD: {FormatUiNumber(line.UsedManDays, "0.0")}/{FormatUiNumber(line.AvailableManDays, "0.0")} | Carry: {FormatUiNumber(line.CarryOverManDays, "0.0")}");
             GUILayout.Label($"Capacity: {FormatUiInteger(line.CapacityUnitsAtCurrentStaff)} units");
@@ -6161,6 +6150,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         foreach (var catalogItem in catalog.Values)
         {
+            if (!IsCatalogItemCategoryCompatibleWithContract(contract, catalogItem))
+            {
+                continue;
+            }
+
             var evaluation = contractBoard.Evaluate(contract, catalogItem.Aircraft);
             if (!evaluation.CanDeliver)
             {
@@ -6177,6 +6171,28 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         return new ContractAvailabilitySnapshot(contract, canBeDeliveredNow, hasMatchingPlaneBySpecification);
+    }
+
+    private static bool IsCatalogItemCategoryCompatibleWithContract(
+        Contract contract,
+        FactoryAircraftTypeCatalogItem catalogItem)
+    {
+        if (contract is null)
+        {
+            throw new ArgumentNullException(nameof(contract));
+        }
+
+        if (catalogItem is null)
+        {
+            throw new ArgumentNullException(nameof(catalogItem));
+        }
+
+        if (!contract.Requirements.RequiredCategory.HasValue)
+        {
+            return true;
+        }
+
+        return catalogItem.Category == contract.Requirements.RequiredCategory.Value;
     }
 
     private bool MatchesContractFilters(ContractAvailabilitySnapshot snapshot)

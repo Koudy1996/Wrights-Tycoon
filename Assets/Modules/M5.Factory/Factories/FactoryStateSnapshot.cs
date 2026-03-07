@@ -21,8 +21,6 @@ public sealed class FactoryLineSnapshot
 
     public int Employees { get; set; }
 
-    public int QueuedUnits { get; set; }
-
     public double CarryOverManDays { get; set; }
 
     public int LineToolLevel { get; set; }

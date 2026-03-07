@@ -20,7 +20,6 @@ public sealed class AircraftProductionFactoryTests
         var lineId = factory.AddLine("line.main");
         factory.SetEmployees(lineId, 10);
         factory.AssignDesign(lineId, "design.alpha");
-        factory.SetQueuedUnits(lineId, 5);
 
         var catalog = new Dictionary<string, FactoryAircraftTypeCatalogItem>
         {
@@ -43,7 +42,6 @@ public sealed class AircraftProductionFactoryTests
         var lineId = factory.AddLine("line.tools");
         factory.SetEmployees(lineId, 10);
         factory.AssignDesign(lineId, "design.beta");
-        factory.SetQueuedUnits(lineId, 10);
 
         var catalog = new Dictionary<string, FactoryAircraftTypeCatalogItem>
         {
@@ -68,7 +66,6 @@ public sealed class AircraftProductionFactoryTests
         var lineId = factory.AddLine("line.eng");
         factory.SetEmployees(lineId, 10);
         factory.AssignDesign(lineId, "design.gamma");
-        factory.SetQueuedUnits(lineId, 10);
 
         var catalog = new Dictionary<string, FactoryAircraftTypeCatalogItem>
         {
@@ -77,11 +74,11 @@ public sealed class AircraftProductionFactoryTests
 
         var report = factory.SimulateMonth(catalog, monthIndex: 0, SimulationDate.WrightTycoonStart);
 
-        Assert.That(report.TotalAircraftProduced, Is.EqualTo(10));
-        Assert.That(report.EngineFactoryReport.TotalRequiredEngines, Is.EqualTo(20));
-        Assert.That(report.EngineFactoryReport.TotalProducedEngines, Is.EqualTo(20));
-        Assert.That(report.EngineFactoryReport.TotalDiscardedEngines, Is.EqualTo(1));
-        Assert.That(report.EngineFactoryReport.TotalAutoAssignedEmployees, Is.EqualTo(8));
+        Assert.That(report.TotalAircraftProduced, Is.EqualTo(21));
+        Assert.That(report.EngineFactoryReport.TotalRequiredEngines, Is.EqualTo(42));
+        Assert.That(report.EngineFactoryReport.TotalProducedEngines, Is.EqualTo(42));
+        Assert.That(report.EngineFactoryReport.TotalDiscardedEngines, Is.EqualTo(0));
+        Assert.That(report.EngineFactoryReport.TotalAutoAssignedEmployees, Is.EqualTo(16));
     }
 
     [Test]
@@ -91,7 +88,6 @@ public sealed class AircraftProductionFactoryTests
         var lineId = factory.AddLine("line.warehouse");
         factory.SetEmployees(lineId, 10);
         factory.AssignDesign(lineId, "design.stock");
-        factory.SetQueuedUnits(lineId, 6);
 
         var catalog = new Dictionary<string, FactoryAircraftTypeCatalogItem>
         {
@@ -100,9 +96,9 @@ public sealed class AircraftProductionFactoryTests
 
         var report = factory.SimulateMonth(catalog, monthIndex: 0, SimulationDate.WrightTycoonStart);
 
-        Assert.That(report.TotalAircraftProduced, Is.EqualTo(6));
-        Assert.That(factory.GetWarehouseUnits("design.stock"), Is.EqualTo(6));
-        Assert.That(report.TotalWarehouseUnits, Is.EqualTo(6));
+        Assert.That(report.TotalAircraftProduced, Is.EqualTo(7));
+        Assert.That(factory.GetWarehouseUnits("design.stock"), Is.EqualTo(7));
+        Assert.That(report.TotalWarehouseUnits, Is.EqualTo(7));
     }
 
     [Test]

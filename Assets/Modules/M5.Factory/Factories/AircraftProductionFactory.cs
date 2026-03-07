@@ -51,10 +51,6 @@ public sealed class AircraftProductionFactory
 
     public void SetEmployees(string lineId, int employees) => GetLine(lineId).SetEmployees(employees);
 
-    public void SetQueuedUnits(string lineId, int queuedUnits) => GetLine(lineId).SetQueuedUnits(queuedUnits);
-
-    public void AddQueuedUnits(string lineId, int units) => GetLine(lineId).AddQueuedUnits(units);
-
     public void UpgradeFactoryToolLevel(int targetLevel)
     {
         if (targetLevel < FactoryToolLevel)
@@ -166,11 +162,9 @@ public sealed class AircraftProductionFactory
         var totalAvailableManDays = 0d;
         var totalUsedManDays = 0d;
         var totalProducedAircraft = 0;
-        var totalQueuedAfter = 0;
 
         foreach (var line in _lines.Values.OrderBy(entry => entry.LineId, StringComparer.Ordinal))
         {
-            var startQueue = line.QueuedUnits;
             var carryIn = line.CarryOverManDays;
             var availableManDays = carryIn + (line.Employees * EmployeeManDaysPerMonth);
             totalAvailableManDays += availableManDays;
@@ -224,15 +218,10 @@ public sealed class AircraftProductionFactory
                     status = $"Blocked by line tool level ({line.LineToolLevel}/{requiredLineToolLevel}).";
                     line.SetCarryOverWithoutProduction(availableManDays);
                 }
-                else if (line.QueuedUnits <= 0)
-                {
-                    status = "No queued aircraft.";
-                    line.SetCarryOverWithoutProduction(availableManDays);
-                }
                 else
                 {
                     capacityUnits = System.Math.Max(0, (int)System.Math.Floor(availableManDays / unitManDays));
-                    producedUnits = System.Math.Min(capacityUnits, line.QueuedUnits);
+                    producedUnits = capacityUnits;
                     usedManDays = producedUnits * unitManDays;
                     var carryOut = System.Math.Max(0d, availableManDays - usedManDays);
                     line.ApplyMonthResult(producedUnits, carryOut);
@@ -268,7 +257,6 @@ public sealed class AircraftProductionFactory
 
             totalUsedManDays += usedManDays;
             totalProducedAircraft += producedUnits;
-            totalQueuedAfter += line.QueuedUnits;
 
             var effectiveCapacityUnits = capacityUnits;
             if (effectiveCapacityUnits == 0
@@ -289,9 +277,7 @@ public sealed class AircraftProductionFactory
                 designName,
                 line.Employees,
                 line.LineToolLevel,
-                startQueue,
                 producedUnits,
-                line.QueuedUnits,
                 availableManDays,
                 usedManDays,
                 line.CarryOverManDays,
@@ -353,7 +339,6 @@ public sealed class AircraftProductionFactory
             totalUsedManDays,
             utilization,
             totalProducedAircraft,
-            totalQueuedAfter,
             warehouseSnapshot,
             totalWarehouseUnits);
     }
@@ -373,7 +358,6 @@ public sealed class AircraftProductionFactory
                 LineId = line.LineId,
                 AssignedDesignId = line.AssignedDesignId,
                 Employees = line.Employees,
-                QueuedUnits = line.QueuedUnits,
                 CarryOverManDays = line.CarryOverManDays,
                 LineToolLevel = line.LineToolLevel,
             });
@@ -422,7 +406,6 @@ public sealed class AircraftProductionFactory
                 var state = new AircraftProductionLineState(lineSnapshot.LineId);
                 state.AssignDesign(lineSnapshot.AssignedDesignId);
                 state.SetEmployees(System.Math.Max(lineSnapshot.Employees, 0));
-                state.SetQueuedUnits(System.Math.Max(lineSnapshot.QueuedUnits, 0));
                 state.SetCarryOverWithoutProduction(System.Math.Max(lineSnapshot.CarryOverManDays, 0d));
 
                 var targetToolLevel = System.Math.Max(lineSnapshot.LineToolLevel, 1);

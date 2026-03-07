@@ -17,8 +17,6 @@ public sealed class AircraftProductionLineState
 
     public int Employees { get; private set; } = 10;
 
-    public int QueuedUnits { get; private set; }
-
     public double CarryOverManDays { get; private set; }
 
     public int LineToolLevel { get; private set; } = 1;
@@ -35,11 +33,6 @@ public sealed class AircraftProductionLineState
         if (Employees < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(Employees), "Employees must be >= 0.");
-        }
-
-        if (QueuedUnits < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(QueuedUnits), "Queued units must be >= 0.");
         }
 
         Numeric.ThrowIfNotFinite(CarryOverManDays, nameof(CarryOverManDays));
@@ -66,27 +59,6 @@ public sealed class AircraftProductionLineState
         Employees = employees;
     }
 
-    public void SetQueuedUnits(int queuedUnits)
-    {
-        if (queuedUnits < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(queuedUnits), "Queued units must be >= 0.");
-        }
-
-        QueuedUnits = queuedUnits;
-    }
-
-    public void AddQueuedUnits(int units)
-    {
-        var next = QueuedUnits + units;
-        if (next < 0)
-        {
-            next = 0;
-        }
-
-        QueuedUnits = next;
-    }
-
     public void UpgradeLineToolLevel(int targetLevel)
     {
         if (targetLevel < LineToolLevel)
@@ -109,18 +81,12 @@ public sealed class AircraftProductionLineState
             throw new ArgumentOutOfRangeException(nameof(producedUnits), "Produced units must be >= 0.");
         }
 
-        if (producedUnits > QueuedUnits)
-        {
-            throw new ArgumentOutOfRangeException(nameof(producedUnits), "Produced units cannot exceed queued units.");
-        }
-
         Numeric.ThrowIfNotFinite(carryOverManDays, nameof(carryOverManDays));
         if (carryOverManDays < 0d)
         {
             throw new ArgumentOutOfRangeException(nameof(carryOverManDays), "Carry-over man-days must be >= 0.");
         }
 
-        QueuedUnits -= producedUnits;
         LifetimeProducedUnits += producedUnits;
         CarryOverManDays = carryOverManDays;
     }

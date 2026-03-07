@@ -13,6 +13,5 @@ public sealed record FactoryMonthlyProductionReport(
     double TotalUsedManDays,
     double CapacityUtilization,
     int TotalAircraftProduced,
-    int TotalQueuedUnitsAfterProduction,
     IReadOnlyDictionary<string, int> WarehouseUnitsByDesign,
     int TotalWarehouseUnits);
