@@ -18,6 +18,8 @@ public sealed class HistoricalCampaignContractModifiers
 
     public double MilitaryPriceMultiplier { get; private set; } = 1d;
 
+    public double ContractRequirementDifficultyMultiplier { get; private set; } = 1d;
+
     public bool HasCategoryMixAdjustment =>
         !IsApproximatelyOne(CivilCategoryWeightMultiplier) ||
         !IsApproximatelyOne(MilitaryCategoryWeightMultiplier);
@@ -96,6 +98,16 @@ public sealed class HistoricalCampaignContractModifiers
         }
 
         return _unlockedContractParameters.Contains(normalizedParameterId);
+    }
+
+    public void SetContractRequirementDifficultyMultiplier(double multiplier)
+    {
+        if (!IsValidMultiplier(multiplier))
+        {
+            return;
+        }
+
+        ContractRequirementDifficultyMultiplier = multiplier;
     }
 
     private static bool IsCivilTarget(string? target) =>

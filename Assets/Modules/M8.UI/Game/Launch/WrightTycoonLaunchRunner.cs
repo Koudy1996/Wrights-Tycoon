@@ -506,7 +506,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _historicalCampaignContractModifierSource = _historicalCampaign is null
             ? null
-            : new HistoricalCampaignRuntimeContractModifierSource(_historicalCampaign, _historicalCampaignState);
+            : new HistoricalCampaignRuntimeContractModifierSource(_historicalCampaign, _historicalCampaignState, () => _currentDate);
         _contractBoard = new ContractBoard(
             new ContractGenerator(campaignModifierSource: _historicalCampaignContractModifierSource),
             new ContractEvaluator());
@@ -7039,6 +7039,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             $"militaryMix={modifiers.MilitaryCategoryWeightMultiplier:F3}, " +
             $"civilPrice={modifiers.CivilPriceMultiplier:F3}, " +
             $"militaryPrice={modifiers.MilitaryPriceMultiplier:F3}, " +
+            $"reqDifficulty={modifiers.ContractRequirementDifficultyMultiplier:F3}, " +
             $"fuelParamUnlocked={fuelConsumptionUnlocked}");
     }
 

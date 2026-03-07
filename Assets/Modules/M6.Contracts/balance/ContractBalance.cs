@@ -103,6 +103,12 @@ public static class ContractBalance
     public const int CampaignBonusBatchMilitaryBaseCopies = 4;
     public const int CampaignBonusBatchMilitaryMaxCopies = 12;
 
+    // Global year-shift for historical contract requirement difficulty.
+    // Keep at 0 for default behavior; adjust to shift effective campaign year.
+    public const int ContractRequirementDifficultyYearOffset = 0;
+    public const double ContractRequirementDifficultyMultiplierAtStartYear = 0.60d;
+    public const double ContractRequirementDifficultyMultiplierAtEndYear = 1.00d;
+
     public static readonly double[] SpeedRequirementAltitudesMeters = { 0d, 5000d, 10000d };
 
     public static readonly string[] CompanyPrefixes =
@@ -291,6 +297,51 @@ public static class ContractBalance
     public static bool IsCivilContractCategory(AircraftCategory category) => ContainsCategory(CivilRequestedCategories, category);
 
     public static bool IsMilitaryContractCategory(AircraftCategory category) => ContainsCategory(MilitaryRequestedCategories, category);
+
+    public static double ResolveHistoricalCampaignRequirementDifficultyMultiplier(int year, int playerYearOffset = 0)
+    {
+        if (year < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(year), "Year must be greater than or equal to 1.");
+        }
+
+        var effectiveYearLong = (long)year + ContractRequirementDifficultyYearOffset + playerYearOffset;
+        if (effectiveYearLong < int.MinValue)
+        {
+            effectiveYearLong = int.MinValue;
+        }
+        else if (effectiveYearLong > int.MaxValue)
+        {
+            effectiveYearLong = int.MaxValue;
+        }
+
+        var startYear = CoreBalance.HistoricalCampaignTechnology.StartYear;
+        var endYear = CoreBalance.HistoricalCampaignTechnology.EndYear;
+        var effectiveYear = (int)effectiveYearLong;
+        if (effectiveYear <= startYear)
+        {
+            return ContractRequirementDifficultyMultiplierAtStartYear;
+        }
+
+        if (effectiveYear >= endYear)
+        {
+            return ContractRequirementDifficultyMultiplierAtEndYear;
+        }
+
+        var yearRange = endYear - startYear;
+        if (yearRange <= 0)
+        {
+            return ContractRequirementDifficultyMultiplierAtEndYear;
+        }
+
+        var blend = (effectiveYear - startYear) / (double)yearRange;
+        var multiplier = ContractRequirementDifficultyMultiplierAtStartYear
+            + ((ContractRequirementDifficultyMultiplierAtEndYear - ContractRequirementDifficultyMultiplierAtStartYear) * blend);
+        return Clamp(
+            multiplier,
+            ContractRequirementDifficultyMultiplierAtStartYear,
+            ContractRequirementDifficultyMultiplierAtEndYear);
+    }
 
     public static bool TryResolveHistoricalCampaignMixWeightMultiplier(string? balanceKey, out double multiplier)
     {

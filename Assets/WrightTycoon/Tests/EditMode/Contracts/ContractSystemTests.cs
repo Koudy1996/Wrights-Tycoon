@@ -379,6 +379,113 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    public void Balance_ResolvesHistoricalRequirementDifficultyMultiplier_WithClampedYearsAndOffset()
+    {
+        var startYearMultiplier = ContractBalance.ResolveHistoricalCampaignRequirementDifficultyMultiplier(1946);
+        var endYearMultiplier = ContractBalance.ResolveHistoricalCampaignRequirementDifficultyMultiplier(2020);
+        var clampedBeforeStart = ContractBalance.ResolveHistoricalCampaignRequirementDifficultyMultiplier(1900);
+        var shiftedByOffset = ContractBalance.ResolveHistoricalCampaignRequirementDifficultyMultiplier(1950, playerYearOffset: -4);
+        var interpolated = ContractBalance.ResolveHistoricalCampaignRequirementDifficultyMultiplier(1960);
+        var expectedInterpolated = 0.60d + (((1960 - 1946) / (double)(2020 - 1946)) * 0.40d);
+
+        Assert.That(startYearMultiplier, Is.EqualTo(0.60d).Within(1e-9d));
+        Assert.That(endYearMultiplier, Is.EqualTo(1.00d).Within(1e-9d));
+        Assert.That(clampedBeforeStart, Is.EqualTo(0.60d).Within(1e-9d));
+        Assert.That(shiftedByOffset, Is.EqualTo(0.60d).Within(1e-9d));
+        Assert.That(interpolated, Is.EqualTo(expectedInterpolated).Within(1e-9d));
+    }
+
+    [Test]
+    public void Generator_AppliesRequirementDifficultyMultiplier_OnlyToTargetedMinimumRequirements()
+    {
+        const double requirementDifficultyMultiplier = 0.60d;
+        var options = new ContractGeneratorOptions
+        {
+            MinContractsPerMonth = 1,
+            MaxContractsPerMonth = 1,
+            RequestedCategories = new[] { AircraftCategory.RegionalJet },
+        };
+
+        var neutralModifiers = new HistoricalCampaignContractModifiers();
+        neutralModifiers.SetContractRequirementDifficultyMultiplier(1d);
+        var reducedRequirementModifiers = new HistoricalCampaignContractModifiers();
+        reducedRequirementModifiers.SetContractRequirementDifficultyMultiplier(requirementDifficultyMultiplier);
+
+        var baselineGenerator = new ContractGenerator(
+            seed: 9157,
+            options: options,
+            campaignModifierSource: new StubHistoricalCampaignContractModifierSource(neutralModifiers));
+        var reducedGenerator = new ContractGenerator(
+            seed: 9157,
+            options: options,
+            campaignModifierSource: new StubHistoricalCampaignContractModifierSource(reducedRequirementModifiers));
+
+        var encounteredScaledRequirement = false;
+        for (var monthIndex = 0; monthIndex < 24; monthIndex++)
+        {
+            var baseline = baselineGenerator.GenerateMonthlyContracts(monthIndex)[0].Requirements;
+            var reduced = reducedGenerator.GenerateMonthlyContracts(monthIndex)[0].Requirements;
+
+            if (baseline.MinimumReliability.HasValue)
+            {
+                encounteredScaledRequirement = true;
+                var expected = ScaleAndRound(
+                    baseline.MinimumReliability.Value,
+                    requirementDifficultyMultiplier,
+                    decimals: 3,
+                    minValue: 0d,
+                    maxValue: 1d);
+                Assert.That(reduced.MinimumReliability.HasValue, Is.True);
+                Assert.That(reduced.MinimumReliability!.Value, Is.EqualTo(expected).Within(0.001d));
+            }
+
+            if (baseline.MinimumRangeKilometers.HasValue)
+            {
+                encounteredScaledRequirement = true;
+                var expected = ScaleAndRound(
+                    baseline.MinimumRangeKilometers.Value,
+                    requirementDifficultyMultiplier,
+                    decimals: 1,
+                    minValue: 1d);
+                Assert.That(reduced.MinimumRangeKilometers.HasValue, Is.True);
+                Assert.That(reduced.MinimumRangeKilometers!.Value, Is.EqualTo(expected).Within(0.1d));
+            }
+
+            if (baseline.MinimumSpeed.HasValue)
+            {
+                encounteredScaledRequirement = true;
+                var expectedSpeed = ScaleAndRound(
+                    baseline.MinimumSpeed.Value.MinimumSpeedMetersPerSecond,
+                    requirementDifficultyMultiplier,
+                    decimals: 1,
+                    minValue: 1d / 3.6d);
+                Assert.That(reduced.MinimumSpeed.HasValue, Is.True);
+                Assert.That(reduced.MinimumSpeed!.Value.AltitudeMeters, Is.EqualTo(baseline.MinimumSpeed.Value.AltitudeMeters).Within(1e-9d));
+                Assert.That(reduced.MinimumSpeed.Value.MinimumSpeedMetersPerSecond, Is.EqualTo(expectedSpeed).Within(0.1d));
+            }
+
+            if (baseline.MinimumPayloadKilograms.HasValue)
+            {
+                encounteredScaledRequirement = true;
+                var expected = ScaleAndRound(
+                    baseline.MinimumPayloadKilograms.Value,
+                    requirementDifficultyMultiplier,
+                    decimals: 1,
+                    minValue: 0d);
+                Assert.That(reduced.MinimumPayloadKilograms.HasValue, Is.True);
+                Assert.That(reduced.MinimumPayloadKilograms!.Value, Is.EqualTo(expected).Within(0.1d));
+            }
+
+            Assert.That(reduced.MaximumTotalWeightKilograms, Is.EqualTo(baseline.MaximumTotalWeightKilograms));
+            Assert.That(reduced.MinimumCrew, Is.EqualTo(baseline.MinimumCrew));
+            Assert.That(reduced.MaximumRequiredRunwayLengthMeters, Is.EqualTo(baseline.MaximumRequiredRunwayLengthMeters));
+            Assert.That(reduced.MaximumFuelConsumptionKilogramsPerHour, Is.EqualTo(baseline.MaximumFuelConsumptionKilogramsPerHour));
+        }
+
+        Assert.That(encounteredScaledRequirement, Is.True);
+    }
+
+    [Test]
     public void Evaluator_BlocksDelivery_WhenAircraftBelowRequirements()
     {
         var evaluator = new ContractEvaluator();
@@ -903,6 +1010,27 @@ public sealed class ContractSystemTests
         var normalizedMax = expectLowBand ? options.LowDemandBandMaxNormalized : options.HighDemandBandMaxNormalized;
         var range = maxValue - minValue;
         return (minValue + (range * normalizedMin), minValue + (range * normalizedMax));
+    }
+
+    private static double ScaleAndRound(
+        double value,
+        double multiplier,
+        int decimals,
+        double minValue,
+        double? maxValue = null)
+    {
+        var scaled = value * multiplier;
+        if (scaled < minValue)
+        {
+            scaled = minValue;
+        }
+
+        if (maxValue.HasValue && scaled > maxValue.Value)
+        {
+            scaled = maxValue.Value;
+        }
+
+        return System.Math.Round(scaled, decimals, System.MidpointRounding.AwayFromZero);
     }
 
     private static AircraftModel CreateAircraft(
