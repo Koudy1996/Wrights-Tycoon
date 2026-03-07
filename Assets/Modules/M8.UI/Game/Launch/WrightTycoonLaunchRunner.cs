@@ -2544,6 +2544,41 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private static void DrawEnginePerformanceComparisonRows(Engine originalEngine, Engine newEngine)
     {
+        var originalIsJet = IsJetFamily(originalEngine.Definition.EngineType);
+        var newIsJet = IsJetFamily(newEngine.Definition.EngineType);
+        var originalOutputUnit = originalEngine.Performance.OutputKind == EngineOutputKind.PowerKilowatts ? "kW" : "N";
+        var newOutputUnit = newEngine.Performance.OutputKind == EngineOutputKind.PowerKilowatts ? "kW" : "N";
+        var originalFuelMetric = originalIsJet ? "L/N" : "L/kWh";
+        var newFuelMetric = newIsJet ? "L/N" : "L/kWh";
+
+        var altitudes = originalEngine.Performance.AltitudePerformance
+            .Select(entry => entry.AltitudeMeters)
+            .Concat(newEngine.Performance.AltitudePerformance.Select(entry => entry.AltitudeMeters))
+            .Distinct()
+            .OrderBy(value => value)
+            .ToArray();
+        for (var altitudeIndex = 0; altitudeIndex < altitudes.Length; altitudeIndex++)
+        {
+            var altitude = altitudes[altitudeIndex];
+            var altitudeLabel = $"{FormatUiNumber(altitude, "0")}m";
+
+            var hasOriginal = TryGetEngineAltitudePerformanceValues(originalEngine, altitude, out var originalOutput, out var originalFuelBurn);
+            var hasNew = TryGetEngineAltitudePerformanceValues(newEngine, altitude, out var newOutput, out var newFuelBurn);
+
+            DrawVersionComparisonRow(
+                $"{altitudeLabel} Output",
+                hasOriginal ? $"{FormatUiNumber(originalOutput, "0.0")} {originalOutputUnit}" : "N/A",
+                hasNew ? $"{FormatUiNumber(newOutput, "0.0")} {newOutputUnit}" : "N/A");
+            DrawVersionComparisonRow(
+                $"{altitudeLabel} Fuel (kg/h)",
+                hasOriginal ? FormatUiNumber(originalFuelBurn, "0.0") : "N/A",
+                hasNew ? FormatUiNumber(newFuelBurn, "0.0") : "N/A");
+            DrawVersionComparisonRow(
+                $"{altitudeLabel} Fuel Metric",
+                hasOriginal ? $"{FormatUiNumber(CalculateFuelPerOutputMetric(originalOutput, originalFuelBurn, originalIsJet), "0.0000")} {originalFuelMetric}" : "N/A",
+                hasNew ? $"{FormatUiNumber(CalculateFuelPerOutputMetric(newOutput, newFuelBurn, newIsJet), "0.0000")} {newFuelMetric}" : "N/A");
+        }
+
         DrawVersionComparisonRow(
             "Reliability",
             FormatUiNumber(originalEngine.Performance.Reliability, "0.000"),
@@ -2568,6 +2603,31 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "Production MD",
             FormatUiNumber(originalEngine.Performance.ProductionManDays, "0.0"),
             FormatUiNumber(newEngine.Performance.ProductionManDays, "0.0"));
+    }
+
+    private static bool TryGetEngineAltitudePerformanceValues(
+        Engine engine,
+        double altitudeMeters,
+        out double output,
+        out double fuelBurnKilogramsPerHour)
+    {
+        var entries = engine.Performance.AltitudePerformance;
+        for (var index = 0; index < entries.Count; index++)
+        {
+            var entry = entries[index];
+            if (System.Math.Abs(entry.AltitudeMeters - altitudeMeters) > 0.1d)
+            {
+                continue;
+            }
+
+            output = entry.Output;
+            fuelBurnKilogramsPerHour = entry.FuelConsumptionKilogramsPerHour;
+            return true;
+        }
+
+        output = 0d;
+        fuelBurnKilogramsPerHour = 0d;
+        return false;
     }
 
     private static void DrawTypeParameterComparisonRows(
@@ -2621,6 +2681,24 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private static void DrawTypePerformanceComparisonRows(Aircraft originalAircraft, Aircraft newAircraft)
     {
+        var altitudes = originalAircraft.Performance.MaxSpeedByAltitude
+            .Select(entry => entry.AltitudeMeters)
+            .Concat(newAircraft.Performance.MaxSpeedByAltitude.Select(entry => entry.AltitudeMeters))
+            .Distinct()
+            .OrderBy(value => value)
+            .ToArray();
+        for (var altitudeIndex = 0; altitudeIndex < altitudes.Length; altitudeIndex++)
+        {
+            var altitude = altitudes[altitudeIndex];
+            var altitudeLabel = $"{FormatUiNumber(altitude, "0")}m";
+            var hasOriginal = TryGetAircraftMaxSpeedAtAltitude(originalAircraft, altitude, out var originalMaxSpeedMetersPerSecond);
+            var hasNew = TryGetAircraftMaxSpeedAtAltitude(newAircraft, altitude, out var newMaxSpeedMetersPerSecond);
+            DrawVersionComparisonRow(
+                $"Max Speed @ {altitudeLabel} (km/h)",
+                hasOriginal ? FormatUiNumber(originalMaxSpeedMetersPerSecond * 3.6d, "0.0") : "N/A",
+                hasNew ? FormatUiNumber(newMaxSpeedMetersPerSecond * 3.6d, "0.0") : "N/A");
+        }
+
         DrawVersionComparisonRow(
             "Range (km)",
             FormatUiNumber(originalAircraft.Performance.RangeKilometers, "0.0"),
@@ -2630,9 +2708,37 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             FormatUiNumber(originalAircraft.Performance.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0"),
             FormatUiNumber(newAircraft.Performance.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0"));
         DrawVersionComparisonRow(
+            "Optimal Cruise Altitude (m)",
+            FormatUiNumber(originalAircraft.Performance.OptimalCruiseAltitudeMeters, "0"),
+            FormatUiNumber(newAircraft.Performance.OptimalCruiseAltitudeMeters, "0"));
+        DrawVersionComparisonRow(
+            "Cruise Fuel Burn Avg (kg/h)",
+            FormatUiNumber(originalAircraft.Performance.AverageCruiseFuelBurnKilogramsPerHour, "0.0"),
+            FormatUiNumber(newAircraft.Performance.AverageCruiseFuelBurnKilogramsPerHour, "0.0"));
+        DrawVersionComparisonRow(
+            "Cruise Fuel Burn Full (kg/h)",
+            FormatUiNumber(originalAircraft.Performance.FullFuelCruiseBurnKilogramsPerHour, "0.0"),
+            FormatUiNumber(newAircraft.Performance.FullFuelCruiseBurnKilogramsPerHour, "0.0"));
+        DrawVersionComparisonRow(
+            "Cruise Fuel Burn Empty (kg/h)",
+            FormatUiNumber(originalAircraft.Performance.EmptyFuelCruiseBurnKilogramsPerHour, "0.0"),
+            FormatUiNumber(newAircraft.Performance.EmptyFuelCruiseBurnKilogramsPerHour, "0.0"));
+        DrawVersionComparisonRow(
             "Useful Weight (kg)",
             FormatUiNumber(originalAircraft.Performance.PayloadCapacity.Kilograms, "0.0"),
             FormatUiNumber(newAircraft.Performance.PayloadCapacity.Kilograms, "0.0"));
+        DrawVersionComparisonRow(
+            "Maximum Takeoff Weight (kg)",
+            FormatUiNumber(originalAircraft.Performance.MaximumTakeoffWeightKilograms, "0.0"),
+            FormatUiNumber(newAircraft.Performance.MaximumTakeoffWeightKilograms, "0.0"));
+        DrawVersionComparisonRow(
+            "Empty Aircraft Weight (kg)",
+            FormatUiNumber(originalAircraft.Performance.EmptyAircraftWeightKilograms, "0.0"),
+            FormatUiNumber(newAircraft.Performance.EmptyAircraftWeightKilograms, "0.0"));
+        DrawVersionComparisonRow(
+            "Aircraft Weight With Fuel (kg)",
+            FormatUiNumber(originalAircraft.Performance.AircraftWeightWithFuelKilograms, "0.0"),
+            FormatUiNumber(newAircraft.Performance.AircraftWeightWithFuelKilograms, "0.0"));
         DrawVersionComparisonRow(
             "Overall Reliability",
             FormatUiNumber(originalAircraft.Performance.OverallReliability, "0.000"),
@@ -2645,6 +2751,36 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "Production MD",
             FormatUiNumber(originalAircraft.Performance.TotalProductionManDays, "0.0"),
             FormatUiNumber(newAircraft.Performance.TotalProductionManDays, "0.0"));
+        DrawVersionComparisonRow(
+            "Development Cost",
+            FormatUiNumber(originalAircraft.Development.DevelopmentCost, "0"),
+            FormatUiNumber(newAircraft.Development.DevelopmentCost, "0"));
+        DrawVersionComparisonRow(
+            "Development MD",
+            FormatUiNumber(originalAircraft.Development.DevelopmentManDays, "0.0"),
+            FormatUiNumber(newAircraft.Development.DevelopmentManDays, "0.0"));
+    }
+
+    private static bool TryGetAircraftMaxSpeedAtAltitude(
+        Aircraft aircraft,
+        double altitudeMeters,
+        out double speedMetersPerSecond)
+    {
+        var entries = aircraft.Performance.MaxSpeedByAltitude;
+        for (var index = 0; index < entries.Count; index++)
+        {
+            var entry = entries[index];
+            if (System.Math.Abs(entry.AltitudeMeters - altitudeMeters) > 0.1d)
+            {
+                continue;
+            }
+
+            speedMetersPerSecond = entry.MaxSpeedMetersPerSecond;
+            return true;
+        }
+
+        speedMetersPerSecond = 0d;
+        return false;
     }
 
     private AirframeParameters BuildCurrentTypeAirframeParametersForComparison()
