@@ -117,6 +117,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private int _selectedSavedEngineIndex = -1;
     private int _selectedSavedFamilyIndex = -1;
     private int _selectedSavedAircraftDesignIndex = -1;
+    private int _engineCompareReferenceIndex = -1;
+    private int _typeCompareReferenceIndex = -1;
     private int _lockedEngineCount = 1;
     private EngineDesignerFamily _engineDesignerFamily = EngineDesignerFamily.Piston;
     private AircraftAllowedEngineFamily _familyAllowedEngineFamily = AircraftAllowedEngineFamily.Propeller;
@@ -1776,7 +1778,31 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             RebuildEnginePreview();
         }
 
+        var compareEngineButtonLabel = _engineCompareReferenceIndex >= 0
+            ? "Stop Compare"
+            : "Compare Version";
+        if (GUILayout.Button(compareEngineButtonLabel, GUILayout.Height(30f)))
+        {
+            ToggleEngineCompareMode();
+        }
+
         GUILayout.EndHorizontal();
+
+        if (_engineCompareReferenceIndex >= 0)
+        {
+            if (_savedEngines.Count == 0)
+            {
+                _engineCompareReferenceIndex = -1;
+            }
+            else
+            {
+                DrawSection("Compare Version");
+                var compareLabels = _savedEngines
+                    .Select(saved => BuildEngineDisplayName(saved.Name, saved.Definition.EngineType, saved.Parameters))
+                    .ToArray();
+                _engineCompareReferenceIndex = DrawListSelector("Reference Engine", _engineCompareReferenceIndex, compareLabels);
+            }
+        }
 
         DrawSection("Saved Engines");
         if (_savedEngines.Count == 0)
@@ -1815,10 +1841,20 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             if (_savedEngines.Count == 0)
             {
                 _selectedSavedEngineIndex = -1;
+                _engineCompareReferenceIndex = -1;
             }
             else if (_selectedSavedEngineIndex >= _savedEngines.Count)
             {
                 _selectedSavedEngineIndex = _savedEngines.Count - 1;
+            }
+
+            if (_engineCompareReferenceIndex == toDelete)
+            {
+                _engineCompareReferenceIndex = -1;
+            }
+            else if (_engineCompareReferenceIndex > toDelete)
+            {
+                _engineCompareReferenceIndex--;
             }
         }
     }
@@ -1901,6 +1937,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label("Higher compression/boost gives more output but higher fuel burn and lower reliability.");
         GUILayout.Label("Turbine diameter and bypass ratio strongly affect jet-family engines.");
         GUILayout.Label("Cooling improves durability and operating margin.");
+
+        DrawEngineComparisonOnRightPanel();
     }
 
     private void DrawAirframeTab()
@@ -2142,7 +2180,34 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
+        var compareTypeButtonLabel = _typeCompareReferenceIndex >= 0
+            ? "Stop Compare"
+            : "Compare Version";
+        if (GUILayout.Button(compareTypeButtonLabel, GUILayout.Height(28f)))
+        {
+            ToggleTypeCompareMode();
+        }
+
         GUILayout.EndHorizontal();
+
+        if (_typeCompareReferenceIndex >= 0)
+        {
+            if (_savedAircraftDesigns.Count == 0)
+            {
+                _typeCompareReferenceIndex = -1;
+            }
+            else
+            {
+                DrawSection("Compare Version");
+                var compareLabels = _savedAircraftDesigns
+                    .Select(design =>
+                        $"{design.Name} | " +
+                        $"{AircraftCategoryCatalog.GetProfile(design.CatalogItem.Category).DisplayName} | " +
+                        $"{design.CatalogItem.Aircraft.Engine.Definition.DisplayName}")
+                    .ToArray();
+                _typeCompareReferenceIndex = DrawListSelector("Reference Variant", _typeCompareReferenceIndex, compareLabels);
+            }
+        }
 
         _aircraftDesignName = DrawText("Saved Aircraft Name", _aircraftDesignName);
 
@@ -2169,6 +2234,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             {
                 if (GUILayout.Button("Delete Selected Aircraft Design", GUILayout.Height(26f)))
                 {
+                    var deletedIndex = _selectedSavedAircraftDesignIndex;
                     var designToDelete = _savedAircraftDesigns[_selectedSavedAircraftDesignIndex];
                     var warehouseUnits = _productionFactory?.GetWarehouseUnits(designToDelete.CatalogItem.DesignId) ?? 0;
                     if (warehouseUnits > 0)
@@ -2190,10 +2256,20 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         if (_savedAircraftDesigns.Count == 0)
                         {
                             _selectedSavedAircraftDesignIndex = -1;
+                            _typeCompareReferenceIndex = -1;
                         }
                         else if (_selectedSavedAircraftDesignIndex >= _savedAircraftDesigns.Count)
                         {
                             _selectedSavedAircraftDesignIndex = _savedAircraftDesigns.Count - 1;
+                        }
+
+                        if (_typeCompareReferenceIndex == deletedIndex)
+                        {
+                            _typeCompareReferenceIndex = -1;
+                        }
+                        else if (_typeCompareReferenceIndex > deletedIndex)
+                        {
+                            _typeCompareReferenceIndex--;
                         }
                     }
                 }
@@ -2252,71 +2328,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         EngineType engineType)
     {
         DrawSection("Original vs New Engine Parameters");
-        DrawVersionComparisonRow("Engine Type", engineType.ToString(), engineType.ToString());
-
-        if (IsJetFamily(engineType))
-        {
-            DrawVersionComparisonRow(
-                "Turbine Diameter (cm)",
-                FormatUiNumber(originalParameters.TurbineDiameterMeters * 100d, "0"),
-                FormatUiNumber(newParameters.TurbineDiameterMeters * 100d, "0"));
-            DrawVersionComparisonRow(
-                "Bypass Ratio",
-                FormatUiNumber(originalParameters.BypassRatio, "0.00"),
-                FormatUiNumber(newParameters.BypassRatio, "0.00"));
-            DrawVersionComparisonRow(
-                "Compression Ratio",
-                FormatUiNumber(originalParameters.CompressionRatio, "0.00"),
-                FormatUiNumber(newParameters.CompressionRatio, "0.00"));
-            DrawVersionComparisonRow(
-                "Maximum Speed (RPM)",
-                FormatUiNumber(originalParameters.MaximumSpeed, "0"),
-                FormatUiNumber(newParameters.MaximumSpeed, "0"));
-            DrawVersionComparisonRow(
-                "Afterburner",
-                originalParameters.HasAfterburner ? "Enabled" : "Disabled",
-                newParameters.HasAfterburner ? "Enabled" : "Disabled");
-        }
-        else
-        {
-            DrawVersionComparisonRow(
-                "Cylinder Count",
-                FormatUiInteger(originalParameters.CylinderCount),
-                FormatUiInteger(newParameters.CylinderCount));
-            DrawVersionComparisonRow(
-                "Compression Ratio",
-                FormatUiNumber(originalParameters.CompressionRatio, "0.00"),
-                FormatUiNumber(newParameters.CompressionRatio, "0.00"));
-            DrawVersionComparisonRow(
-                "Optimization Height (m)",
-                FormatUiNumber(originalParameters.OptimizationAltitudeMeters, "0"),
-                FormatUiNumber(newParameters.OptimizationAltitudeMeters, "0"));
-            DrawVersionComparisonRow(
-                "Boost",
-                originalParameters.BoostType.ToString(),
-                newParameters.BoostType.ToString());
-            DrawVersionComparisonRow(
-                "Injection",
-                originalParameters.PistonInjectionType.ToString(),
-                newParameters.PistonInjectionType.ToString());
-            DrawVersionComparisonRow(
-                "Maximum Speed (RPM)",
-                FormatUiNumber(originalParameters.MaximumSpeed, "0"),
-                FormatUiNumber(newParameters.MaximumSpeed, "0"));
-            DrawVersionComparisonRow(
-                "Displacement (L)",
-                FormatUiNumber(originalParameters.DisplacementLiters, "0.0"),
-                FormatUiNumber(newParameters.DisplacementLiters, "0.0"));
-            DrawVersionComparisonRow(
-                "Efficiency Optimizations (%)",
-                FormatUiNumber(originalParameters.EfficiencyOptimizationsPercent, "0.0"),
-                FormatUiNumber(newParameters.EfficiencyOptimizationsPercent, "0.0"));
-        }
-
-        DrawVersionComparisonRow(
-            "Cooling Efficiency",
-            FormatUiNumber(originalParameters.CoolingEfficiency, "0.00"),
-            FormatUiNumber(newParameters.CoolingEfficiency, "0.00"));
+        DrawEngineParameterComparisonRows(engineType, originalParameters, engineType, newParameters);
     }
 
     private void DrawTypeVersionComparison(TypeVersionDevelopmentContext context)
@@ -2346,45 +2358,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         DrawSection("Original vs New Type Parameters");
-        DrawVersionComparisonRow("Aircraft Category", originalCategory, currentCategory);
-        DrawVersionComparisonRow("Assigned Engine", originalEngineLabel, currentEngineLabel);
-        DrawVersionComparisonRow(
-            "Crew Members",
-            FormatUiInteger(sourceAirframe.CrewCount),
-            FormatUiInteger(_typeCrewCount));
-        DrawVersionComparisonRow(
-            "Wing Area (m2)",
-            FormatUiNumber(sourceAirframe.WingAreaSquareMeters, "0.0"),
-            FormatUiNumber(_typeWingAreaSquareMeters, "0.0"));
-        DrawVersionComparisonRow("Wing Shape", sourceAirframe.WingShape.ToString(), _typeWingShape.ToString());
-        DrawVersionComparisonRow("Wing Profile", sourceAirframe.WingProfile.ToString(), _typeWingProfile.ToString());
-        DrawVersionComparisonRow("Tail Type", sourceAirframe.TailType.ToString(), _typeTailType.ToString());
-        DrawVersionComparisonRow("Flaps", sourceAirframe.FlapType.ToString(), _typeFlapType.ToString());
-        DrawVersionComparisonRow(
-            "Leading Edge Flaps",
-            sourceAirframe.HasLeadingEdgeFlaps ? "Enabled" : "Disabled",
-            _typeHasLeadingEdgeFlaps ? "Enabled" : "Disabled");
-        DrawVersionComparisonRow(
-            "Backup Systems",
-            sourceAirframe.HasBackupSystems ? "Enabled" : "Disabled",
-            _typeHasBackupSystems ? "Enabled" : "Disabled");
-        DrawVersionComparisonRow(
-            "Landing Gear",
-            sourceAirframe.LandingGearType.ToString(),
-            _typeLandingGearType.ToString());
-        DrawVersionComparisonRow("Runway Type", sourceAirframe.RunwayType.ToString(), _typeRunwayType.ToString());
-        DrawVersionComparisonRow(
-            "Cowling",
-            FormatUiNumber(sourceAirframe.EngineCowling, "0.00"),
-            FormatUiNumber(_typeCowling, "0.00"));
-        DrawVersionComparisonRow(
-            "Aerodynamic Cleanliness (%)",
-            FormatUiNumber(sourceAirframe.AerodynamicCleanlinessPercent, "0.0"),
-            FormatUiNumber(_typeAerodynamicCleanlinessPercent, "0.0"));
-        DrawVersionComparisonRow(
-            "Fuel (L)",
-            FormatUiNumber(sourceAirframe.FuelAmountLiters, "0"),
-            FormatUiNumber(_typeFuelLiters, "0"));
+        DrawTypeParameterComparisonRows(
+            sourceAirframe,
+            BuildCurrentTypeAirframeParametersForComparison(),
+            originalCategory,
+            currentCategory,
+            originalEngineLabel,
+            currentEngineLabel);
     }
 
     private static void DrawVersionComparisonRow(string label, string originalValue, string newValue)
@@ -2394,6 +2374,296 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"Original: {originalValue}", GUILayout.Width(280f));
         GUILayout.Label($"New: {newValue}");
         GUILayout.EndHorizontal();
+    }
+
+    private static void DrawParameterValueRow(string label, string value)
+    {
+        GUILayout.BeginHorizontal(GUI.skin.box);
+        GUILayout.Label(label, GUILayout.Width(220f));
+        GUILayout.Label(value);
+        GUILayout.EndHorizontal();
+    }
+
+    private void DrawEngineComparisonOnRightPanel()
+    {
+        if (_enginePreview is null)
+        {
+            return;
+        }
+
+        if (_engineVersionDevelopment is not null)
+        {
+            DrawSection("Compared Version (Source)");
+            GUILayout.Label($"Source: {_engineVersionDevelopment.SourceDisplayName}");
+            DrawEngineParameterComparisonRows(
+                _engineVersionDevelopment.LockedEngineType,
+                _engineVersionDevelopment.SourceParameters,
+                _enginePreview.Definition.EngineType,
+                _enginePreview.Parameters);
+        }
+
+        if (_engineCompareReferenceIndex < 0 || _engineCompareReferenceIndex >= _savedEngines.Count)
+        {
+            return;
+        }
+
+        var reference = _savedEngines[_engineCompareReferenceIndex];
+        DrawSection("Compared Version (Selected)");
+        GUILayout.Label($"Reference: {BuildEngineDisplayName(reference.Name, reference.Definition.EngineType, reference.Parameters)}");
+        DrawEngineParameterComparisonRows(
+            reference.Definition.EngineType,
+            reference.Parameters,
+            _enginePreview.Definition.EngineType,
+            _enginePreview.Parameters);
+
+        if (_engineBuilder is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var referenceEngine = _engineBuilder.Build(reference.Definition, reference.Parameters.Clone());
+            DrawEnginePerformanceComparisonRows(referenceEngine, _enginePreview);
+        }
+        catch
+        {
+            DrawError("Selected engine could not be built for performance comparison.");
+        }
+    }
+
+    private void DrawTypeComparisonOnRightPanel()
+    {
+        if (_aircraftPreview is null)
+        {
+            return;
+        }
+
+        if (_typeVersionDevelopment is not null
+            && TryGetSavedAircraftDesignByTypeResearchId(_typeVersionDevelopment.SourceTypeResearchId, out var sourceDesign))
+        {
+            DrawSection("Compared Version (Source)");
+            GUILayout.Label($"Source: {_typeVersionDevelopment.SourceDisplayName}");
+            DrawTypeParameterComparisonRows(
+                sourceDesign.CatalogItem.Aircraft.Airframe.Parameters,
+                _aircraftPreview.Airframe.Parameters,
+                AircraftCategoryCatalog.GetProfile(sourceDesign.CatalogItem.Category).DisplayName,
+                AircraftCategoryCatalog.GetProfile(_aircraftPreview.FamilyDefinition.Category).DisplayName,
+                BuildEngineDisplayName(
+                    sourceDesign.CatalogItem.Aircraft.Engine.Definition.DisplayName,
+                    sourceDesign.CatalogItem.Aircraft.Engine.Definition.EngineType,
+                    sourceDesign.CatalogItem.Aircraft.Engine.Parameters),
+                BuildEngineDisplayName(
+                    _aircraftPreview.Engine.Definition.DisplayName,
+                    _aircraftPreview.Engine.Definition.EngineType,
+                    _aircraftPreview.Engine.Parameters));
+            DrawTypePerformanceComparisonRows(sourceDesign.CatalogItem.Aircraft, _aircraftPreview);
+        }
+
+        if (_typeCompareReferenceIndex < 0 || _typeCompareReferenceIndex >= _savedAircraftDesigns.Count)
+        {
+            return;
+        }
+
+        var reference = _savedAircraftDesigns[_typeCompareReferenceIndex];
+        var referenceAircraft = reference.CatalogItem.Aircraft;
+        DrawSection("Compared Version (Selected)");
+        GUILayout.Label($"Reference: {reference.Name}");
+        DrawTypeParameterComparisonRows(
+            referenceAircraft.Airframe.Parameters,
+            _aircraftPreview.Airframe.Parameters,
+            AircraftCategoryCatalog.GetProfile(reference.CatalogItem.Category).DisplayName,
+            AircraftCategoryCatalog.GetProfile(_aircraftPreview.FamilyDefinition.Category).DisplayName,
+            BuildEngineDisplayName(
+                referenceAircraft.Engine.Definition.DisplayName,
+                referenceAircraft.Engine.Definition.EngineType,
+                referenceAircraft.Engine.Parameters),
+            BuildEngineDisplayName(
+                _aircraftPreview.Engine.Definition.DisplayName,
+                _aircraftPreview.Engine.Definition.EngineType,
+                _aircraftPreview.Engine.Parameters));
+        DrawTypePerformanceComparisonRows(referenceAircraft, _aircraftPreview);
+    }
+
+    private static void DrawEngineParameterComparisonRows(
+        EngineType originalEngineType,
+        EngineParameters originalParameters,
+        EngineType newEngineType,
+        EngineParameters newParameters)
+    {
+        DrawVersionComparisonRow("Engine Type", originalEngineType.ToString(), newEngineType.ToString());
+        DrawVersionComparisonRow(
+            "Cylinder Count",
+            IsJetFamily(originalEngineType) ? "N/A" : FormatUiInteger(originalParameters.CylinderCount),
+            IsJetFamily(newEngineType) ? "N/A" : FormatUiInteger(newParameters.CylinderCount));
+        DrawVersionComparisonRow(
+            "Turbine Diameter (cm)",
+            IsJetFamily(originalEngineType) ? FormatUiNumber(originalParameters.TurbineDiameterMeters * 100d, "0") : "N/A",
+            IsJetFamily(newEngineType) ? FormatUiNumber(newParameters.TurbineDiameterMeters * 100d, "0") : "N/A");
+        DrawVersionComparisonRow(
+            "Bypass Ratio",
+            IsJetFamily(originalEngineType) ? FormatUiNumber(originalParameters.BypassRatio, "0.00") : "N/A",
+            IsJetFamily(newEngineType) ? FormatUiNumber(newParameters.BypassRatio, "0.00") : "N/A");
+        DrawVersionComparisonRow(
+            "Displacement (L)",
+            IsJetFamily(originalEngineType) ? "N/A" : FormatUiNumber(originalParameters.DisplacementLiters, "0.0"),
+            IsJetFamily(newEngineType) ? "N/A" : FormatUiNumber(newParameters.DisplacementLiters, "0.0"));
+        DrawVersionComparisonRow(
+            "Compression Ratio",
+            FormatUiNumber(originalParameters.CompressionRatio, "0.00"),
+            FormatUiNumber(newParameters.CompressionRatio, "0.00"));
+        DrawVersionComparisonRow(
+            "Optimization Height (m)",
+            IsJetFamily(originalEngineType) ? "N/A" : FormatUiNumber(originalParameters.OptimizationAltitudeMeters, "0"),
+            IsJetFamily(newEngineType) ? "N/A" : FormatUiNumber(newParameters.OptimizationAltitudeMeters, "0"));
+        DrawVersionComparisonRow(
+            "Boost",
+            IsJetFamily(originalEngineType) ? "N/A" : originalParameters.BoostType.ToString(),
+            IsJetFamily(newEngineType) ? "N/A" : newParameters.BoostType.ToString());
+        DrawVersionComparisonRow(
+            "Injection",
+            IsJetFamily(originalEngineType) ? "N/A" : originalParameters.PistonInjectionType.ToString(),
+            IsJetFamily(newEngineType) ? "N/A" : newParameters.PistonInjectionType.ToString());
+        DrawVersionComparisonRow(
+            "Afterburner",
+            IsJetFamily(originalEngineType) ? (originalParameters.HasAfterburner ? "Enabled" : "Disabled") : "N/A",
+            IsJetFamily(newEngineType) ? (newParameters.HasAfterburner ? "Enabled" : "Disabled") : "N/A");
+        DrawVersionComparisonRow(
+            "Maximum Speed (RPM)",
+            FormatUiNumber(originalParameters.MaximumSpeed, "0"),
+            FormatUiNumber(newParameters.MaximumSpeed, "0"));
+        DrawVersionComparisonRow(
+            "Efficiency Optimizations (%)",
+            IsJetFamily(originalEngineType) ? "N/A" : FormatUiNumber(originalParameters.EfficiencyOptimizationsPercent, "0.0"),
+            IsJetFamily(newEngineType) ? "N/A" : FormatUiNumber(newParameters.EfficiencyOptimizationsPercent, "0.0"));
+        DrawVersionComparisonRow(
+            "Cooling Efficiency",
+            FormatUiNumber(originalParameters.CoolingEfficiency, "0.00"),
+            FormatUiNumber(newParameters.CoolingEfficiency, "0.00"));
+    }
+
+    private static void DrawEnginePerformanceComparisonRows(Engine originalEngine, Engine newEngine)
+    {
+        DrawVersionComparisonRow(
+            "Reliability",
+            FormatUiNumber(originalEngine.Performance.Reliability, "0.000"),
+            FormatUiNumber(newEngine.Performance.Reliability, "0.000"));
+        DrawVersionComparisonRow(
+            "Weight (kg)",
+            FormatUiNumber(originalEngine.Performance.Weight.Kilograms, "0.0"),
+            FormatUiNumber(newEngine.Performance.Weight.Kilograms, "0.0"));
+        DrawVersionComparisonRow(
+            "Engine Length (m)",
+            FormatUiNumber(originalEngine.Performance.EngineLengthMeters, "0.00"),
+            FormatUiNumber(newEngine.Performance.EngineLengthMeters, "0.00"));
+        DrawVersionComparisonRow(
+            "Engine Frontal Area (m2)",
+            FormatUiNumber(originalEngine.Performance.EngineFrontalAreaSquareMeters, "0.000"),
+            FormatUiNumber(newEngine.Performance.EngineFrontalAreaSquareMeters, "0.000"));
+        DrawVersionComparisonRow(
+            "Cost",
+            FormatUiNumber(originalEngine.Performance.Cost, "0"),
+            FormatUiNumber(newEngine.Performance.Cost, "0"));
+        DrawVersionComparisonRow(
+            "Production MD",
+            FormatUiNumber(originalEngine.Performance.ProductionManDays, "0.0"),
+            FormatUiNumber(newEngine.Performance.ProductionManDays, "0.0"));
+    }
+
+    private static void DrawTypeParameterComparisonRows(
+        AirframeParameters originalAirframe,
+        AirframeParameters newAirframe,
+        string originalCategory,
+        string newCategory,
+        string originalEngineLabel,
+        string newEngineLabel)
+    {
+        DrawVersionComparisonRow("Aircraft Category", originalCategory, newCategory);
+        DrawVersionComparisonRow("Assigned Engine", originalEngineLabel, newEngineLabel);
+        DrawVersionComparisonRow(
+            "Crew Members",
+            FormatUiInteger(originalAirframe.CrewCount),
+            FormatUiInteger(newAirframe.CrewCount));
+        DrawVersionComparisonRow(
+            "Wing Area (m2)",
+            FormatUiNumber(originalAirframe.WingAreaSquareMeters, "0.0"),
+            FormatUiNumber(newAirframe.WingAreaSquareMeters, "0.0"));
+        DrawVersionComparisonRow("Wing Shape", originalAirframe.WingShape.ToString(), newAirframe.WingShape.ToString());
+        DrawVersionComparisonRow("Wing Profile", originalAirframe.WingProfile.ToString(), newAirframe.WingProfile.ToString());
+        DrawVersionComparisonRow("Tail Type", originalAirframe.TailType.ToString(), newAirframe.TailType.ToString());
+        DrawVersionComparisonRow("Flaps", originalAirframe.FlapType.ToString(), newAirframe.FlapType.ToString());
+        DrawVersionComparisonRow(
+            "Leading Edge Flaps",
+            originalAirframe.HasLeadingEdgeFlaps ? "Enabled" : "Disabled",
+            newAirframe.HasLeadingEdgeFlaps ? "Enabled" : "Disabled");
+        DrawVersionComparisonRow(
+            "Backup Systems",
+            originalAirframe.HasBackupSystems ? "Enabled" : "Disabled",
+            newAirframe.HasBackupSystems ? "Enabled" : "Disabled");
+        DrawVersionComparisonRow(
+            "Landing Gear",
+            originalAirframe.LandingGearType.ToString(),
+            newAirframe.LandingGearType.ToString());
+        DrawVersionComparisonRow("Runway Type", originalAirframe.RunwayType.ToString(), newAirframe.RunwayType.ToString());
+        DrawVersionComparisonRow(
+            "Cowling",
+            FormatUiNumber(originalAirframe.EngineCowling, "0.00"),
+            FormatUiNumber(newAirframe.EngineCowling, "0.00"));
+        DrawVersionComparisonRow(
+            "Aerodynamic Cleanliness (%)",
+            FormatUiNumber(originalAirframe.AerodynamicCleanlinessPercent, "0.0"),
+            FormatUiNumber(newAirframe.AerodynamicCleanlinessPercent, "0.0"));
+        DrawVersionComparisonRow(
+            "Fuel (L)",
+            FormatUiNumber(originalAirframe.FuelAmountLiters, "0"),
+            FormatUiNumber(newAirframe.FuelAmountLiters, "0"));
+    }
+
+    private static void DrawTypePerformanceComparisonRows(Aircraft originalAircraft, Aircraft newAircraft)
+    {
+        DrawVersionComparisonRow(
+            "Range (km)",
+            FormatUiNumber(originalAircraft.Performance.RangeKilometers, "0.0"),
+            FormatUiNumber(newAircraft.Performance.RangeKilometers, "0.0"));
+        DrawVersionComparisonRow(
+            "Optimal Cruise Speed (km/h)",
+            FormatUiNumber(originalAircraft.Performance.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0"),
+            FormatUiNumber(newAircraft.Performance.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0"));
+        DrawVersionComparisonRow(
+            "Useful Weight (kg)",
+            FormatUiNumber(originalAircraft.Performance.PayloadCapacity.Kilograms, "0.0"),
+            FormatUiNumber(newAircraft.Performance.PayloadCapacity.Kilograms, "0.0"));
+        DrawVersionComparisonRow(
+            "Overall Reliability",
+            FormatUiNumber(originalAircraft.Performance.OverallReliability, "0.000"),
+            FormatUiNumber(newAircraft.Performance.OverallReliability, "0.000"));
+        DrawVersionComparisonRow(
+            "Production Cost",
+            FormatUiNumber(originalAircraft.Performance.TotalProductionCost, "0"),
+            FormatUiNumber(newAircraft.Performance.TotalProductionCost, "0"));
+        DrawVersionComparisonRow(
+            "Production MD",
+            FormatUiNumber(originalAircraft.Performance.TotalProductionManDays, "0.0"),
+            FormatUiNumber(newAircraft.Performance.TotalProductionManDays, "0.0"));
+    }
+
+    private AirframeParameters BuildCurrentTypeAirframeParametersForComparison()
+    {
+        var current = _baseAirframeParameters.Clone();
+        current.CrewCount = _typeCrewCount;
+        current.WingShape = _typeWingShape;
+        current.WingProfile = _typeWingProfile;
+        current.WingAreaSquareMeters = _typeWingAreaSquareMeters;
+        current.TailType = _typeTailType;
+        current.FlapType = _typeFlapType;
+        current.HasLeadingEdgeFlaps = _typeHasLeadingEdgeFlaps;
+        current.HasBackupSystems = _typeHasBackupSystems;
+        current.LandingGearType = _typeLandingGearType;
+        current.RunwayType = _typeRunwayType;
+        current.EngineCowling = _typeCowling;
+        current.AerodynamicCleanlinessPercent = _typeAerodynamicCleanlinessPercent;
+        current.FuelAmountLiters = _typeFuelLiters;
+        return current;
     }
 
     private void DrawAirframeReport()
@@ -2513,7 +2783,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-
+        DrawTypeComparisonOnRightPanel();
     }
 
     private void DrawContractsTab()
@@ -4288,20 +4558,27 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 $"Engine version: {_engineVersionDevelopment.SourceDisplayName} | " +
                 $"baseline year {FormatUiInteger(_engineVersionDevelopment.InitialResearchYear)}");
             GUILayout.Label("Open Engine Designer to continue.");
-            return;
         }
-
-        if (_typeVersionDevelopment is not null)
+        else if (_typeVersionDevelopment is not null)
         {
             GUILayout.Label(
                 $"Type version: {_typeVersionDevelopment.SourceDisplayName} | " +
                 $"family {_typeVersionDevelopment.SourceFamilyDisplayName} | " +
                 $"baseline year {FormatUiInteger(_typeVersionDevelopment.InitialResearchYear)}");
             GUILayout.Label("Open Airframe + Type Designer to continue.");
+        }
+        else
+        {
+            GUILayout.Label("No active version-development session.");
+        }
+
+        if (_myMachinesSubTab == 0)
+        {
+            DrawMyMachinesSelectedEngineReport();
             return;
         }
 
-        GUILayout.Label("No active version-development session.");
+        DrawMyMachinesSelectedTypeReport();
     }
 
     private void DrawMyMachinesEnginesSubTab()
@@ -4321,13 +4598,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label($"Research: {ResolveResearchStatusLabel(ResearchSubjectType.Engine, savedEngine.ResearchId)}");
 
             GUILayout.BeginHorizontal();
-                if (GUILayout.Button("Open Engine Designer", GUILayout.Height(24f)))
-                {
-                    _engineVersionDevelopment = null;
-                    _typeVersionDevelopment = null;
-                    LoadSavedEngine(index);
-                    _tab = 0;
-                }
+            if (GUILayout.Button("Select", GUILayout.Width(90f), GUILayout.Height(24f)))
+            {
+                _selectedSavedEngineIndex = index;
+            }
+
+            if (GUILayout.Button("Open Engine Designer", GUILayout.Height(24f)))
+            {
+                _engineVersionDevelopment = null;
+                _typeVersionDevelopment = null;
+                LoadSavedEngine(index);
+                _tab = 0;
+            }
 
             if (GUILayout.Button("New Version", GUILayout.Height(24f)))
             {
@@ -4385,6 +4667,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 var category = AircraftCategoryCatalog.GetProfile(savedDesign.CatalogItem.Category).DisplayName;
                 GUILayout.Label($"{savedDesign.Name} | {category} | {GetAircraftDesignResearchStatus(savedDesign)}");
 
+                if (GUILayout.Button("Select", GUILayout.Width(90f), GUILayout.Height(24f)))
+                {
+                    _selectedSavedAircraftDesignIndex = typeIndex;
+                }
+
                 if (GUILayout.Button("Type Designer", GUILayout.Width(150f), GUILayout.Height(24f)))
                 {
                     OpenTypeDesignerForExistingDesign(typeIndex);
@@ -4405,6 +4692,150 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
             GUILayout.EndVertical();
         }
+    }
+
+    private void DrawMyMachinesSelectedEngineReport()
+    {
+        DrawSection("Selected Engine Parameters");
+        if (_savedEngines.Count == 0)
+        {
+            GUILayout.Label("No engines saved.");
+            return;
+        }
+
+        if (_selectedSavedEngineIndex < 0 || _selectedSavedEngineIndex >= _savedEngines.Count)
+        {
+            _selectedSavedEngineIndex = 0;
+        }
+
+        var selected = _savedEngines[_selectedSavedEngineIndex];
+        DrawParameterValueRow("Name", selected.Name);
+        DrawParameterValueRow("Definition", $"{selected.Definition.DisplayName} ({selected.Definition.EngineType})");
+        DrawParameterValueRow("Engine Type", selected.Definition.EngineType.ToString());
+        if (IsJetFamily(selected.Definition.EngineType))
+        {
+            DrawParameterValueRow("Turbine Diameter (cm)", FormatUiNumber(selected.Parameters.TurbineDiameterMeters * 100d, "0"));
+            DrawParameterValueRow("Bypass Ratio", FormatUiNumber(selected.Parameters.BypassRatio, "0.00"));
+            DrawParameterValueRow("Afterburner", selected.Parameters.HasAfterburner ? "Enabled" : "Disabled");
+        }
+        else
+        {
+            DrawParameterValueRow("Cylinder Count", FormatUiInteger(selected.Parameters.CylinderCount));
+            DrawParameterValueRow("Displacement (L)", FormatUiNumber(selected.Parameters.DisplacementLiters, "0.0"));
+            DrawParameterValueRow("Boost", selected.Parameters.BoostType.ToString());
+            DrawParameterValueRow("Injection", selected.Parameters.PistonInjectionType.ToString());
+            DrawParameterValueRow("Optimization Height (m)", FormatUiNumber(selected.Parameters.OptimizationAltitudeMeters, "0"));
+            DrawParameterValueRow("Efficiency Optimizations (%)", FormatUiNumber(selected.Parameters.EfficiencyOptimizationsPercent, "0.0"));
+        }
+
+        DrawParameterValueRow("Compression Ratio", FormatUiNumber(selected.Parameters.CompressionRatio, "0.00"));
+        DrawParameterValueRow("Maximum Speed (RPM)", FormatUiNumber(selected.Parameters.MaximumSpeed, "0"));
+        DrawParameterValueRow("Cooling Efficiency", FormatUiNumber(selected.Parameters.CoolingEfficiency, "0.00"));
+
+        if (_engineBuilder is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var built = _engineBuilder.Build(selected.Definition, selected.Parameters.Clone());
+            DrawParameterValueRow("Reliability", FormatUiNumber(built.Performance.Reliability, "0.000"));
+            DrawParameterValueRow("Weight (kg)", FormatUiNumber(built.Performance.Weight.Kilograms, "0.0"));
+            DrawParameterValueRow("Engine Length (m)", FormatUiNumber(built.Performance.EngineLengthMeters, "0.00"));
+            DrawParameterValueRow("Engine Frontal Area (m2)", FormatUiNumber(built.Performance.EngineFrontalAreaSquareMeters, "0.000"));
+            DrawParameterValueRow("Cost", FormatUiNumber(built.Performance.Cost, "0"));
+            DrawParameterValueRow("Production MD", FormatUiNumber(built.Performance.ProductionManDays, "0.0"));
+        }
+        catch
+        {
+            DrawError("Selected engine parameters could not be evaluated.");
+        }
+    }
+
+    private void DrawMyMachinesSelectedTypeReport()
+    {
+        DrawSection("Selected Type Parameters");
+        if (_savedAircraftDesigns.Count == 0)
+        {
+            GUILayout.Label("No types saved.");
+            return;
+        }
+
+        if (_selectedSavedAircraftDesignIndex < 0 || _selectedSavedAircraftDesignIndex >= _savedAircraftDesigns.Count)
+        {
+            _selectedSavedAircraftDesignIndex = 0;
+        }
+
+        var selected = _savedAircraftDesigns[_selectedSavedAircraftDesignIndex];
+        var aircraft = selected.CatalogItem.Aircraft;
+        var category = AircraftCategoryCatalog.GetProfile(selected.CatalogItem.Category).DisplayName;
+        DrawParameterValueRow("Name", selected.Name);
+        DrawParameterValueRow("Category", category);
+        DrawParameterValueRow(
+            "Engine",
+            BuildEngineDisplayName(
+                aircraft.Engine.Definition.DisplayName,
+                aircraft.Engine.Definition.EngineType,
+                aircraft.Engine.Parameters));
+        DrawParameterValueRow("Crew Members", FormatUiInteger(aircraft.Airframe.Parameters.CrewCount));
+        DrawParameterValueRow("Wing Area (m2)", FormatUiNumber(aircraft.Airframe.Parameters.WingAreaSquareMeters, "0.0"));
+        DrawParameterValueRow("Wing Shape", aircraft.Airframe.Parameters.WingShape.ToString());
+        DrawParameterValueRow("Wing Profile", aircraft.Airframe.Parameters.WingProfile.ToString());
+        DrawParameterValueRow("Tail Type", aircraft.Airframe.Parameters.TailType.ToString());
+        DrawParameterValueRow("Flaps", aircraft.Airframe.Parameters.FlapType.ToString());
+        DrawParameterValueRow("Leading Edge Flaps", aircraft.Airframe.Parameters.HasLeadingEdgeFlaps ? "Enabled" : "Disabled");
+        DrawParameterValueRow("Backup Systems", aircraft.Airframe.Parameters.HasBackupSystems ? "Enabled" : "Disabled");
+        DrawParameterValueRow("Landing Gear", aircraft.Airframe.Parameters.LandingGearType.ToString());
+        DrawParameterValueRow("Runway Type", aircraft.Airframe.Parameters.RunwayType.ToString());
+        DrawParameterValueRow("Cowling", FormatUiNumber(aircraft.Airframe.Parameters.EngineCowling, "0.00"));
+        DrawParameterValueRow("Aerodynamic Cleanliness (%)", FormatUiNumber(aircraft.Airframe.Parameters.AerodynamicCleanlinessPercent, "0.0"));
+        DrawParameterValueRow("Fuel (L)", FormatUiNumber(aircraft.Airframe.Parameters.FuelAmountLiters, "0"));
+
+        DrawParameterValueRow("Range (km)", FormatUiNumber(aircraft.Performance.RangeKilometers, "0.0"));
+        DrawParameterValueRow("Cruise Speed (km/h)", FormatUiNumber(aircraft.Performance.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0"));
+        DrawParameterValueRow("Useful Weight (kg)", FormatUiNumber(aircraft.Performance.PayloadCapacity.Kilograms, "0.0"));
+        DrawParameterValueRow("Overall Reliability", FormatUiNumber(aircraft.Performance.OverallReliability, "0.000"));
+        DrawParameterValueRow("Production Cost", FormatUiNumber(aircraft.Performance.TotalProductionCost, "0"));
+        DrawParameterValueRow("Production MD", FormatUiNumber(aircraft.Performance.TotalProductionManDays, "0.0"));
+    }
+
+    private void ToggleEngineCompareMode()
+    {
+        if (_engineCompareReferenceIndex >= 0)
+        {
+            _engineCompareReferenceIndex = -1;
+            return;
+        }
+
+        if (_savedEngines.Count == 0)
+        {
+            _engineCompareReferenceIndex = -1;
+            return;
+        }
+
+        _engineCompareReferenceIndex = _selectedSavedEngineIndex >= 0 && _selectedSavedEngineIndex < _savedEngines.Count
+            ? _selectedSavedEngineIndex
+            : 0;
+    }
+
+    private void ToggleTypeCompareMode()
+    {
+        if (_typeCompareReferenceIndex >= 0)
+        {
+            _typeCompareReferenceIndex = -1;
+            return;
+        }
+
+        if (_savedAircraftDesigns.Count == 0)
+        {
+            _typeCompareReferenceIndex = -1;
+            return;
+        }
+
+        _typeCompareReferenceIndex = _selectedSavedAircraftDesignIndex >= 0 && _selectedSavedAircraftDesignIndex < _savedAircraftDesigns.Count
+            ? _selectedSavedAircraftDesignIndex
+            : 0;
     }
 
     private void BeginEngineVersionDevelopment(int engineIndex)
