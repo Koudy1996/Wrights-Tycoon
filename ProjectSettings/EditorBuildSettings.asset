@@ -5,7 +5,7 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 1
+  - enabled: 0
     path: Assets/WrightTycoon/Scenes/WrightTycoonLaunch.unity
     guid: a5e9c7987ded27546a9ae62a903ace63
   - enabled: 1

@@ -8,6 +8,7 @@ namespace WrightTycoon.Core.Campaign;
 public sealed class HistoricalCampaignContractModifiers
 {
     private readonly HashSet<AircraftCategory> _lockedCategories = new();
+    private readonly HashSet<string> _unlockedContractParameters = new(StringComparer.Ordinal);
 
     public double CivilCategoryWeightMultiplier { get; private set; } = 1d;
 
@@ -75,6 +76,26 @@ public sealed class HistoricalCampaignContractModifiers
     public void UnlockCategory(AircraftCategory category)
     {
         _lockedCategories.Remove(category);
+    }
+
+    public void UnlockContractParameter(string? parameterId)
+    {
+        if (!ContractBalance.TryNormalizeHistoricalCampaignContractParameter(parameterId, out var normalizedParameterId))
+        {
+            return;
+        }
+
+        _unlockedContractParameters.Add(normalizedParameterId);
+    }
+
+    public bool IsContractParameterUnlocked(string? parameterId)
+    {
+        if (!ContractBalance.TryNormalizeHistoricalCampaignContractParameter(parameterId, out var normalizedParameterId))
+        {
+            return false;
+        }
+
+        return _unlockedContractParameters.Contains(normalizedParameterId);
     }
 
     private static bool IsCivilTarget(string? target) =>

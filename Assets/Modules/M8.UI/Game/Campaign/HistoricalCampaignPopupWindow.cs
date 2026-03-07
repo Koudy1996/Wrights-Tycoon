@@ -5,7 +5,7 @@ namespace WrightTycoon.Game.Campaign;
 
 public sealed class HistoricalCampaignPopupWindow
 {
-    private static readonly Vector2 DefaultSize = new(560f, 480f);
+    private static readonly Vector2 DefaultSize = new(860f, 680f);
     private const float HeaderHeight = 24f;
     private static readonly Color WindowBodyColor = new(0.08f, 0.10f, 0.13f, 1f);
     private static readonly Color ContentPanelColor = new(0.11f, 0.14f, 0.18f, 1f);
@@ -81,7 +81,7 @@ public sealed class HistoricalCampaignPopupWindow
         GUILayout.Label(_dateText, GetDateStyle());
         GUILayout.Space(8f);
 
-        var imageHeight = Mathf.Clamp(_windowRect.height * 0.34f, 120f, 180f);
+        var imageHeight = Mathf.Clamp(_windowRect.height * 0.48f, 220f, 380f);
         var imageRect = GUILayoutUtility.GetRect(10f, imageHeight, GUILayout.ExpandWidth(true), GUILayout.Height(imageHeight));
         DrawImagePanel(imageRect);
 
@@ -100,8 +100,8 @@ public sealed class HistoricalCampaignPopupWindow
     {
         var maxWidth = Mathf.Max(320f, virtualScreenSize.x - 24f);
         var maxHeight = Mathf.Max(240f, virtualScreenSize.y - 24f);
-        var minWidth = Mathf.Min(420f, maxWidth);
-        var minHeight = Mathf.Min(320f, maxHeight);
+        var minWidth = Mathf.Min(620f, maxWidth);
+        var minHeight = Mathf.Min(460f, maxHeight);
         var width = Mathf.Clamp(_windowRect.width, minWidth, maxWidth);
         var height = Mathf.Clamp(_windowRect.height, minHeight, maxHeight);
         _windowRect.width = width;
@@ -121,7 +121,7 @@ public sealed class HistoricalCampaignPopupWindow
         if (_image is not null)
         {
             var insetRect = new Rect(imageRect.x + 2f, imageRect.y + 2f, imageRect.width - 4f, imageRect.height - 4f);
-            GUI.DrawTexture(insetRect, _image, ScaleMode.ScaleAndCrop);
+            GUI.DrawTexture(insetRect, _image, ScaleMode.ScaleToFit);
             return;
         }
 

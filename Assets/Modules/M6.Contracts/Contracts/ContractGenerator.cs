@@ -18,6 +18,17 @@ public sealed class ContractGenerator : IContractGenerator
         RequirementType.Crew,
     };
 
+    private static readonly RequirementType[] RequirementTypesWithFuelConsumptionTemplate =
+    {
+        RequirementType.Reliability,
+        RequirementType.MaximumWeight,
+        RequirementType.Range,
+        RequirementType.Speed,
+        RequirementType.Payload,
+        RequirementType.Crew,
+        RequirementType.FuelConsumption,
+    };
+
     private readonly Random _random;
     private readonly ContractGeneratorOptions _options;
     private readonly IHistoricalCampaignContractModifierSource? _campaignModifierSource;
@@ -36,6 +47,7 @@ public sealed class ContractGenerator : IContractGenerator
         Speed = 3,
         Payload = 4,
         Crew = 5,
+        FuelConsumption = 6,
     }
 
     private enum OrderDemandBand
@@ -94,7 +106,8 @@ public sealed class ContractGenerator : IContractGenerator
     private ContractRequirements GenerateRequirements(AircraftCategory category, OrderDemandBand demandBand)
     {
         var categoryProfile = AircraftCategoryCatalog.GetProfile(category);
-        var requirementTypes = CreateRequirementTypePool();
+        var includeFuelConsumptionRequirement = IsFuelConsumptionRequirementUnlocked();
+        var requirementTypes = CreateRequirementTypePool(includeFuelConsumptionRequirement);
 
         Shuffle(requirementTypes);
         var selectedCount = NextInclusive(1, requirementTypes.Length);
@@ -105,6 +118,7 @@ public sealed class ContractGenerator : IContractGenerator
         ContractSpeedRequirement? speed = null;
         double? payload = null;
         int? crew = null;
+        double? maximumFuelConsumption = null;
         var maximumRunwayLengthMeters = ContractBalance.ResolveRequiredRunwayLengthMeters(category, _random.NextDouble());
 
         for (var index = 0; index < selectedCount; index++)
@@ -152,6 +166,13 @@ public sealed class ContractGenerator : IContractGenerator
                         _options.MaxCrew);
                     crew = SampleBandInt(minCrew, maxCrew, demandBand);
                     break;
+                case RequirementType.FuelConsumption:
+                    var (minFuelConsumption, maxFuelConsumption) =
+                        ContractBalance.ResolveFuelConsumptionRequirementRangeKilogramsPerHour(category);
+                    maximumFuelConsumption = Round(
+                        SampleBandValue(minFuelConsumption, maxFuelConsumption, demandBand),
+                        1);
+                    break;
                 default:
                     throw new InvalidOperationException($"Unsupported requirement type '{requirementTypes[index]}'.");
             }
@@ -167,6 +188,7 @@ public sealed class ContractGenerator : IContractGenerator
             MinimumPayloadKilograms = payload,
             MinimumCrew = crew,
             MaximumRequiredRunwayLengthMeters = maximumRunwayLengthMeters,
+            MaximumFuelConsumptionKilogramsPerHour = maximumFuelConsumption,
         };
     }
 
@@ -318,10 +340,20 @@ public sealed class ContractGenerator : IContractGenerator
         }
     }
 
-    private static RequirementType[] CreateRequirementTypePool()
+    private bool IsFuelConsumptionRequirementUnlocked()
     {
-        var pool = new RequirementType[RequirementTypesTemplate.Length];
-        Array.Copy(RequirementTypesTemplate, pool, RequirementTypesTemplate.Length);
+        var modifiers = _campaignModifierSource?.GetCurrentModifiers();
+        return modifiers is not null
+            && modifiers.IsContractParameterUnlocked(ContractBalance.HistoricalCampaignContractParameterFuelConsumption);
+    }
+
+    private static RequirementType[] CreateRequirementTypePool(bool includeFuelConsumptionRequirement)
+    {
+        var sourceTemplate = includeFuelConsumptionRequirement
+            ? RequirementTypesWithFuelConsumptionTemplate
+            : RequirementTypesTemplate;
+        var pool = new RequirementType[sourceTemplate.Length];
+        Array.Copy(sourceTemplate, pool, sourceTemplate.Length);
         return pool;
     }
 

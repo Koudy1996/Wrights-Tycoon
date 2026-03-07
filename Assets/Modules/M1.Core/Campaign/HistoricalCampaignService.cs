@@ -12,6 +12,7 @@ public sealed class HistoricalCampaignService
     private const string ContractMixModifierEffectType = "contract_mix_modifier";
     private const string ContractPriceModifierEffectType = "contract_price_modifier";
     private const string UnlockCategoryEffectType = "unlock_category";
+    private const string UnlockContractParameterEffectType = "unlock_contract_parameter";
 
     private readonly IReadOnlyList<HistoricalCampaignEventDefinition> _allEvents;
     private readonly IReadOnlyList<HistoricalCampaignEventDefinition> _scheduledEvents;
@@ -177,6 +178,12 @@ public sealed class HistoricalCampaignService
 
                 if (!string.Equals(effect.Type, UnlockCategoryEffectType, StringComparison.OrdinalIgnoreCase))
                 {
+                    if (!string.Equals(effect.Type, UnlockContractParameterEffectType, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    modifiers.UnlockContractParameter(effect.Target);
                     continue;
                 }
 

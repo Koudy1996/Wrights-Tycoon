@@ -22,6 +22,10 @@ public sealed class HistoricalCampaignTechnologyProgression
             EngineDesignerBalance.HistoricalCampaignTechnology.EnginePerformanceCurve,
             clampedYear,
             nameof(EngineDesignerBalance.HistoricalCampaignTechnology.EnginePerformanceCurve));
+        var pistonEnginePerformanceMultiplier = ResolveCurveMultiplier(
+            EngineDesignerBalance.HistoricalCampaignTechnology.PistonEnginePerformanceCurve,
+            clampedYear,
+            nameof(EngineDesignerBalance.HistoricalCampaignTechnology.PistonEnginePerformanceCurve));
         var airframeEfficiencyMultiplier = ResolveCurveMultiplier(
             PlaneDesignerBalance.HistoricalCampaignTechnology.AirframeEfficiencyCurve,
             clampedYear,
@@ -34,12 +38,18 @@ public sealed class HistoricalCampaignTechnologyProgression
             EngineDesignerBalance.HistoricalCampaignTechnology.FuelEfficiencyCurve,
             clampedYear,
             nameof(EngineDesignerBalance.HistoricalCampaignTechnology.FuelEfficiencyCurve));
+        var pistonFuelEfficiencyMultiplier = ResolveCurveMultiplier(
+            EngineDesignerBalance.HistoricalCampaignTechnology.PistonFuelEfficiencyCurve,
+            clampedYear,
+            nameof(EngineDesignerBalance.HistoricalCampaignTechnology.PistonFuelEfficiencyCurve));
 
         return new HistoricalCampaignTechnologyModifiers(
             enginePerformanceMultiplier,
             airframeEfficiencyMultiplier,
             aerodynamicsEfficiencyMultiplier,
-            fuelEfficiencyMultiplier);
+            fuelEfficiencyMultiplier,
+            pistonEnginePerformanceMultiplier,
+            pistonFuelEfficiencyMultiplier);
     }
 
     internal static double ResolveCurveMultiplier(

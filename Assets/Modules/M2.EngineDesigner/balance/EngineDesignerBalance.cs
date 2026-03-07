@@ -15,7 +15,7 @@ public static class EngineDesignerBalance
         public const int PistonCylinderMax = 48;
         public const int InlineCylinderMax = 8;
         public const double PistonCompressionMin = 3d;
-        public const double PistonCompressionMax = 16d;
+        public const double PistonCompressionMax = 12d;
         public const double PistonOptimizationMin = 1000d;
         public const double PistonOptimizationMax = 10000d;
         public const double PistonSpeedMinRpm = 500d;
@@ -27,18 +27,18 @@ public static class EngineDesignerBalance
         public const double EfficiencyOptimizationCoolingBonusAtMax = 0.10d;
         public const double EfficiencyOptimizationFuelBurnReductionAtMax = 0.30d;
 
-        public const double JetCompressionMin = 10d;
-        public const double JetCompressionMax = 100d;
+        public const double JetCompressionMin = 5d;
+        public const double JetCompressionMax = 70d;
         public const double JetTurbineDiameterMinMeters = 0.05d;
         public const double JetTurbineDiameterMaxMeters = 4.0d;
         public const double JetBypassRatioMin = 0.1d;
-        public const double JetBypassRatioMax = 50d;
+        public const double JetBypassRatioMax = 20d;
         public const double TurbofanLowBypassPenaltyBypassThreshold = 5d;
         public const double TurbofanLowBypassPenaltyStartThrustNewtons = 150000d;
         public const double TurbofanLowBypassPenaltyPer100kNewtons = 0.12d;
         public const double TurbofanLowBypassPenaltyMax = 0.5d;
         public const double JetSpeedMinRpm = 2000d;
-        public const double JetSpeedMaxRpm = 200000d;
+        public const double JetSpeedMaxRpm = 100000d;
 
         public const double JetAfterburnerEnabledPowerFactor = 1.20d;
         public const double JetAfterburnerDisabledPowerFactor = 0.80d;
@@ -48,7 +48,7 @@ public static class EngineDesignerBalance
 
         public const double OptimizationNormalizedDeltaDivisor = 10000d;
         public const double OptimizationNormalizedDeltaMax = 1.45d;
-        public const double OptimizationProximityBonusScale = 0.12d;
+        public const double OptimizationProximityBonusScale = 0.15d;
         public const double OptimizationMismatchPenaltyScale = 0.2d;
         public const double OptimizationTurboPenaltyMultiplier = 0.55d;
         public const double OptimizationSuperchargerPenaltyMultiplier = 0.65d;
@@ -157,6 +157,32 @@ public static class EngineDesignerBalance
 
     public static class HistoricalCampaignTechnology
     {
+        public static readonly IReadOnlyList<YearlyBalancePoint> PistonEnginePerformanceCurve = Array.AsReadOnly(new[]
+        {
+            new YearlyBalancePoint(1946, 0.80d),
+            new YearlyBalancePoint(1955, 0.83d),
+            new YearlyBalancePoint(1965, 0.86d),
+            new YearlyBalancePoint(1975, 0.91d),
+            new YearlyBalancePoint(1985, 0.93d),
+            new YearlyBalancePoint(1995, 0.94d),
+            new YearlyBalancePoint(2005, 0.975d),
+            new YearlyBalancePoint(2015, 0.995d),
+            new YearlyBalancePoint(2020, 1.0d),
+        });
+
+        public static readonly IReadOnlyList<YearlyBalancePoint> PistonFuelEfficiencyCurve = Array.AsReadOnly(new[]
+        {
+            new YearlyBalancePoint(1946, 0.80d),
+            new YearlyBalancePoint(1955, 0.83d),
+            new YearlyBalancePoint(1965, 0.86d),
+            new YearlyBalancePoint(1975, 0.91d),
+            new YearlyBalancePoint(1985, 0.93d),
+            new YearlyBalancePoint(1995, 0.94d),
+            new YearlyBalancePoint(2005, 0.975d),
+            new YearlyBalancePoint(2015, 0.995d),
+            new YearlyBalancePoint(2020, 1.0d),
+        });
+
         public static readonly IReadOnlyList<YearlyBalancePoint> EnginePerformanceCurve = Array.AsReadOnly(new[]
         {
             new YearlyBalancePoint(1946, 0.60d),

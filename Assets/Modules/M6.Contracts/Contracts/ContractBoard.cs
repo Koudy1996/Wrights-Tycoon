@@ -230,6 +230,7 @@ public sealed class ContractBoard
             MinimumCrew = requirements.MinimumCrew,
             MinimumSpeedAltitudeMeters = requirements.MinimumSpeed?.AltitudeMeters,
             MinimumSpeedMetersPerSecond = requirements.MinimumSpeed?.MinimumSpeedMetersPerSecond,
+            MaximumFuelConsumptionKilogramsPerHour = requirements.MaximumFuelConsumptionKilogramsPerHour,
         };
     }
 
@@ -306,6 +307,7 @@ public sealed class ContractBoard
             MinimumSpeed = minimumSpeed,
             MinimumPayloadKilograms = snapshot.MinimumPayloadKilograms,
             MinimumCrew = snapshot.MinimumCrew,
+            MaximumFuelConsumptionKilogramsPerHour = snapshot.MaximumFuelConsumptionKilogramsPerHour,
         };
 
         requirements.Validate();

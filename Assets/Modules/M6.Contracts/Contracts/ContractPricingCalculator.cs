@@ -295,6 +295,17 @@ public sealed class ContractPricingCalculator
                 invert: true));
         }
 
+        if (requirements.MaximumFuelConsumptionKilogramsPerHour.HasValue)
+        {
+            var (minimumFuelConsumption, maximumFuelConsumption) =
+                ContractBalance.ResolveFuelConsumptionRequirementRangeKilogramsPerHour(profile.Category);
+            AddMetric(ref sum, ref count, Normalize(
+                requirements.MaximumFuelConsumptionKilogramsPerHour.Value,
+                minimumFuelConsumption,
+                maximumFuelConsumption,
+                invert: true));
+        }
+
         if (count == 0)
         {
             return 0.5d;

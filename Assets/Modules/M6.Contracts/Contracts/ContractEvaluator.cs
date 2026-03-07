@@ -111,6 +111,17 @@ public sealed class ContractEvaluator : IContractEvaluator
             }
         }
 
+        if (requirements.MaximumFuelConsumptionKilogramsPerHour.HasValue)
+        {
+            var maximumFuelConsumption = requirements.MaximumFuelConsumptionKilogramsPerHour.Value;
+            var actualFuelConsumption = aircraft.Performance.AverageCruiseFuelBurnKilogramsPerHour;
+            if (actualFuelConsumption - Numeric.Epsilon > maximumFuelConsumption)
+            {
+                unmetRequirements.Add(
+                    $"Fuel burn {FormatUiNumber(actualFuelConsumption, "0.0")} kg/h > {FormatUiNumber(maximumFuelConsumption, "0.0")} kg/h");
+            }
+        }
+
         return new ContractEvaluationReport(unmetRequirements);
     }
 

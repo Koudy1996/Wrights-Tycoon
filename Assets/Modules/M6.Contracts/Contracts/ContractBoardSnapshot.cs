@@ -62,4 +62,6 @@ public sealed class ContractRequirementsSnapshot
     public double? MinimumSpeedAltitudeMeters { get; set; }
 
     public double? MinimumSpeedMetersPerSecond { get; set; }
+
+    public double? MaximumFuelConsumptionKilogramsPerHour { get; set; }
 }

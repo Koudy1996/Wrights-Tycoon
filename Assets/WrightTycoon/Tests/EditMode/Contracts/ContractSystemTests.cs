@@ -266,6 +266,65 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    public void Generator_AddsFuelConsumptionRequirements_OnlyWhenCampaignParameterIsUnlocked()
+    {
+        var options = new ContractGeneratorOptions
+        {
+            MinContractsPerMonth = 3,
+            MaxContractsPerMonth = 3,
+            RequestedCategories = new[] { AircraftCategory.RegionalJet },
+        };
+
+        var lockedModifiers = new HistoricalCampaignContractModifiers();
+        var lockedGenerator = new ContractGenerator(
+            seed: 5087,
+            options: options,
+            campaignModifierSource: new StubHistoricalCampaignContractModifierSource(lockedModifiers));
+
+        for (var monthIndex = 0; monthIndex < 8; monthIndex++)
+        {
+            var lockedContracts = lockedGenerator.GenerateMonthlyContracts(monthIndex);
+            for (var contractIndex = 0; contractIndex < lockedContracts.Count; contractIndex++)
+            {
+                Assert.That(
+                    lockedContracts[contractIndex].Requirements.MaximumFuelConsumptionKilogramsPerHour.HasValue,
+                    Is.False);
+            }
+        }
+
+        var unlockedModifiers = new HistoricalCampaignContractModifiers();
+        unlockedModifiers.UnlockContractParameter(ContractBalance.HistoricalCampaignContractParameterFuelConsumption);
+        var unlockedGenerator = new ContractGenerator(
+            seed: 5087,
+            options: options,
+            campaignModifierSource: new StubHistoricalCampaignContractModifierSource(unlockedModifiers));
+
+        var foundFuelRequirement = false;
+        for (var monthIndex = 0; monthIndex < 8 && !foundFuelRequirement; monthIndex++)
+        {
+            var unlockedContracts = unlockedGenerator.GenerateMonthlyContracts(monthIndex);
+            for (var contractIndex = 0; contractIndex < unlockedContracts.Count; contractIndex++)
+            {
+                var maximumFuelConsumption =
+                    unlockedContracts[contractIndex].Requirements.MaximumFuelConsumptionKilogramsPerHour;
+                if (!maximumFuelConsumption.HasValue)
+                {
+                    continue;
+                }
+
+                foundFuelRequirement = true;
+                var category = unlockedContracts[contractIndex].Requirements.RequiredCategory;
+                Assert.That(category.HasValue, Is.True);
+                var (minFuel, maxFuel) =
+                    ContractBalance.ResolveFuelConsumptionRequirementRangeKilogramsPerHour(category!.Value);
+                Assert.That(maximumFuelConsumption.Value, Is.InRange(minFuel, maxFuel));
+            }
+        }
+
+        Assert.That(foundFuelRequirement, Is.True);
+    }
+
+    [Test]
     public void Balance_ResolvesHistoricalCampaignBonusBatchRanges()
     {
         Assert.That(
@@ -385,6 +444,39 @@ public sealed class ContractSystemTests
 
         Assert.That(evaluation.CanDeliver, Is.False);
         Assert.That(evaluation.UnmetRequirements, Has.Some.Contains("Runway"));
+    }
+
+    [Test]
+    public void Evaluator_BlocksDelivery_WhenFuelConsumptionExceedsMaximum()
+    {
+        var evaluator = new ContractEvaluator();
+        var aircraft = CreateAircraft(
+            reliability: 0.9d,
+            rangeKilometers: 2600d,
+            speedAtSeaLevel: 110d,
+            speedAtFiveKilometers: 104d,
+            speedAtTenKilometers: 98d,
+            payloadKilograms: 4600d,
+            crewCount: 2,
+            averageCruiseFuelBurnKilogramsPerHour: 900d);
+
+        var contract = new Contract(
+            "ctr.test.fuel",
+            "Fuel Cargo",
+            quantityUnits: 50,
+            deadlineMonths: 12,
+            new ContractRequirements
+            {
+                RequiredCategory = AircraftCategory.BusinessVipJet,
+                MinimumReliability = 0.8d,
+                MaximumFuelConsumptionKilogramsPerHour = 650d,
+            },
+            createdMonthIndex: 0);
+
+        var evaluation = evaluator.Evaluate(contract, aircraft);
+
+        Assert.That(evaluation.CanDeliver, Is.False);
+        Assert.That(evaluation.UnmetRequirements, Has.Some.Contains("Fuel burn"));
     }
 
     [Test]
@@ -820,7 +912,8 @@ public sealed class ContractSystemTests
         double speedAtFiveKilometers,
         double speedAtTenKilometers,
         double payloadKilograms,
-        int crewCount)
+        int crewCount,
+        double averageCruiseFuelBurnKilogramsPerHour = 0d)
     {
         var engineDefinition = new EngineDefinition
         {
@@ -930,7 +1023,8 @@ public sealed class ContractSystemTests
             220000d,
             320d,
             reliability,
-            Mass.FromKilograms(4200d));
+            Mass.FromKilograms(4200d),
+            AverageCruiseFuelBurnKilogramsPerHour: averageCruiseFuelBurnKilogramsPerHour);
 
         return new AircraftModel(
             family,

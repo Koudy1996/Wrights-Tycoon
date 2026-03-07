@@ -59,11 +59,15 @@ public sealed class EngineCalculator : IEngineCalculator
         var effectiveParameters = NormalizeParametersForEngineType(definition.EngineType, parameters);
         var effectiveTechnologyModifiers = HistoricalCampaignTechnologyModifiers.Sanitize(technologyModifiers);
 
-        var outputKind = IsJetFamily(definition.EngineType) ? EngineOutputKind.ThrustNewtons : EngineOutputKind.PowerKilowatts;
+        var isJet = IsJetFamily(definition.EngineType);
+        var outputKind = isJet ? EngineOutputKind.ThrustNewtons : EngineOutputKind.PowerKilowatts;
         var baseSeaLevelOutput = outputKind == EngineOutputKind.PowerKilowatts
             ? CalculateSeaLevelPower(definition, effectiveParameters)
             : CalculateSeaLevelThrust(definition, effectiveParameters);
-        baseSeaLevelOutput *= effectiveTechnologyModifiers.EnginePerformanceMultiplier;
+        var enginePerformanceMultiplier = isJet
+            ? effectiveTechnologyModifiers.EnginePerformanceMultiplier
+            : effectiveTechnologyModifiers.PistonEnginePerformanceMultiplier;
+        baseSeaLevelOutput *= enginePerformanceMultiplier;
         var seaLevelOutput = ApplyJetAfterburnerOutputFactor(baseSeaLevelOutput, outputKind, effectiveParameters);
 
         var altitudePerformance = BuildAltitudePerformance(
@@ -176,7 +180,10 @@ public sealed class EngineCalculator : IEngineCalculator
 
             fuelPerHour *= jetAfterburnerFuelFactor;
             fuelPerHour *= efficiencyFuelSpecificFactor;
-            fuelPerHour /= technologyModifiers.FuelEfficiencyMultiplier;
+            var fuelEfficiencyMultiplier = isJet
+                ? technologyModifiers.FuelEfficiencyMultiplier
+                : technologyModifiers.PistonFuelEfficiencyMultiplier;
+            fuelPerHour /= fuelEfficiencyMultiplier;
             points[index] = new EngineAltitudePerformance(altitude, outputAtAltitude, fuelPerHour, thrustAtAltitude);
         }
 

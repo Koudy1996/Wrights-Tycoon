@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -14,6 +16,7 @@ public static class WrightTycoonProjectSetup
     private const string BuildSceneFolder = "Assets/Modules/M8.UI/Game/Scenes";
     private const string BuildScenePath = "Assets/Modules/M8.UI/Game/Scenes/WrightTycoonBuildLaunch.unity";
     private const string StreamingExamplesPath = "Assets/StreamingAssets/Data/Examples";
+    private const string TempDiagnosticsScenePrefix = "Assets/TempBuildDiagnostics/";
 
     public static string RuntimeLaunchScenePath => BuildScenePath;
 
@@ -111,17 +114,8 @@ public static class WrightTycoonProjectSetup
 
     private static void CreateOrUpdateLaunchScene()
     {
-        if (File.Exists(ScenePath))
-        {
-            return;
-        }
-
         Directory.CreateDirectory(SceneFolder);
         var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
-
-        var bootstrapObject = new GameObject("WrightTycoonLaunchRunner");
-        bootstrapObject.AddComponent<WrightTycoonLaunchRunner>();
-
         EditorSceneManager.SaveScene(scene, ScenePath);
     }
 
@@ -135,45 +129,68 @@ public static class WrightTycoonProjectSetup
     private static void EnsureBuildSettings()
     {
         var existing = EditorBuildSettings.scenes;
+        var updated = new List<EditorBuildSettingsScene>(existing.Length + 2);
         var hasLegacyScene = false;
         var hasBuildScene = false;
 
         foreach (var scene in existing)
         {
-            if (scene.path == ScenePath)
+            if (string.IsNullOrWhiteSpace(scene.path))
+            {
+                continue;
+            }
+
+            if (scene.path.StartsWith(TempDiagnosticsScenePrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(scene.path, ScenePath, StringComparison.OrdinalIgnoreCase))
             {
                 hasLegacyScene = true;
+                updated.Add(new EditorBuildSettingsScene(ScenePath, false));
+                continue;
             }
 
-            if (scene.path == BuildScenePath)
+            if (string.Equals(scene.path, BuildScenePath, StringComparison.OrdinalIgnoreCase))
             {
                 hasBuildScene = true;
+                updated.Add(new EditorBuildSettingsScene(BuildScenePath, true));
+                continue;
             }
+
+            updated.Add(scene);
         }
 
-        var additionalCount = (hasLegacyScene ? 0 : 1) + (hasBuildScene ? 0 : 1);
-        if (additionalCount == 0)
-        {
-            return;
-        }
-
-        var updated = new EditorBuildSettingsScene[existing.Length + additionalCount];
-        for (var index = 0; index < existing.Length; index++)
-        {
-            updated[index] = existing[index];
-        }
-
-        var next = existing.Length;
         if (!hasLegacyScene)
         {
-            updated[next++] = new EditorBuildSettingsScene(ScenePath, false);
+            updated.Add(new EditorBuildSettingsScene(ScenePath, false));
         }
 
         if (!hasBuildScene)
         {
-            updated[next] = new EditorBuildSettingsScene(BuildScenePath, true);
+            updated.Add(new EditorBuildSettingsScene(BuildScenePath, true));
         }
 
-        EditorBuildSettings.scenes = updated;
+        if (existing.Length == updated.Count)
+        {
+            var changed = false;
+            for (var index = 0; index < existing.Length; index++)
+            {
+                if (!string.Equals(existing[index].path, updated[index].path, StringComparison.OrdinalIgnoreCase) ||
+                    existing[index].enabled != updated[index].enabled)
+                {
+                    changed = true;
+                    break;
+                }
+            }
+
+            if (!changed)
+            {
+                return;
+            }
+        }
+
+        EditorBuildSettings.scenes = updated.ToArray();
     }
 }

@@ -31,6 +31,14 @@ public static class ContractBalance
     public const int MinCrew = 1;
     public const int MaxCrew = 6;
 
+    public const string HistoricalCampaignContractParameterFuelConsumption = "fuel_consumption";
+    public const double FuelConsumptionRequirementBaseKilogramsPerHour = 60d;
+    public const double FuelConsumptionRequirementPayloadCoefficient = 0.020d;
+    public const double FuelConsumptionRequirementSpeedCoefficient = 0.35d;
+    public const double FuelConsumptionRequirementRangePaddingKilogramsPerHour = 25d;
+    public const double FuelConsumptionRequirementMinimumKilogramsPerHour = 60d;
+    public const double FuelConsumptionRequirementMaximumKilogramsPerHour = 8000d;
+
     public const double LowDemandBandMinNormalized = 0d;
     public const double LowDemandBandMaxNormalized = 1d / 3d;
     public const double HighDemandBandMinNormalized = 1d / 3d;
@@ -411,6 +419,59 @@ public static class ContractBalance
         }
 
         return categories.ToArray();
+    }
+
+    public static bool TryNormalizeHistoricalCampaignContractParameter(string? parameterId, out string normalizedParameterId)
+    {
+        normalizedParameterId = string.Empty;
+        if (string.IsNullOrWhiteSpace(parameterId))
+        {
+            return false;
+        }
+
+        var trimmed = parameterId.Trim();
+        if (string.Equals(trimmed, HistoricalCampaignContractParameterFuelConsumption, StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedParameterId = HistoricalCampaignContractParameterFuelConsumption;
+            return true;
+        }
+
+        return false;
+    }
+
+    public static (double MinValue, double MaxValue) ResolveFuelConsumptionRequirementRangeKilogramsPerHour(AircraftCategory category)
+    {
+        var profile = AircraftCategoryCatalog.GetProfile(category);
+
+        var minValue = FuelConsumptionRequirementBaseKilogramsPerHour
+            + (profile.MinRequiredPayloadKilograms * FuelConsumptionRequirementPayloadCoefficient)
+            + (profile.MinRequiredSpeedKilometersPerHour * FuelConsumptionRequirementSpeedCoefficient)
+            - FuelConsumptionRequirementRangePaddingKilogramsPerHour;
+
+        var maxValue = FuelConsumptionRequirementBaseKilogramsPerHour
+            + (profile.MaxRequiredPayloadKilograms * FuelConsumptionRequirementPayloadCoefficient)
+            + (profile.MaxRequiredSpeedKilometersPerHour * FuelConsumptionRequirementSpeedCoefficient)
+            + FuelConsumptionRequirementRangePaddingKilogramsPerHour;
+
+        minValue = Clamp(minValue, FuelConsumptionRequirementMinimumKilogramsPerHour, FuelConsumptionRequirementMaximumKilogramsPerHour);
+        maxValue = Clamp(maxValue, FuelConsumptionRequirementMinimumKilogramsPerHour, FuelConsumptionRequirementMaximumKilogramsPerHour);
+
+        if (maxValue < minValue)
+        {
+            maxValue = minValue;
+        }
+
+        return (minValue, maxValue);
+    }
+
+    private static double Clamp(double value, double minValue, double maxValue)
+    {
+        if (value < minValue)
+        {
+            return minValue;
+        }
+
+        return value > maxValue ? maxValue : value;
     }
 
     private static bool ContainsCategory(AircraftCategory[] configuredCategories, AircraftCategory category)

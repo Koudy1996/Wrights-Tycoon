@@ -11,7 +11,7 @@ public static class PlaneDesignerBalance
     {
         public const int CrewMin = 1;
         public const int CrewMax = 20;
-        public const double FuelMinLiters = 50d;
+        public const double FuelMinLiters = 40d;
         public const double FuelMaxLiters = 50000d;
         public const double WoodFabricMaximumTotalWeightKilograms = 15000d;
         public const double WoodFabricEqualWeightThresholdKilograms = 800d;
@@ -19,7 +19,7 @@ public static class PlaneDesignerBalance
         public const double WoodFabricHeavyWeightFactor = 1.22d;
         public const double SmallWoodTrussWeightReductionThresholdKilograms = 3000d;
         public const double SmallWoodTrussMaxWeightReductionRatio = 0.3d;
-        public const double BackupSystemsWeightMultiplier = 1.1d;
+        public const double BackupSystemsWeightMultiplier = 1.08d;
         public const double BackupSystemsDragMultiplier = 1.03d;
         public const double BackupSystemsReliabilityDelta = 0.2d;
         public const double DeltaWingLiftMultiplier = 0.80d;
@@ -33,11 +33,11 @@ public static class PlaneDesignerBalance
         public const double SymmetricalAcrobaticProfileManeuverabilityBonusRatio = 0.10d;
         public const double SymmetricalAcrobaticProfileCostIncreaseRatio = 0.20d;
         public const double WingPositionMassFactorLow = 1d;
-        public const double WingPositionMassFactorHigh = 0.96d;
-        public const double WingPositionMassFactorBiplane = 0.83d;
+        public const double WingPositionMassFactorHigh = 0.90d;
+        public const double WingPositionMassFactorBiplane = 0.75d;
         public const double WingPositionDragDeltaLow = 0d;
-        public const double WingPositionDragDeltaHigh = 0.003d;
-        public const double WingPositionDragDeltaBiplane = 0.03d;
+        public const double WingPositionDragDeltaHigh = 0.006d;
+        public const double WingPositionDragDeltaBiplane = 0.05d;
         public const double AerodynamicCleanlinessMinPercent = 0d;
         public const double AerodynamicCleanlinessMaxPercent = 20d;
         public const double RunwayShortLengthMeters = 500d;
@@ -59,10 +59,10 @@ public static class PlaneDesignerBalance
         public const double AerodynamicCleanlinessManDaysPerPercent = 1.2d;
         public const double AerodynamicCleanlinessManDaysBaseShare = 0.65d;
 
-        public const double AircraftLengthBaseMeters = 2.5d;
-        public const double AircraftLengthWingAreaScale = 0.60d;
-        public const double AircraftLengthWingAreaExponent = 0.36d;
-        public const double AircraftLengthWeightScale = 1.25d;
+        public const double AircraftLengthBaseMeters = 3.5d;
+        public const double AircraftLengthWingAreaScale = 0.70d;
+        public const double AircraftLengthWingAreaExponent = 0.46d;
+        public const double AircraftLengthWeightScale = 1.35d;
         public const double AircraftLengthWeightExponent = 0.31d;
         public const double AircraftLengthMinMeters = 4d;
         public const double AircraftLengthMaxMeters = 95d;
@@ -75,7 +75,7 @@ public static class PlaneDesignerBalance
         public const double AircraftLengthWeightStretchScale = 0.25d;
         public const double AircraftLengthWeightStretchMaxBonus = 0.6d;
 
-        public const double FuselageFrontalAreaPerLength = 0.17d;
+        public const double FuselageFrontalAreaPerLength = 0.19d;
         public const double FuselageFrontalAreaWeightSqrtScale = 0.0065d;
         public const double FuselageFrontalAreaMinSquareMeters = 0.6d;
         public const double FuselageFrontalAreaMaxSquareMeters = 140d;
@@ -86,8 +86,8 @@ public static class PlaneDesignerBalance
         public const double PropulsivePowerEfficiency = 0.82d;
         public const double FuelDensityKilogramsPerLiter = 0.72d;
         public const double GravityMetersPerSecondSquared = 9.80665d;
-        public const double MinimumDragCoefficient = 0.012d;
-        public const double MaximumDragCoefficient = 0.12d;
+        public const double MinimumDragCoefficient = 0.010d;
+        public const double MaximumDragCoefficient = 0.15d;
         public const double SpeedCalculationMaximumDragCoefficient = 0.24d;
         public const double WingPositionSpeedDragFactorLow = 1d;
         public const double WingPositionSpeedDragFactorHigh = 1.1d;
@@ -100,16 +100,16 @@ public static class PlaneDesignerBalance
         public const double Naca4DigitLightProfileDragIncreaseMaxRatio = 0.80d;
         public const double MinimumLiftCoefficient = 0.35d;
         public const double MaximumLiftCoefficient = 2.2d;
-        public const double MinimumEmptyWeightKilograms = 180d;
-        public const double EmptyWeightBaseSystemsKilograms = 210d;
-        public const double EmptyWeightPerEngineSystemsKilograms = 50d;
-        public const double EmptyWeightPerCrewSystemsKilograms = 250d;
+        public const double MinimumEmptyWeightKilograms = 50d;
+        public const double EmptyWeightBaseSystemsKilograms = 200d;
+        public const double EmptyWeightPerEngineSystemsKilograms = 150d;
+        public const double EmptyWeightPerCrewSystemsKilograms = 200d;
         public const double WetWeightMarginRatio = 0.05d;
         public const double MaximumLiftCoefficientTakeoff = 2.1d;
         public const double JetCruiseAltitudeMeters = 10000d;
         public const double PropCruiseAltitudeMeters = 5000d;
         public const double MinimumCruiseSpeedMetersPerSecond = 35d;
-        public const double ManeuverabilityWeightPenaltyPerKilogram = 0.00035d;
+        public const double ManeuverabilityWeightPenaltyPerKilogram = 0.0004d;
         public const double BodyFrontalAreaBaseSquareMeters = 0.8d;
         public const double BodyFrontalAreaWeightExponent = 0.55d;
         public const double BodyFrontalAreaWeightScale = 0.3d;
@@ -125,7 +125,7 @@ public static class PlaneDesignerBalance
 
         public const double SpeedWeightReductionMinSpeedKilometersPerHour = 100d;
         public const double SpeedWeightReductionMaxSpeedKilometersPerHour = 300d;
-        public const double SpeedWeightReductionAtMinSpeed = 0.4d;
+        public const double SpeedWeightReductionAtMinSpeed = 0.45d;
         public const double SpeedWeightReductionAtMaxSpeed = 0.05d;
 
         public const double SpeedWeightIncreaseMinSpeedKilometersPerHour = 1000d;
@@ -168,11 +168,11 @@ public static class PlaneDesignerBalance
             MaxCrew: 2,
             MinMaximumWeightKilograms: 0d,
             MaxMaximumWeightKilograms: 1200d,
-            MinRequiredSpeedKilometersPerHour: 60d,
+            MinRequiredSpeedKilometersPerHour: 0d,
             MaxRequiredSpeedKilometersPerHour: 150d,
-            MinRequiredRangeKilometers: 200d,
+            MinRequiredRangeKilometers: 100d,
             MaxRequiredRangeKilometers: 1000d,
-            MinRequiredPayloadKilograms: 150d,
+            MinRequiredPayloadKilograms: 50d,
             MaxRequiredPayloadKilograms: 350d,
             WeightModifierKilograms: -350d,
             SpeedModifierMetersPerSecond: -14d,
@@ -185,11 +185,11 @@ public static class PlaneDesignerBalance
             MaxCrew: 2,
             MinMaximumWeightKilograms: 0d,
             MaxMaximumWeightKilograms: 6000d,
-            MinRequiredSpeedKilometersPerHour: 180d,
+            MinRequiredSpeedKilometersPerHour: 0d,
             MaxRequiredSpeedKilometersPerHour: 300d,
-            MinRequiredRangeKilometers: 800d,
+            MinRequiredRangeKilometers: 400d,
             MaxRequiredRangeKilometers: 1500d,
-            MinRequiredPayloadKilograms: 800d,
+            MinRequiredPayloadKilograms: 400d,
             MaxRequiredPayloadKilograms: 1500d,
             WeightModifierKilograms: 75d,
             SpeedModifierMetersPerSecond: -6d,
@@ -337,10 +337,10 @@ public static class PlaneDesignerBalance
     {
         public static readonly IReadOnlyList<YearlyBalancePoint> AirframeEfficiencyCurve = Array.AsReadOnly(new[]
         {
-            new YearlyBalancePoint(1946, 0.62d),
-            new YearlyBalancePoint(1955, 0.70d),
-            new YearlyBalancePoint(1965, 0.78d),
-            new YearlyBalancePoint(1975, 0.84d),
+            new YearlyBalancePoint(1946, 0.75d),
+            new YearlyBalancePoint(1955, 0.79d),
+            new YearlyBalancePoint(1965, 0.82d),
+            new YearlyBalancePoint(1975, 0.86d),
             new YearlyBalancePoint(1985, 0.89d),
             new YearlyBalancePoint(1995, 0.94d),
             new YearlyBalancePoint(2005, 0.97d),
@@ -350,12 +350,12 @@ public static class PlaneDesignerBalance
 
         public static readonly IReadOnlyList<YearlyBalancePoint> AerodynamicsEfficiencyCurve = Array.AsReadOnly(new[]
         {
-            new YearlyBalancePoint(1946, 0.56d),
-            new YearlyBalancePoint(1955, 0.64d),
-            new YearlyBalancePoint(1965, 0.74d),
-            new YearlyBalancePoint(1975, 0.82d),
-            new YearlyBalancePoint(1985, 0.88d),
-            new YearlyBalancePoint(1995, 0.93d),
+            new YearlyBalancePoint(1946, 0.76d),
+            new YearlyBalancePoint(1955, 0.80d),
+            new YearlyBalancePoint(1965, 0.84d),
+            new YearlyBalancePoint(1975, 0.88d),
+            new YearlyBalancePoint(1985, 0.91d),
+            new YearlyBalancePoint(1995, 0.95d),
             new YearlyBalancePoint(2005, 0.97d),
             new YearlyBalancePoint(2015, 0.995d),
             new YearlyBalancePoint(2020, 1.0d),

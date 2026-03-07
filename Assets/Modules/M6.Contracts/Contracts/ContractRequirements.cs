@@ -22,6 +22,8 @@ public sealed class ContractRequirements
 
     public double? MaximumRequiredRunwayLengthMeters { get; init; }
 
+    public double? MaximumFuelConsumptionKilogramsPerHour { get; init; }
+
     public int DefinedRequirementCount =>
         CountIfDefined(MinimumReliability.HasValue)
         + CountIfDefined(MaximumTotalWeightKilograms.HasValue)
@@ -29,7 +31,8 @@ public sealed class ContractRequirements
         + CountIfDefined(MinimumSpeed.HasValue)
         + CountIfDefined(MinimumPayloadKilograms.HasValue)
         + CountIfDefined(MinimumCrew.HasValue)
-        + CountIfDefined(MaximumRequiredRunwayLengthMeters.HasValue);
+        + CountIfDefined(MaximumRequiredRunwayLengthMeters.HasValue)
+        + CountIfDefined(MaximumFuelConsumptionKilogramsPerHour.HasValue);
 
     public void Validate()
     {
@@ -95,6 +98,15 @@ public sealed class ContractRequirements
             if (MaximumRequiredRunwayLengthMeters.Value <= 0d)
             {
                 throw new ArgumentOutOfRangeException(nameof(MaximumRequiredRunwayLengthMeters), "Maximum runway length must be greater than zero.");
+            }
+        }
+
+        if (MaximumFuelConsumptionKilogramsPerHour.HasValue)
+        {
+            Numeric.ThrowIfNotFinite(MaximumFuelConsumptionKilogramsPerHour.Value, nameof(MaximumFuelConsumptionKilogramsPerHour));
+            if (MaximumFuelConsumptionKilogramsPerHour.Value <= 0d)
+            {
+                throw new ArgumentOutOfRangeException(nameof(MaximumFuelConsumptionKilogramsPerHour), "Maximum fuel consumption must be greater than zero.");
             }
         }
     }

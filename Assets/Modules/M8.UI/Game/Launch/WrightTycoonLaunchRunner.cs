@@ -1755,10 +1755,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         _engineParameters.CoolingEfficiency = DrawSlider("Cooling Efficiency", _engineParameters.CoolingEfficiency, 0d, 1d, "0.00");
-        if (isVersionDevelopment)
-        {
-            DrawEngineVersionComparison(activeEngineVersionDevelopment!.SourceParameters, _engineParameters, requestedType);
-        }
 
         RebuildEnginePreview();
 
