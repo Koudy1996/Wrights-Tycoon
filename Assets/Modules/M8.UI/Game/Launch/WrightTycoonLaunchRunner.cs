@@ -1878,6 +1878,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var outputLabel = report.OutputKind == EngineOutputKind.PowerKilowatts ? "Power (kW)" : "Thrust (N)";
         var isJet = IsJetFamily(_enginePreview.Definition.EngineType);
         var enginePreviewKind = GetEnginePreviewKind(_enginePreview.Definition.EngineType, _enginePreview.Parameters.BypassRatio);
+        var fuelMetricLabel = isJet ? "L/N" : "L/kWh";
+
+        var originalEngine = _enginePreview;
+        var hasInlineComparison = TryGetEngineReferenceForInlineComparison(out originalEngine, out var originalReferenceLabel);
+        var originalReport = originalEngine.Performance;
+        var originalIsJet = hasInlineComparison && IsJetFamily(originalEngine.Definition.EngineType);
+        var originalOutputLabel = originalReport.OutputKind == EngineOutputKind.PowerKilowatts ? "Power (kW)" : "Thrust (N)";
+        var originalFuelMetricLabel = originalIsJet ? "L/N" : "L/kWh";
 
         DrawSection("Engine Visual");
         var engineVisualRect = GUILayoutUtility.GetRect(110f, 230f, GUILayout.ExpandWidth(true));
@@ -1885,53 +1893,156 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"Visual Type: {EnginePreviewPainter.GetLabel(enginePreviewKind)}");
 
         GUILayout.Label($"Definition: {_enginePreview.Definition.DisplayName} ({_enginePreview.Definition.EngineType})");
+        if (hasInlineComparison)
+        {
+            GUILayout.Label($"Original Reference: {originalReferenceLabel}");
+        }
+
         if (isJet)
         {
-            DrawMetric("Turbine Diameter (cm)", _enginePreview.Parameters.TurbineDiameterMeters * 100d, "0");
-            if (_enginePreview.Definition.EngineType == EngineType.Turbofan)
-            {
-                DrawMetric("Bypass Ratio", _enginePreview.Parameters.BypassRatio, "0.00");
-            }
-            else
-            {
-                GUILayout.Label("Bypass Ratio: 0.00 (Turbojet fixed)");
-            }
-            DrawMetric("Compression Ratio", _enginePreview.Parameters.CompressionRatio, "0.0");
-            DrawMetric("Maximum Speed (RPM)", _enginePreview.Parameters.MaximumSpeed, "0");
-            GUILayout.Label($"Afterburner: {(_enginePreview.Parameters.HasAfterburner ? "Enabled" : "Disabled")}");
+            DrawInlineComparisonRow(
+                "Turbine Diameter (cm)",
+                FormatUiNumber(_enginePreview.Parameters.TurbineDiameterMeters * 100d, "0"),
+                hasInlineComparison,
+                originalIsJet
+                    ? FormatUiNumber(originalEngine.Parameters.TurbineDiameterMeters * 100d, "0")
+                    : "N/A");
+            DrawInlineComparisonRow(
+                "Bypass Ratio",
+                _enginePreview.Definition.EngineType == EngineType.Turbofan
+                    ? FormatUiNumber(_enginePreview.Parameters.BypassRatio, "0.00")
+                    : "0.00 (Turbojet fixed)",
+                hasInlineComparison,
+                originalIsJet
+                    ? FormatUiNumber(originalEngine.Parameters.BypassRatio, "0.00")
+                    : "N/A");
+            DrawInlineComparisonRow(
+                "Compression Ratio",
+                FormatUiNumber(_enginePreview.Parameters.CompressionRatio, "0.0"),
+                hasInlineComparison,
+                FormatUiNumber(originalEngine.Parameters.CompressionRatio, "0.0"));
+            DrawInlineComparisonRow(
+                "Maximum Speed (RPM)",
+                FormatUiNumber(_enginePreview.Parameters.MaximumSpeed, "0"),
+                hasInlineComparison,
+                FormatUiNumber(originalEngine.Parameters.MaximumSpeed, "0"));
+            DrawInlineComparisonRow(
+                "Afterburner",
+                _enginePreview.Parameters.HasAfterburner ? "Enabled" : "Disabled",
+                hasInlineComparison,
+                originalIsJet
+                    ? (originalEngine.Parameters.HasAfterburner ? "Enabled" : "Disabled")
+                    : "N/A");
         }
         else
         {
-            DrawMetric("Cylinder Count", _enginePreview.Parameters.CylinderCount, "0");
-            DrawMetric("Compression Ratio", _enginePreview.Parameters.CompressionRatio, "0.00");
-            DrawMetric("Optimization Height (m)", _enginePreview.Parameters.OptimizationAltitudeMeters, "0");
-            DrawMetric("Efficiency Optimizations (%)", _enginePreview.Parameters.EfficiencyOptimizationsPercent, "0.0");
-            GUILayout.Label($"Boost: {_enginePreview.Parameters.BoostType}");
-            GUILayout.Label($"Injection: {_enginePreview.Parameters.PistonInjectionType}");
-            DrawMetric("Maximum Speed (RPM)", _enginePreview.Parameters.MaximumSpeed, "0");
+            DrawInlineComparisonRow(
+                "Cylinder Count",
+                FormatUiInteger(_enginePreview.Parameters.CylinderCount),
+                hasInlineComparison,
+                originalIsJet
+                    ? "N/A"
+                    : FormatUiInteger(originalEngine.Parameters.CylinderCount));
+            DrawInlineComparisonRow(
+                "Compression Ratio",
+                FormatUiNumber(_enginePreview.Parameters.CompressionRatio, "0.00"),
+                hasInlineComparison,
+                FormatUiNumber(originalEngine.Parameters.CompressionRatio, "0.00"));
+            DrawInlineComparisonRow(
+                "Optimization Height (m)",
+                FormatUiNumber(_enginePreview.Parameters.OptimizationAltitudeMeters, "0"),
+                hasInlineComparison,
+                originalIsJet
+                    ? "N/A"
+                    : FormatUiNumber(originalEngine.Parameters.OptimizationAltitudeMeters, "0"));
+            DrawInlineComparisonRow(
+                "Efficiency Optimizations (%)",
+                FormatUiNumber(_enginePreview.Parameters.EfficiencyOptimizationsPercent, "0.0"),
+                hasInlineComparison,
+                originalIsJet
+                    ? "N/A"
+                    : FormatUiNumber(originalEngine.Parameters.EfficiencyOptimizationsPercent, "0.0"));
+            DrawInlineComparisonRow(
+                "Boost",
+                _enginePreview.Parameters.BoostType.ToString(),
+                hasInlineComparison,
+                originalIsJet
+                    ? "N/A"
+                    : originalEngine.Parameters.BoostType.ToString());
+            DrawInlineComparisonRow(
+                "Injection",
+                _enginePreview.Parameters.PistonInjectionType.ToString(),
+                hasInlineComparison,
+                originalIsJet
+                    ? "N/A"
+                    : originalEngine.Parameters.PistonInjectionType.ToString());
+            DrawInlineComparisonRow(
+                "Maximum Speed (RPM)",
+                FormatUiNumber(_enginePreview.Parameters.MaximumSpeed, "0"),
+                hasInlineComparison,
+                FormatUiNumber(originalEngine.Parameters.MaximumSpeed, "0"));
         }
 
-        var fuelMetricLabel = isJet ? "L/N" : "L/kWh";
         foreach (var p in report.AltitudePerformance)
         {
             var fuelPerOutput = CalculateFuelPerOutputMetric(
                 p.Output,
                 p.FuelConsumptionKilogramsPerHour,
                 isJet);
+            var originalOutput = 0d;
+            var originalFuelBurn = 0d;
+
+            var hasOriginalAltitude = hasInlineComparison
+                && TryGetEngineAltitudePerformanceValues(
+                    originalEngine,
+                    p.AltitudeMeters,
+                    out originalOutput,
+                    out originalFuelBurn);
+
             GUILayout.BeginHorizontal(GUI.skin.box);
             GUILayout.Label($"{FormatUiNumber(p.AltitudeMeters, "0")}m", GUILayout.Width(70f));
             GUILayout.Label($"{outputLabel}: {FormatUiNumber(p.Output, "0.0")}", GUILayout.Width(170f));
             GUILayout.Label($"Fuel: {FormatUiNumber(p.FuelConsumptionKilogramsPerHour, "0.0")} kg/h", GUILayout.Width(160f));
-            GUILayout.Label($"{fuelMetricLabel}: {FormatUiNumber(fuelPerOutput, "0.0000")}");
+            GUILayout.Label($"{fuelMetricLabel}: {FormatUiNumber(fuelPerOutput, "0.0000")}", GUILayout.Width(190f));
+            if (hasOriginalAltitude)
+            {
+                var originalFuelPerOutput = CalculateFuelPerOutputMetric(originalOutput, originalFuelBurn, originalIsJet);
+                GUILayout.Label(
+                    $"Original -> {originalOutputLabel}: {FormatUiNumber(originalOutput, "0.0")} | Fuel: {FormatUiNumber(originalFuelBurn, "0.0")} kg/h | {originalFuelMetricLabel}: {FormatUiNumber(originalFuelPerOutput, "0.0000")}");
+            }
             GUILayout.EndHorizontal();
         }
 
-        DrawMetric("Reliability", report.Reliability, "0.000");
-        DrawMetric("Weight (kg)", report.Weight.Kilograms, "0.0");
-        DrawMetric("Engine Length (m)", report.EngineLengthMeters, "0.00");
-        DrawMetric("Engine Frontal Area (m2)", report.EngineFrontalAreaSquareMeters, "0.000");
-        DrawMetric("Cost", report.Cost, "0");
-        DrawMetric("Production MD", report.ProductionManDays, "0.0");
+        DrawInlineComparisonRow(
+            "Reliability",
+            FormatUiNumber(report.Reliability, "0.000"),
+            hasInlineComparison,
+            FormatUiNumber(originalReport.Reliability, "0.000"));
+        DrawInlineComparisonRow(
+            "Weight (kg)",
+            FormatUiNumber(report.Weight.Kilograms, "0.0"),
+            hasInlineComparison,
+            FormatUiNumber(originalReport.Weight.Kilograms, "0.0"));
+        DrawInlineComparisonRow(
+            "Engine Length (m)",
+            FormatUiNumber(report.EngineLengthMeters, "0.00"),
+            hasInlineComparison,
+            FormatUiNumber(originalReport.EngineLengthMeters, "0.00"));
+        DrawInlineComparisonRow(
+            "Engine Frontal Area (m2)",
+            FormatUiNumber(report.EngineFrontalAreaSquareMeters, "0.000"),
+            hasInlineComparison,
+            FormatUiNumber(originalReport.EngineFrontalAreaSquareMeters, "0.000"));
+        DrawInlineComparisonRow(
+            "Cost",
+            FormatUiNumber(report.Cost, "0"),
+            hasInlineComparison,
+            FormatUiNumber(originalReport.Cost, "0"));
+        DrawInlineComparisonRow(
+            "Production MD",
+            FormatUiNumber(report.ProductionManDays, "0.0"),
+            hasInlineComparison,
+            FormatUiNumber(originalReport.ProductionManDays, "0.0"));
 
         DrawSection("Effect Summary");
         GUILayout.Label("Higher compression/boost gives more output but higher fuel burn and lower reliability.");
@@ -2382,6 +2493,61 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label(label, GUILayout.Width(220f));
         GUILayout.Label(value);
         GUILayout.EndHorizontal();
+    }
+
+    private static void DrawInlineComparisonRow(
+        string label,
+        string newValue,
+        bool hasOriginal,
+        string originalValue)
+    {
+        GUILayout.BeginHorizontal(GUI.skin.box);
+        GUILayout.Label(label, GUILayout.Width(240f));
+        GUILayout.Label(newValue, GUILayout.Width(180f));
+        if (hasOriginal)
+        {
+            GUILayout.Label($"Original: {originalValue}");
+        }
+
+        GUILayout.EndHorizontal();
+    }
+
+    private bool TryGetEngineReferenceForInlineComparison(out Engine referenceEngine, out string referenceLabel)
+    {
+        referenceEngine = _enginePreview!;
+        referenceLabel = string.Empty;
+        if (_engineBuilder is null)
+        {
+            return false;
+        }
+
+        if (_engineCompareReferenceIndex >= 0 && _engineCompareReferenceIndex < _savedEngines.Count)
+        {
+            var savedReference = _savedEngines[_engineCompareReferenceIndex];
+            try
+            {
+                referenceEngine = _engineBuilder.Build(savedReference.Definition, savedReference.Parameters.Clone());
+                referenceLabel = BuildEngineDisplayName(
+                    savedReference.Name,
+                    savedReference.Definition.EngineType,
+                    savedReference.Parameters);
+                return true;
+            }
+            catch
+            {
+                // Keep searching for fallback source reference.
+            }
+        }
+
+        if (_engineVersionDevelopment is not null
+            && TryBuildSavedEngineSnapshot(_engineVersionDevelopment.SourceResearchId, out var sourceEngine))
+        {
+            referenceEngine = sourceEngine;
+            referenceLabel = _engineVersionDevelopment.SourceDisplayName;
+            return true;
+        }
+
+        return false;
     }
 
     private void DrawEngineComparisonOnRightPanel()
