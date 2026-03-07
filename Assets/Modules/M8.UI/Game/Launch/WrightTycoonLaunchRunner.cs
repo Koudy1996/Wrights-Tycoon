@@ -35,6 +35,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const double VersionDevelopmentResearchCostMultiplier = 0.1d;
     private const double VersionDevelopmentResearchTimeMultiplier = 0.1d;
     private const double VersionDevelopmentTechnologyProgressWeight = 0.5d;
+    private const double ExponentialSliderPower = 2d;
 
     [Header("Default Definition IDs")]
     [SerializeField] private string _engineDefinitionId = "eng.radial.main";
@@ -7712,7 +7713,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.Label($"{label}: {FormatUiNumber(currentValue, format)}");
         GUILayout.BeginHorizontal();
-        var sliderValue = GUILayout.HorizontalSlider((float)currentValue, (float)min, (float)max, GUILayout.ExpandWidth(true));
+        var sliderPosition = ToExponentialSliderPosition(currentValue, min, max);
+        var nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
         GUI.SetNextControlName(controlName);
         var nextInput = GUILayout.TextField(currentInput, GUILayout.Width(120f));
         GUILayout.Label(
@@ -7726,7 +7728,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter);
         var lostFocus = hadFocus && !hasFocus;
 
-        var sliderRounded = Math.Clamp(Math.Round(sliderValue, 4, MidpointRounding.AwayFromZero), min, max);
+        var sliderMappedValue = FromExponentialSliderPosition(nextSliderPosition, min, max);
+        var sliderRounded = Math.Clamp(Math.Round(sliderMappedValue, 4, MidpointRounding.AwayFromZero), min, max);
         var sliderChanged = Math.Abs(sliderRounded - currentValue) > 1e-6;
         if (sliderChanged)
         {
@@ -7777,7 +7780,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.Label($"{label}: {FormatUiInteger(currentValue)}");
         GUILayout.BeginHorizontal();
-        var sliderValue = GUILayout.HorizontalSlider(currentValue, min, max, GUILayout.ExpandWidth(true));
+        var sliderPosition = ToExponentialSliderPosition(currentValue, min, max);
+        var nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
         GUI.SetNextControlName(controlName);
         var nextInput = GUILayout.TextField(currentInput, GUILayout.Width(120f));
         GUILayout.Label($"[{FormatUiInteger(min)} - {FormatUiInteger(max)}]", GUILayout.Width(185f));
@@ -7789,7 +7793,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter);
         var lostFocus = hadFocus && !hasFocus;
 
-        var sliderRounded = Mathf.Clamp(Mathf.RoundToInt(sliderValue), min, max);
+        var sliderMappedValue = FromExponentialSliderPosition(nextSliderPosition, min, max);
+        var sliderRounded = Mathf.Clamp(Mathf.RoundToInt((float)sliderMappedValue), min, max);
         var sliderChanged = sliderRounded != currentValue;
         if (sliderChanged)
         {
@@ -7823,6 +7828,32 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _intSliderHadFocus[key] = hasFocus;
         return currentValue;
+    }
+
+    private static float ToExponentialSliderPosition(double value, double min, double max)
+    {
+        var range = max - min;
+        if (range <= 1e-9d)
+        {
+            return 0f;
+        }
+
+        var normalized = Math.Clamp((value - min) / range, 0d, 1d);
+        var curved = Math.Pow(normalized, 1d / ExponentialSliderPower);
+        return (float)Math.Clamp(curved, 0d, 1d);
+    }
+
+    private static double FromExponentialSliderPosition(float sliderPosition, double min, double max)
+    {
+        var range = max - min;
+        if (range <= 1e-9d)
+        {
+            return min;
+        }
+
+        var normalized = Math.Clamp((double)sliderPosition, 0d, 1d);
+        var curved = Math.Pow(normalized, ExponentialSliderPower);
+        return min + (range * curved);
     }
 
     private static string BuildNumericFieldKey(string family, string label, double min, double max) =>
