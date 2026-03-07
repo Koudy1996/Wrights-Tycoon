@@ -508,12 +508,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             ? null
             : new HistoricalCampaignRuntimeContractModifierSource(_historicalCampaign, _historicalCampaignState, () => _currentDate);
         _contractBoard = new ContractBoard(
-            new ContractGenerator(campaignModifierSource: _historicalCampaignContractModifierSource),
+            new ContractGenerator(
+                campaignModifierSource: _historicalCampaignContractModifierSource,
+                currentDateProvider: () => _currentDate),
             new ContractEvaluator());
         _productionFactory = new AircraftProductionFactory();
         _contractWarehouseDeliveryService = new ContractWarehouseDeliveryService(_contractBoard, _productionFactory);
         var governmentRandom = new SystemGovernmentContractRandomProvider();
-        var governmentGenerator = new GovernmentContractGenerator(governmentRandom);
+        var governmentGenerator = new GovernmentContractGenerator(
+            governmentRandom,
+            campaignModifierSource: _historicalCampaignContractModifierSource);
         _governmentContractBoard = new GovernmentContractBoard(governmentGenerator, governmentRandom);
         _governmentInventoryGateway = new FactoryGovernmentContractInventoryGateway(_productionFactory);
         _accountingSystem = new AccountingSystem(AccountingDefaults.StartingCash);
@@ -658,7 +662,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUI.enabled = previousEnabled;
 
-        if (GUILayout.Button("New Game", GUILayout.Height(44f)))
+        if (GUILayout.Button("light campain", GUILayout.Height(44f)))
         {
             StartNewGameFromMenu();
         }
@@ -992,7 +996,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void StartNewGameFromMenu()
     {
-        StartNewGameFromMenu(SimulationDate.WrightTycoonStart, "New game started.");
+        StartNewGameFromMenu(SimulationDate.WrightTycoonStart, "light campain started.");
     }
 
     private void StartNewGameFromMenu(SimulationDate startDate, string message)
@@ -1210,7 +1214,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 ResearchId = saved.ResearchId,
                 EngineDefinitionId = saved.Definition.Id,
                 Parameters = saved.Parameters.Clone(),
-                VersionDevelopmentBaselineYear = saved.VersionDevelopmentBaselineYear,
+                DevelopmentStartedYear = saved.DevelopmentStartedYear,
+                VariantDevelopmentStartedYear = saved.VariantDevelopmentStartedYear,
+                VersionDevelopmentBaselineYear = saved.IsVersionDevelopment
+                    ? saved.DevelopmentStartedYear
+                    : null,
                 SourceResearchId = saved.SourceResearchId,
             });
         }
@@ -1245,7 +1253,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 RequiredLineToolLevel = saved.CatalogItem.RequiredLineToolLevel,
                 FamilyDefinition = saved.CatalogItem.Aircraft.FamilyDefinition,
                 TypeDefinition = saved.CatalogItem.Aircraft.TypeDefinition,
-                TypeVersionDevelopmentBaselineYear = saved.TypeVersionDevelopmentBaselineYear,
+                DevelopmentStartedYear = saved.DevelopmentStartedYear,
+                VariantDevelopmentStartedYear = saved.VariantDevelopmentStartedYear,
+                TypeVersionDevelopmentBaselineYear = saved.IsTypeVersionDevelopment
+                    ? saved.DevelopmentStartedYear
+                    : null,
                 SourceTypeResearchId = saved.SourceTypeResearchId,
             });
         }
@@ -1430,11 +1442,20 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 {
                     var parameters = state.Parameters?.Clone() ?? CreateDefaultEngineParameters(definition);
                     var built = _engineBuilder.Build(definition, parameters);
+                    var legacyBaselineYear = NormalizeOptionalBaselineYear(state.VersionDevelopmentBaselineYear);
+                    var developmentStartedYear = NormalizeRequiredYear(
+                        state.DevelopmentStartedYear,
+                        legacyBaselineYear ?? _currentDate.Year);
+                    var variantDevelopmentStartedYear = NormalizeRequiredYear(
+                        state.VariantDevelopmentStartedYear,
+                        developmentStartedYear);
                     _savedEngines.Add(new SavedEngineDesign(
                         string.IsNullOrWhiteSpace(state.Name) ? "Loaded Engine" : state.Name,
                         string.IsNullOrWhiteSpace(state.ResearchId) ? CreateUniqueEngineResearchId(state.Name) : state.ResearchId,
                         built,
-                        NormalizeOptionalBaselineYear(state.VersionDevelopmentBaselineYear),
+                        developmentStartedYear,
+                        variantDevelopmentStartedYear,
+                        legacyBaselineYear,
                         state.SourceResearchId ?? string.Empty));
                 }
                 catch (Exception ex)
@@ -1488,6 +1509,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         aircraft,
                         System.Math.Max(state.RequiredFactoryToolLevel, 1),
                         System.Math.Max(state.RequiredLineToolLevel, 1));
+                    var legacyBaselineYear = NormalizeOptionalBaselineYear(state.TypeVersionDevelopmentBaselineYear);
+                    var developmentStartedYear = NormalizeRequiredYear(
+                        state.DevelopmentStartedYear,
+                        legacyBaselineYear ?? _currentDate.Year);
+                    var variantDevelopmentStartedYear = NormalizeRequiredYear(
+                        state.VariantDevelopmentStartedYear,
+                        developmentStartedYear);
 
                     _savedAircraftDesigns.Add(new SavedAircraftDesign(
                         string.IsNullOrWhiteSpace(state.Name) ? displayName : state.Name,
@@ -1495,7 +1523,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         string.IsNullOrWhiteSpace(state.EngineResearchId) ? "engine:unknown" : state.EngineResearchId,
                         string.IsNullOrWhiteSpace(state.FamilyResearchId) ? "family:unknown" : state.FamilyResearchId,
                         string.IsNullOrWhiteSpace(state.TypeResearchId) ? "type:unknown" : state.TypeResearchId,
-                        NormalizeOptionalBaselineYear(state.TypeVersionDevelopmentBaselineYear),
+                        developmentStartedYear,
+                        variantDevelopmentStartedYear,
+                        legacyBaselineYear,
                         state.SourceTypeResearchId ?? string.Empty));
                 }
                 catch (Exception ex)
@@ -1607,7 +1637,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawSection("Developing New Engine Version");
             GUILayout.Label(
                 $"Base engine: {activeEngineVersionDevelopment!.SourceDisplayName} | " +
-                $"baseline year: {FormatUiInteger(activeEngineVersionDevelopment.InitialResearchYear)}");
+                $"development start: {FormatUiInteger(activeEngineVersionDevelopment.SourceDevelopmentStartedYear)} | " +
+                $"variant start: {FormatUiInteger(activeEngineVersionDevelopment.VariantDevelopmentStartedYear)}");
             GUILayout.Label("Fixed parameters: engine family/type and cylinder count.");
 
             if (GUILayout.Button("Cancel Version Development", GUILayout.Height(26f)))
@@ -2071,7 +2102,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label(
                 $"Base type: {activeTypeVersionDevelopment!.SourceDisplayName} | " +
                 $"family: {activeTypeVersionDevelopment.SourceFamilyDisplayName} | " +
-                $"baseline year: {FormatUiInteger(activeTypeVersionDevelopment.InitialResearchYear)}");
+                $"development start: {FormatUiInteger(activeTypeVersionDevelopment.SourceDevelopmentStartedYear)} | " +
+                $"variant start: {FormatUiInteger(activeTypeVersionDevelopment.VariantDevelopmentStartedYear)}");
             GUILayout.Label("Family and assigned engine are fixed while developing this type version.");
 
             if (GUILayout.Button("Cancel Version Development", GUILayout.Height(26f)))
@@ -4653,6 +4685,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     savedDesign.EngineResearchId,
                     savedDesign.FamilyResearchId,
                     savedDesign.TypeResearchId,
+                    savedDesign.DevelopmentStartedYear,
+                    savedDesign.VariantDevelopmentStartedYear,
                     savedDesign.TypeVersionDevelopmentBaselineYear,
                     savedDesign.SourceTypeResearchId);
             }
@@ -4854,7 +4888,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             GUILayout.Label(
                 $"Engine version: {_engineVersionDevelopment.SourceDisplayName} | " +
-                $"baseline year {FormatUiInteger(_engineVersionDevelopment.InitialResearchYear)}");
+                $"development start {FormatUiInteger(_engineVersionDevelopment.SourceDevelopmentStartedYear)} | " +
+                $"variant start {FormatUiInteger(_engineVersionDevelopment.VariantDevelopmentStartedYear)}");
             GUILayout.Label("Open Engine Designer to continue.");
         }
         else if (_typeVersionDevelopment is not null)
@@ -4862,7 +4897,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label(
                 $"Type version: {_typeVersionDevelopment.SourceDisplayName} | " +
                 $"family {_typeVersionDevelopment.SourceFamilyDisplayName} | " +
-                $"baseline year {FormatUiInteger(_typeVersionDevelopment.InitialResearchYear)}");
+                $"development start {FormatUiInteger(_typeVersionDevelopment.SourceDevelopmentStartedYear)} | " +
+                $"variant start {FormatUiInteger(_typeVersionDevelopment.VariantDevelopmentStartedYear)}");
             GUILayout.Label("Open Airframe + Type Designer to continue.");
         }
         else
@@ -5008,6 +5044,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         var selected = _savedEngines[_selectedSavedEngineIndex];
         DrawParameterValueRow("Name", selected.Name);
+        DrawParameterValueRow("Development Start Year", FormatUiInteger(selected.DevelopmentStartedYear));
+        DrawParameterValueRow("Current Variant Start Year", FormatUiInteger(selected.VariantDevelopmentStartedYear));
         DrawParameterValueRow("Definition", $"{selected.Definition.DisplayName} ({selected.Definition.EngineType})");
         DrawParameterValueRow("Engine Type", selected.Definition.EngineType.ToString());
         if (IsJetFamily(selected.Definition.EngineType))
@@ -5069,6 +5107,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var aircraft = selected.CatalogItem.Aircraft;
         var category = AircraftCategoryCatalog.GetProfile(selected.CatalogItem.Category).DisplayName;
         DrawParameterValueRow("Name", selected.Name);
+        DrawParameterValueRow("Development Start Year", FormatUiInteger(selected.DevelopmentStartedYear));
+        DrawParameterValueRow("Current Variant Start Year", FormatUiInteger(selected.VariantDevelopmentStartedYear));
         DrawParameterValueRow("Category", category);
         DrawParameterValueRow(
             "Engine",
@@ -5162,7 +5202,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             saved.Definition.EngineType,
             saved.Parameters.CylinderCount,
             saved.Parameters.Clone(),
-            ResolveResearchReferenceYear(ResearchSubjectType.Engine, saved.ResearchId));
+            saved.DevelopmentStartedYear,
+            _currentDate.Year);
         _typeVersionDevelopment = null;
         RebuildEnginePreview();
         _tab = 0;
@@ -5203,7 +5244,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             aircraft.FamilyDefinition.DisplayName,
             savedDesign.EngineResearchId,
             aircraft.FamilyDefinition,
-            ResolveResearchReferenceYear(ResearchSubjectType.AircraftType, savedDesign.TypeResearchId));
+            savedDesign.DevelopmentStartedYear,
+            _currentDate.Year);
         _engineVersionDevelopment = null;
         _tab = 1;
         _factoryActionMessage =
@@ -5457,12 +5499,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             {
                 var savedEngine = _savedEngines[index];
                 if (!string.Equals(savedEngine.ResearchId, subjectId, StringComparison.Ordinal)
-                    || !savedEngine.VersionDevelopmentBaselineYear.HasValue)
+                    || !savedEngine.IsVersionDevelopment)
                 {
                     continue;
                 }
 
-                baselineYear = savedEngine.VersionDevelopmentBaselineYear.Value;
+                baselineYear = savedEngine.DevelopmentStartedYear;
                 return true;
             }
 
@@ -5475,12 +5517,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             {
                 var savedDesign = _savedAircraftDesigns[index];
                 if (!string.Equals(savedDesign.TypeResearchId, subjectId, StringComparison.Ordinal)
-                    || !savedDesign.TypeVersionDevelopmentBaselineYear.HasValue)
+                    || !savedDesign.IsTypeVersionDevelopment)
                 {
                     continue;
                 }
 
-                baselineYear = savedDesign.TypeVersionDevelopmentBaselineYear.Value;
+                baselineYear = savedDesign.DevelopmentStartedYear;
                 return true;
             }
         }
@@ -5818,7 +5860,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             selectedSavedEngine.ResearchId,
             familyResearchId,
             typeResearchId,
-            activeTypeVersionDevelopment?.InitialResearchYear,
+            activeTypeVersionDevelopment?.SourceDevelopmentStartedYear ?? _currentDate.Year,
+            activeTypeVersionDevelopment?.VariantDevelopmentStartedYear ?? _currentDate.Year,
+            activeTypeVersionDevelopment?.SourceDevelopmentStartedYear,
             activeTypeVersionDevelopment?.SourceTypeResearchId ?? string.Empty);
         _savedAircraftDesigns.Add(savedDesign);
         _selectedSavedAircraftDesignIndex = _savedAircraftDesigns.Count - 1;
@@ -5950,7 +5994,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             savedDesign.ResearchId,
             engineDisplayName,
             quote);
-        if (savedDesign.VersionDevelopmentBaselineYear.HasValue)
+        if (savedDesign.IsVersionDevelopment)
         {
             _researchActionMessage =
                 $"Engine version '{engineDisplayName}' submitted for approval: {FormatCurrency(quote.ResearchCost)} / {FormatUiInteger(quote.ResearchTimeMonths)} months.";
@@ -6391,7 +6435,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             name,
             researchId,
             _enginePreview,
-            activeVersionDevelopment?.InitialResearchYear,
+            activeVersionDevelopment?.SourceDevelopmentStartedYear ?? _currentDate.Year,
+            activeVersionDevelopment?.VariantDevelopmentStartedYear ?? _currentDate.Year,
+            activeVersionDevelopment?.SourceDevelopmentStartedYear,
             activeVersionDevelopment?.SourceResearchId ?? string.Empty);
         _savedEngines.Add(savedDesign);
         _selectedSavedEngineIndex = _savedEngines.Count - 1;
@@ -6722,7 +6768,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             };
 
             var seed = ComputeHistoricalCampaignBonusSeed(request.EventId, monthIndex, request.EffectIndex);
-            var generator = new ContractGenerator(seed, options, _historicalCampaignContractModifierSource);
+            var generator = new ContractGenerator(
+                seed,
+                options,
+                _historicalCampaignContractModifierSource,
+                () => _currentDate);
             var generatedBatch = generator.GenerateMonthlyContracts(monthIndex);
             var remappedBatch = RemapHistoricalCampaignBonusContractIds(
                 generatedBatch,
@@ -8401,6 +8451,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return value.Value;
     }
 
+    private static int NormalizeRequiredYear(int value, int fallbackYear)
+    {
+        if (value >= 1)
+        {
+            return value;
+        }
+
+        return fallbackYear >= 1
+            ? fallbackYear
+            : SimulationDate.WrightTycoonStart.Year;
+    }
+
     private string BuildFamilyId() => BuildNamedId("fam", _familyName, "player");
 
     private string BuildTypeId() => BuildNamedId("type", _selectedAircraftCategory.ToString(), "player");
@@ -8580,14 +8642,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             EngineType lockedEngineType,
             int lockedCylinderCount,
             EngineParameters sourceParameters,
-            int initialResearchYear)
+            int sourceDevelopmentStartedYear,
+            int variantDevelopmentStartedYear)
         {
             SourceResearchId = sourceResearchId ?? string.Empty;
             SourceDisplayName = sourceDisplayName ?? string.Empty;
             LockedEngineType = lockedEngineType;
             LockedCylinderCount = lockedCylinderCount;
             SourceParameters = sourceParameters?.Clone() ?? new EngineParameters();
-            InitialResearchYear = System.Math.Max(1, initialResearchYear);
+            SourceDevelopmentStartedYear = NormalizeRequiredYear(sourceDevelopmentStartedYear, SimulationDate.WrightTycoonStart.Year);
+            VariantDevelopmentStartedYear = NormalizeRequiredYear(variantDevelopmentStartedYear, SourceDevelopmentStartedYear);
         }
 
         public string SourceResearchId { get; }
@@ -8600,7 +8664,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public EngineParameters SourceParameters { get; }
 
-        public int InitialResearchYear { get; }
+        public int SourceDevelopmentStartedYear { get; }
+
+        public int VariantDevelopmentStartedYear { get; }
+
+        public int InitialResearchYear => SourceDevelopmentStartedYear;
     }
 
     private sealed class TypeVersionDevelopmentContext
@@ -8612,7 +8680,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             string sourceFamilyDisplayName,
             string sourceEngineResearchId,
             AircraftFamilyDefinition sourceFamilyDefinition,
-            int initialResearchYear)
+            int sourceDevelopmentStartedYear,
+            int variantDevelopmentStartedYear)
         {
             SourceTypeResearchId = sourceTypeResearchId ?? string.Empty;
             SourceDisplayName = sourceDisplayName ?? string.Empty;
@@ -8620,7 +8689,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             SourceFamilyDisplayName = sourceFamilyDisplayName ?? string.Empty;
             SourceEngineResearchId = sourceEngineResearchId ?? string.Empty;
             SourceFamilyDefinition = sourceFamilyDefinition ?? throw new ArgumentNullException(nameof(sourceFamilyDefinition));
-            InitialResearchYear = System.Math.Max(1, initialResearchYear);
+            SourceDevelopmentStartedYear = NormalizeRequiredYear(sourceDevelopmentStartedYear, SimulationDate.WrightTycoonStart.Year);
+            VariantDevelopmentStartedYear = NormalizeRequiredYear(variantDevelopmentStartedYear, SourceDevelopmentStartedYear);
         }
 
         public string SourceTypeResearchId { get; }
@@ -8635,7 +8705,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public AircraftFamilyDefinition SourceFamilyDefinition { get; }
 
-        public int InitialResearchYear { get; }
+        public int SourceDevelopmentStartedYear { get; }
+
+        public int VariantDevelopmentStartedYear { get; }
+
+        public int InitialResearchYear => SourceDevelopmentStartedYear;
     }
 
     private sealed class SavedEngineDesign
@@ -8644,6 +8718,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             string name,
             string researchId,
             Engine engine,
+            int developmentStartedYear,
+            int variantDevelopmentStartedYear,
             int? versionDevelopmentBaselineYear = null,
             string sourceResearchId = "")
         {
@@ -8651,7 +8727,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             ResearchId = researchId;
             Definition = engine.Definition;
             Parameters = engine.Parameters.Clone();
-            VersionDevelopmentBaselineYear = NormalizeOptionalBaselineYear(versionDevelopmentBaselineYear);
+            DevelopmentStartedYear = NormalizeRequiredYear(
+                developmentStartedYear,
+                NormalizeOptionalBaselineYear(versionDevelopmentBaselineYear) ?? SimulationDate.WrightTycoonStart.Year);
+            VariantDevelopmentStartedYear = NormalizeRequiredYear(variantDevelopmentStartedYear, DevelopmentStartedYear);
+            VersionDevelopmentBaselineYear = NormalizeOptionalBaselineYear(versionDevelopmentBaselineYear) ?? DevelopmentStartedYear;
             SourceResearchId = sourceResearchId ?? string.Empty;
         }
 
@@ -8663,9 +8743,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public EngineParameters Parameters { get; }
 
+        public int DevelopmentStartedYear { get; }
+
+        public int VariantDevelopmentStartedYear { get; }
+
         public int? VersionDevelopmentBaselineYear { get; }
 
         public string SourceResearchId { get; }
+
+        public bool IsVersionDevelopment => !string.IsNullOrWhiteSpace(SourceResearchId);
     }
 
     private sealed class SavedFamilyDesign
@@ -8711,6 +8797,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             string engineResearchId,
             string familyResearchId,
             string typeResearchId,
+            int developmentStartedYear,
+            int variantDevelopmentStartedYear,
             int? typeVersionDevelopmentBaselineYear = null,
             string sourceTypeResearchId = "")
         {
@@ -8719,7 +8807,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             EngineResearchId = engineResearchId;
             FamilyResearchId = familyResearchId;
             TypeResearchId = typeResearchId;
-            TypeVersionDevelopmentBaselineYear = NormalizeOptionalBaselineYear(typeVersionDevelopmentBaselineYear);
+            DevelopmentStartedYear = NormalizeRequiredYear(
+                developmentStartedYear,
+                NormalizeOptionalBaselineYear(typeVersionDevelopmentBaselineYear) ?? SimulationDate.WrightTycoonStart.Year);
+            VariantDevelopmentStartedYear = NormalizeRequiredYear(variantDevelopmentStartedYear, DevelopmentStartedYear);
+            TypeVersionDevelopmentBaselineYear = NormalizeOptionalBaselineYear(typeVersionDevelopmentBaselineYear) ?? DevelopmentStartedYear;
             SourceTypeResearchId = sourceTypeResearchId ?? string.Empty;
         }
 
@@ -8733,9 +8825,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public string TypeResearchId { get; }
 
+        public int DevelopmentStartedYear { get; }
+
+        public int VariantDevelopmentStartedYear { get; }
+
         public int? TypeVersionDevelopmentBaselineYear { get; }
 
         public string SourceTypeResearchId { get; }
+
+        public bool IsTypeVersionDevelopment => !string.IsNullOrWhiteSpace(SourceTypeResearchId);
     }
 
     private readonly struct HistoricalCampaignBonusBatchRequest
@@ -8958,6 +9056,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public EngineParameters Parameters { get; set; } = new();
 
+        public int DevelopmentStartedYear { get; set; }
+
+        public int VariantDevelopmentStartedYear { get; set; }
+
+        // Legacy field kept for backward compatibility with older saves.
         public int? VersionDevelopmentBaselineYear { get; set; }
 
         public string SourceResearchId { get; set; } = string.Empty;
@@ -9002,6 +9105,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public AircraftTypeDefinition? TypeDefinition { get; set; }
 
+        public int DevelopmentStartedYear { get; set; }
+
+        public int VariantDevelopmentStartedYear { get; set; }
+
+        // Legacy field kept for backward compatibility with older saves.
         public int? TypeVersionDevelopmentBaselineYear { get; set; }
 
         public string SourceTypeResearchId { get; set; } = string.Empty;

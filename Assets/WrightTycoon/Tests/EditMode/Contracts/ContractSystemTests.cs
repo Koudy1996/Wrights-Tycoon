@@ -266,6 +266,46 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    public void Generator_BlocksWideBodyBeforeIntroductionYear_AndAllowsItAfterward()
+    {
+        var options = new ContractGeneratorOptions
+        {
+            MinContractsPerMonth = 1,
+            MaxContractsPerMonth = 1,
+            RequestedCategories = new[]
+            {
+                AircraftCategory.HeavyTransportWideBody,
+                AircraftCategory.RegionalJet,
+            },
+        };
+
+        var generator = new ContractGenerator(seed: 6173, options: options);
+        var introMonthIndex = (ContractBalance.HeavyTransportWideBodyIntroductionYear - CoreBalance.HistoricalCampaignTechnology.StartYear) * 12;
+
+        var preIntroMonthIndices = new[] { 0, 12, 60, introMonthIndex - 1 };
+        for (var index = 0; index < preIntroMonthIndices.Length; index++)
+        {
+            var contract = generator.GenerateMonthlyContracts(preIntroMonthIndices[index])[0];
+            Assert.That(contract.Requirements.RequiredCategory, Is.Not.EqualTo(AircraftCategory.HeavyTransportWideBody));
+        }
+
+        var foundWideBodyAfterIntro = false;
+        for (var monthIndex = introMonthIndex; monthIndex < introMonthIndex + 36; monthIndex++)
+        {
+            var contract = generator.GenerateMonthlyContracts(monthIndex)[0];
+            if (contract.Requirements.RequiredCategory != AircraftCategory.HeavyTransportWideBody)
+            {
+                continue;
+            }
+
+            foundWideBodyAfterIntro = true;
+            break;
+        }
+
+        Assert.That(foundWideBodyAfterIntro, Is.True);
+    }
+
+    [Test]
     public void Generator_AddsFuelConsumptionRequirements_OnlyWhenCampaignParameterIsUnlocked()
     {
         var options = new ContractGeneratorOptions

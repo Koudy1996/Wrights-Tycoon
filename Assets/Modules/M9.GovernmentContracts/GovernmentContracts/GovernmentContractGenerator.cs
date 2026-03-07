@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Simulation;
 
@@ -9,13 +11,16 @@ public sealed class GovernmentContractGenerator : IGovernmentContractGenerator
 {
     private readonly IGovernmentContractRandomProvider _random;
     private readonly GovernmentContractGeneratorOptions _options;
+    private readonly IHistoricalCampaignContractModifierSource? _campaignModifierSource;
 
     public GovernmentContractGenerator(
         IGovernmentContractRandomProvider random,
-        GovernmentContractGeneratorOptions? options = null)
+        GovernmentContractGeneratorOptions? options = null,
+        IHistoricalCampaignContractModifierSource? campaignModifierSource = null)
     {
         _random = random ?? throw new ArgumentNullException(nameof(random));
         _options = options ?? new GovernmentContractGeneratorOptions();
+        _campaignModifierSource = campaignModifierSource;
         _options.Validate();
     }
 
@@ -26,7 +31,7 @@ public sealed class GovernmentContractGenerator : IGovernmentContractGenerator
             throw new ArgumentOutOfRangeException(nameof(contractSequence), "Contract sequence must be >= 0.");
         }
 
-        var aircraftType = NextAircraftType();
+        var aircraftType = NextAircraftType(generatedOn);
         var profile = AircraftCategoryCatalog.GetProfile(aircraftType);
         var speedBand = (GovernmentContractSpeedAltitudeBand)_random.NextIntInclusive(0, 2);
 
@@ -57,10 +62,58 @@ public sealed class GovernmentContractGenerator : IGovernmentContractGenerator
         return new GovernmentContract(contractId, generatedOn, requirements);
     }
 
-    private AircraftCategory NextAircraftType()
+    private AircraftCategory NextAircraftType(SimulationDate generatedOn)
     {
-        var index = _random.NextIntInclusive(0, _options.RequestedAircraftTypes.Count - 1);
-        return _options.RequestedAircraftTypes[index];
+        var modifiers = _campaignModifierSource?.GetCurrentModifiers();
+        var generationYear = generatedOn.Year;
+        var eligibleCategories = new List<AircraftCategory>(_options.RequestedAircraftTypes.Count);
+
+        for (var index = 0; index < _options.RequestedAircraftTypes.Count; index++)
+        {
+            var category = _options.RequestedAircraftTypes[index];
+            if (!IsCategoryEligibleForGeneration(category, generationYear, modifiers))
+            {
+                continue;
+            }
+
+            eligibleCategories.Add(category);
+        }
+
+        if (eligibleCategories.Count == 0)
+        {
+            var fallbackProfiles = AircraftCategoryCatalog.GetAllProfiles();
+            for (var index = 0; index < fallbackProfiles.Count; index++)
+            {
+                var category = fallbackProfiles[index].Category;
+                if (!IsCategoryEligibleForGeneration(category, generationYear, modifiers))
+                {
+                    continue;
+                }
+
+                eligibleCategories.Add(category);
+            }
+        }
+
+        if (eligibleCategories.Count == 0)
+        {
+            throw new InvalidOperationException($"No government contract categories are available for year {generationYear}.");
+        }
+
+        var selectedIndex = _random.NextIntInclusive(0, eligibleCategories.Count - 1);
+        return eligibleCategories[selectedIndex];
+    }
+
+    private static bool IsCategoryEligibleForGeneration(
+        AircraftCategory category,
+        int generationYear,
+        HistoricalCampaignContractModifiers? modifiers)
+    {
+        if (!ContractBalance.IsCategoryAvailableForYear(category, generationYear))
+        {
+            return false;
+        }
+
+        return modifiers is null || modifiers.IsCategoryUnlocked(category);
     }
 
     private double SampleTopThird(double minValue, double maxValue)

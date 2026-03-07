@@ -96,6 +96,28 @@ public sealed class GovernmentContractModuleTests
     }
 
     [Test]
+    public void Generator_BlocksWideBodyBeforeIntroductionYear_AndAllowsItAfterward()
+    {
+        var random = new DeterministicRandomProvider();
+        var options = new GovernmentContractGeneratorOptions
+        {
+            RequestedAircraftTypes = new[]
+            {
+                AircraftCategory.HeavyTransportWideBody,
+                AircraftCategory.RegionalJet,
+            },
+        };
+
+        var generator = new GovernmentContractGenerator(random, options);
+
+        var beforeIntro = generator.Generate(new SimulationDate(1959, 12), contractSequence: 0);
+        Assert.That(beforeIntro.Requirements.RequiredAircraftType, Is.EqualTo(AircraftCategory.RegionalJet));
+
+        var afterIntro = generator.Generate(new SimulationDate(1960, 1), contractSequence: 1);
+        Assert.That(afterIntro.Requirements.RequiredAircraftType, Is.EqualTo(AircraftCategory.HeavyTransportWideBody));
+    }
+
+    [Test]
     public void Board_GeneratesInJanuary_AndExpiresAfterSixMonths_WhenNotAccepted()
     {
         var random = new DeterministicRandomProvider();

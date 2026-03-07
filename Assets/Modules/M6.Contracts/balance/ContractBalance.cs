@@ -178,6 +178,9 @@ public static class ContractBalance
         AircraftCategory.HeavyTransportWideBody,
     };
 
+    // Categories that must stay unavailable before their historical introduction.
+    public const int HeavyTransportWideBodyIntroductionYear = 1960;
+
     // Editable category groups for runway-constrained contracts.
     // Categories may appear in more than one group to enable multiple valid runway requirements.
     public static readonly AircraftCategory[] ShortRunwayCategories =
@@ -297,6 +300,20 @@ public static class ContractBalance
     public static bool IsCivilContractCategory(AircraftCategory category) => ContainsCategory(CivilRequestedCategories, category);
 
     public static bool IsMilitaryContractCategory(AircraftCategory category) => ContainsCategory(MilitaryRequestedCategories, category);
+
+    public static bool IsCategoryAvailableForYear(AircraftCategory category, int year)
+    {
+        if (year < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(year), "Year must be greater than or equal to 1.");
+        }
+
+        return category switch
+        {
+            AircraftCategory.HeavyTransportWideBody => year >= HeavyTransportWideBodyIntroductionYear,
+            _ => true,
+        };
+    }
 
     public static double ResolveHistoricalCampaignRequirementDifficultyMultiplier(int year, int playerYearOffset = 0)
     {

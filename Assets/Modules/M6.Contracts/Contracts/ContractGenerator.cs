@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Categories;
+using WrightTycoon.Core.Simulation;
 
 namespace WrightTycoon.Core.Contracts;
 
@@ -32,12 +33,14 @@ public sealed class ContractGenerator : IContractGenerator
     private readonly Random _random;
     private readonly ContractGeneratorOptions _options;
     private readonly IHistoricalCampaignContractModifierSource? _campaignModifierSource;
+    private readonly Func<SimulationDate>? _currentDateProvider;
     private readonly List<AircraftCategory> _categoryRotation = new();
     private readonly ContractPricingCalculator _pricingCalculator;
     private int _sequence;
     private int _categoryRotationIndex;
     private int _generatedOrderCount;
     private int _smallOrderCount;
+    private int _lastGeneratedMonthIndex;
 
     private enum RequirementType
     {
@@ -59,14 +62,17 @@ public sealed class ContractGenerator : IContractGenerator
     public ContractGenerator(
         int seed = 6003901,
         ContractGeneratorOptions? options = null,
-        IHistoricalCampaignContractModifierSource? campaignModifierSource = null)
+        IHistoricalCampaignContractModifierSource? campaignModifierSource = null,
+        Func<SimulationDate>? currentDateProvider = null)
     {
         _random = new Random(seed);
         _options = options ?? new ContractGeneratorOptions();
         _campaignModifierSource = campaignModifierSource;
+        _currentDateProvider = currentDateProvider;
         _pricingCalculator = new ContractPricingCalculator(_campaignModifierSource);
         _options.Validate();
-        ResetCategoryRotation();
+        _lastGeneratedMonthIndex = 0;
+        ResetCategoryRotation(_lastGeneratedMonthIndex);
     }
 
     public IReadOnlyList<Contract> GenerateMonthlyContracts(int monthIndex)
@@ -76,7 +82,8 @@ public sealed class ContractGenerator : IContractGenerator
             throw new ArgumentOutOfRangeException(nameof(monthIndex), "Month index must be greater than or equal to zero.");
         }
 
-        ResetCategoryRotation();
+        _lastGeneratedMonthIndex = monthIndex;
+        ResetCategoryRotation(monthIndex);
         var contractCount = NextInclusive(_options.MinContractsPerMonth, _options.MaxContractsPerMonth);
         var generated = new List<Contract>(contractCount);
         for (var index = 0; index < contractCount; index++)
@@ -212,21 +219,22 @@ public sealed class ContractGenerator : IContractGenerator
     {
         if (_categoryRotationIndex >= _categoryRotation.Count)
         {
-            ResetCategoryRotation();
+            ResetCategoryRotation(_lastGeneratedMonthIndex);
         }
 
         return _categoryRotation[_categoryRotationIndex++];
     }
 
-    private void ResetCategoryRotation()
+    private void ResetCategoryRotation(int monthIndex)
     {
         _categoryRotation.Clear();
+        var generationYear = ResolveGenerationYear(monthIndex);
         var modifiers = _campaignModifierSource?.GetCurrentModifiers();
 
         for (var index = 0; index < _options.RequestedCategories.Count; index++)
         {
             var category = _options.RequestedCategories[index];
-            if (modifiers is not null && !modifiers.IsCategoryUnlocked(category))
+            if (!IsCategoryEligibleForGeneration(category, generationYear, modifiers))
             {
                 continue;
             }
@@ -246,11 +254,56 @@ public sealed class ContractGenerator : IContractGenerator
 
         if (_categoryRotation.Count == 0)
         {
-            _categoryRotation.AddRange(_options.RequestedCategories);
+            var fallbackProfiles = AircraftCategoryCatalog.GetAllProfiles();
+            for (var index = 0; index < fallbackProfiles.Count; index++)
+            {
+                var fallbackCategory = fallbackProfiles[index].Category;
+                if (!IsCategoryEligibleForGeneration(fallbackCategory, generationYear, modifiers))
+                {
+                    continue;
+                }
+
+                _categoryRotation.Add(fallbackCategory);
+            }
+        }
+
+        if (_categoryRotation.Count == 0)
+        {
+            throw new InvalidOperationException($"No contract categories are available for year {generationYear}.");
         }
 
         Shuffle(_categoryRotation);
         _categoryRotationIndex = 0;
+    }
+
+    private bool IsCategoryEligibleForGeneration(
+        AircraftCategory category,
+        int generationYear,
+        HistoricalCampaignContractModifiers? modifiers)
+    {
+        if (!ContractBalance.IsCategoryAvailableForYear(category, generationYear))
+        {
+            return false;
+        }
+
+        return modifiers is null || modifiers.IsCategoryUnlocked(category);
+    }
+
+    private int ResolveGenerationYear(int monthIndex)
+    {
+        if (_currentDateProvider is not null)
+        {
+            var currentDate = _currentDateProvider();
+            return currentDate.Year;
+        }
+
+        var startYear = CoreBalance.HistoricalCampaignTechnology.StartYear;
+        if (monthIndex <= 0)
+        {
+            return startYear;
+        }
+
+        return startYear + (monthIndex / 12);
     }
 
     private OrderDemandBand NextDemandBand()
