@@ -123,15 +123,15 @@ public static class PlaneDesignerBalance
         public const double UltralightSystemsMassMaxWingAreaSquareMeters = 3d;
         public const int UltralightSystemsMassMaxCrew = 1;
 
-        public const double SpeedWeightReductionMinSpeedKilometersPerHour = 100d;
-        public const double SpeedWeightReductionMaxSpeedKilometersPerHour = 300d;
-        public const double SpeedWeightReductionAtMinSpeed = 0.45d;
-        public const double SpeedWeightReductionAtMaxSpeed = 0.05d;
-
-        public const double SpeedWeightIncreaseMinSpeedKilometersPerHour = 1000d;
-        public const double SpeedWeightIncreaseMaxSpeedKilometersPerHour = 5000d;
-        public const double SpeedWeightIncreaseAtMinSpeed = 0.05d;
-        public const double SpeedWeightIncreaseAtMaxSpeed = 0.4d;
+        public static readonly IReadOnlyList<SpeedWeightFactorPoint> SpeedWeightFactorCurve = Array.AsReadOnly(new[]
+        {
+            // Data-driven speed-to-weight curve (continuous, no hard thresholds).
+            new SpeedWeightFactorPoint(0d, 1.00d),
+            new SpeedWeightFactorPoint(100d, 0.80d),
+            new SpeedWeightFactorPoint(300d, 0.95d),
+            new SpeedWeightFactorPoint(1000d, 1.05d),
+            new SpeedWeightFactorPoint(5000d, 1.40d),
+        });
 
         public const double CruiseMinimumFuelBurnKilogramsPerHour = 0.12d;
 
@@ -400,4 +400,8 @@ public readonly record struct AircraftCategoryBalanceEntry(
             ReliabilityModifierDelta,
             FuelConsumptionMultiplier);
 }
+
+public readonly record struct SpeedWeightFactorPoint(
+    double SpeedKilometersPerHour,
+    double WeightFactor);
 

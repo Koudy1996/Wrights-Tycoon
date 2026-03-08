@@ -431,46 +431,45 @@ public sealed class AircraftPerformanceCalculator
 
     private static double CalculateSpeedWeightFactor(double maximumSpeedKilometersPerHour)
     {
-        if (maximumSpeedKilometersPerHour >= PlaneDesignerBalance.Performance.SpeedWeightReductionMinSpeedKilometersPerHour
-            && maximumSpeedKilometersPerHour <= PlaneDesignerBalance.Performance.SpeedWeightReductionMaxSpeedKilometersPerHour)
+        var curve = PlaneDesignerBalance.Performance.SpeedWeightFactorCurve;
+        if (curve.Count == 0)
         {
-            var reductionRange = PlaneDesignerBalance.Performance.SpeedWeightReductionMaxSpeedKilometersPerHour
-                - PlaneDesignerBalance.Performance.SpeedWeightReductionMinSpeedKilometersPerHour;
-            var blend = reductionRange <= Numeric.Epsilon
-                ? 0d
-                : Numeric.Clamp(
-                    (maximumSpeedKilometersPerHour - PlaneDesignerBalance.Performance.SpeedWeightReductionMinSpeedKilometersPerHour) / reductionRange,
-                    0d,
-                    1d);
-            var reductionRatio = Lerp(
-                PlaneDesignerBalance.Performance.SpeedWeightReductionAtMinSpeed,
-                PlaneDesignerBalance.Performance.SpeedWeightReductionAtMaxSpeed,
-                blend);
-            return 1d - Numeric.Clamp(reductionRatio, 0d, 0.95d);
+            return 1d;
         }
 
-        if (maximumSpeedKilometersPerHour >= PlaneDesignerBalance.Performance.SpeedWeightIncreaseMinSpeedKilometersPerHour)
+        if (maximumSpeedKilometersPerHour <= curve[0].SpeedKilometersPerHour)
         {
-            var increaseRange = PlaneDesignerBalance.Performance.SpeedWeightIncreaseMaxSpeedKilometersPerHour
-                - PlaneDesignerBalance.Performance.SpeedWeightIncreaseMinSpeedKilometersPerHour;
-            var blend = increaseRange <= Numeric.Epsilon
-                ? 0d
-                : Numeric.Clamp(
-                    (maximumSpeedKilometersPerHour - PlaneDesignerBalance.Performance.SpeedWeightIncreaseMinSpeedKilometersPerHour) / increaseRange,
-                    0d,
-                    1d);
-            var increaseRatio = Lerp(
-                PlaneDesignerBalance.Performance.SpeedWeightIncreaseAtMinSpeed,
-                PlaneDesignerBalance.Performance.SpeedWeightIncreaseAtMaxSpeed,
-                blend);
-            return 1d + System.Math.Max(0d, increaseRatio);
+            return ClampSpeedWeightFactor(curve[0].WeightFactor);
         }
 
-        return 1d;
+        for (var index = 1; index < curve.Count; index++)
+        {
+            var previous = curve[index - 1];
+            var current = curve[index];
+            if (maximumSpeedKilometersPerHour > current.SpeedKilometersPerHour)
+            {
+                continue;
+            }
+
+            var segmentRange = System.Math.Max(
+                current.SpeedKilometersPerHour - previous.SpeedKilometersPerHour,
+                Numeric.Epsilon);
+            var blend = Numeric.Clamp(
+                (maximumSpeedKilometersPerHour - previous.SpeedKilometersPerHour) / segmentRange,
+                0d,
+                1d);
+            var interpolated = Lerp(previous.WeightFactor, current.WeightFactor, blend);
+            return ClampSpeedWeightFactor(interpolated);
+        }
+
+        return ClampSpeedWeightFactor(curve[curve.Count - 1].WeightFactor);
     }
 
     private static double Lerp(double fromValue, double toValue, double blend) =>
         fromValue + ((toValue - fromValue) * Numeric.Clamp(blend, 0d, 1d));
+
+    private static double ClampSpeedWeightFactor(double factor) =>
+        Numeric.Clamp(factor, 0.05d, 5d);
 
     private static double ApplyJetSpeedEnvelope(double speedMetersPerSecond, Engine engine, AircraftCategory category)
     {

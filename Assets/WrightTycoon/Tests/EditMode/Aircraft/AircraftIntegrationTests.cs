@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using NUnit.Framework;
 using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Airframes;
@@ -15,6 +16,28 @@ namespace WrightTycoon.Core.Tests.Aircraft;
 [TestFixture]
 public sealed class AircraftIntegrationTests
 {
+    [Test]
+    public void SpeedWeightFactorCurve_IsContinuousAroundFormerThresholds()
+    {
+        var factorAt99 = EvaluateSpeedWeightFactor(99d);
+        var factorAt100 = EvaluateSpeedWeightFactor(100d);
+        var factorAt101 = EvaluateSpeedWeightFactor(101d);
+
+        Assert.That(System.Math.Abs(factorAt100 - factorAt99), Is.LessThan(0.01d));
+        Assert.That(System.Math.Abs(factorAt101 - factorAt100), Is.LessThan(0.01d));
+    }
+
+    [Test]
+    public void SpeedWeightFactorCurve_InterpolatesBetweenConfiguredBalancePoints()
+    {
+        Assert.That(EvaluateSpeedWeightFactor(0d), Is.EqualTo(1.00d).Within(1e-9));
+        Assert.That(EvaluateSpeedWeightFactor(100d), Is.EqualTo(0.80d).Within(1e-9));
+        Assert.That(EvaluateSpeedWeightFactor(200d), Is.EqualTo(0.875d).Within(1e-9));
+        Assert.That(EvaluateSpeedWeightFactor(300d), Is.EqualTo(0.95d).Within(1e-9));
+        Assert.That(EvaluateSpeedWeightFactor(1000d), Is.EqualTo(1.05d).Within(1e-9));
+        Assert.That(EvaluateSpeedWeightFactor(5000d), Is.EqualTo(1.40d).Within(1e-9));
+    }
+
     [Test]
     public void TwinEngineFamily_HasHigherMaxSpeedThanSingleEngineFamily()
     {
@@ -1026,6 +1049,18 @@ public sealed class AircraftIntegrationTests
         }
 
         return value;
+    }
+
+    private static double EvaluateSpeedWeightFactor(double speedKilometersPerHour)
+    {
+        var method = typeof(AircraftPerformanceCalculator).GetMethod(
+            "CalculateSpeedWeightFactor",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.That(method, Is.Not.Null, "Expected private speed-weight evaluator method to exist.");
+
+        var result = method!.Invoke(null, new object[] { speedKilometersPerHour });
+        Assert.That(result, Is.TypeOf<double>());
+        return (double)result!;
     }
 
     private static AircraftFactory CreateFactory()
