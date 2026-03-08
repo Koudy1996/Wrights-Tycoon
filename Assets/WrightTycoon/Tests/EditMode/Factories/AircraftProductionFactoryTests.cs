@@ -36,7 +36,7 @@ public sealed class AircraftProductionFactoryTests
     }
 
     [Test]
-    public void Production_IsBlockedWhenToolingRequirementsNotMet()
+    public void Production_IsBlockedWhenFactoryToolingRequirementNotMet()
     {
         var factory = new AircraftProductionFactory();
         var lineId = factory.AddLine("line.tools");
@@ -50,7 +50,6 @@ public sealed class AircraftProductionFactoryTests
 
         var blocked = factory.SimulateMonth(catalog, monthIndex: 0, SimulationDate.WrightTycoonStart);
         factory.UpgradeFactoryToolLevel(2);
-        factory.UpgradeLineToolLevel(lineId, 3);
         var active = factory.SimulateMonth(catalog, monthIndex: 1, SimulationDate.WrightTycoonStart.NextMonth());
 
         Assert.That(blocked.TotalAircraftProduced, Is.EqualTo(0));

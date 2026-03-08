@@ -133,7 +133,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private string _aircraftDesignName = "Prototype Aircraft";
     private string _familyName = "Player Family";
     private string _typeName = "Player Variant";
-    private int _requiredLineToolLevel = 1;
     private int _typeCrewCount = 2;
     private TailType _typeTailType = TailType.Classic;
     private WingShape _typeWingShape = WingShape.Straight;
@@ -152,6 +151,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private int _lastLoggedTechnologyModifierYear = int.MinValue;
     private ContractDeliverabilityFilter _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
     private ContractSpecificationFilter _contractSpecificationFilter = ContractSpecificationFilter.All;
+    private bool _contractRequestedCategoryFilterEnabled;
+    private AircraftCategory _contractRequestedCategoryFilter = AircraftCategory.LightSportAndRecreational;
     private int _contractQuantityFilterMin = 5;
     private int _contractQuantityFilterMax = 500;
     private EngineVersionDevelopmentContext? _engineVersionDevelopment;
@@ -556,6 +557,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _historicalCampaignDebugMessage = string.Empty;
         _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
         _contractSpecificationFilter = ContractSpecificationFilter.All;
+        _contractRequestedCategoryFilterEnabled = false;
+        _contractRequestedCategoryFilter = AircraftCategory.LightSportAndRecreational;
         _contractQuantityFilterMin = 5;
         _contractQuantityFilterMax = 500;
         _engineVersionDevelopment = null;
@@ -569,6 +572,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         SyncHistoricalCampaignDebugInputsToCurrentDate();
         LogHistoricalCampaignTechnologyModifiersIfYearChanged();
 
+        var openGovernmentNotebookAfterReset = false;
         if (_governmentContractBoard is not null)
         {
             var initialGovernmentUpdate = _governmentContractBoard.ProcessMonth(_currentDate);
@@ -576,9 +580,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             {
                 _governmentContractActionMessage = string.Join(" ", initialGovernmentUpdate.Events);
             }
+
+            openGovernmentNotebookAfterReset = initialGovernmentUpdate.GeneratedContract is not null;
         }
 
         ResetGovernmentContractNotebookWindow();
+        if (openGovernmentNotebookAfterReset)
+        {
+            OpenGovernmentContractNotebookWindow();
+        }
     }
 
     private void ApplyHistoricalCampaignEventsUpToCurrentDate()
@@ -1171,7 +1181,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             AircraftDesignName = _aircraftDesignName,
             FamilyName = _familyName,
             TypeName = _typeName,
-            RequiredLineToolLevel = _requiredLineToolLevel,
+            RequiredLineToolLevel = 1,
             TypeCrewCount = _typeCrewCount,
             TypeTailType = _typeTailType,
             TypeWingShape = _typeWingShape,
@@ -1187,6 +1197,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             TypeFuelLiters = _typeFuelLiters,
             ContractDeliverabilityFilter = _contractDeliverabilityFilter,
             ContractSpecificationFilter = _contractSpecificationFilter,
+            ContractRequestedCategoryFilterEnabled = _contractRequestedCategoryFilterEnabled,
+            ContractRequestedCategoryFilter = _contractRequestedCategoryFilter,
             ContractQuantityFilterMin = _contractQuantityFilterMin,
             ContractQuantityFilterMax = _contractQuantityFilterMax,
             GovernmentContractNotebookState = CreateNotebookWindowSaveState(_governmentContractNotebookState),
@@ -1251,7 +1263,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 DesignId = saved.CatalogItem.DesignId,
                 DisplayName = saved.CatalogItem.DisplayName,
                 RequiredFactoryToolLevel = saved.CatalogItem.RequiredFactoryToolLevel,
-                RequiredLineToolLevel = saved.CatalogItem.RequiredLineToolLevel,
+                RequiredLineToolLevel = 1,
                 FamilyDefinition = saved.CatalogItem.Aircraft.FamilyDefinition,
                 TypeDefinition = saved.CatalogItem.Aircraft.TypeDefinition,
                 DevelopmentStartedYear = saved.DevelopmentStartedYear,
@@ -1355,7 +1367,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _familyName = string.IsNullOrWhiteSpace(data.FamilyName) ? _familyName : data.FamilyName;
         _typeName = string.IsNullOrWhiteSpace(data.TypeName) ? _typeName : data.TypeName;
 
-        _requiredLineToolLevel = 1;
         _typeCrewCount = Mathf.Clamp(data.TypeCrewCount, PlaneDesignerBalance.Airframe.CrewMin, PlaneDesignerBalance.Airframe.CrewMax);
         _typeTailType = data.TypeTailType;
         _typeWingShape = data.TypeWingShape;
@@ -1397,6 +1408,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _contractDeliverabilityFilter = data.ContractDeliverabilityFilter;
         _contractSpecificationFilter = data.ContractSpecificationFilter;
+        _contractRequestedCategoryFilterEnabled = data.ContractRequestedCategoryFilterEnabled;
+        _contractRequestedCategoryFilter = Enum.IsDefined(typeof(AircraftCategory), data.ContractRequestedCategoryFilter)
+            ? data.ContractRequestedCategoryFilter
+            : AircraftCategory.LightSportAndRecreational;
         _contractQuantityFilterMin = Mathf.Clamp(data.ContractQuantityFilterMin, 5, 500);
         _contractQuantityFilterMax = Mathf.Clamp(data.ContractQuantityFilterMax, 5, 500);
         _governmentContractNotebookState = ReadNotebookWindowSaveState(data.GovernmentContractNotebookState);
@@ -1509,7 +1524,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         displayName,
                         aircraft,
                         System.Math.Max(state.RequiredFactoryToolLevel, 1),
-                        System.Math.Max(state.RequiredLineToolLevel, 1));
+                        1);
                     var legacyBaselineYear = NormalizeOptionalBaselineYear(state.TypeVersionDevelopmentBaselineYear);
                     var developmentStartedYear = NormalizeRequiredYear(
                         state.DevelopmentStartedYear,
@@ -3140,8 +3155,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawSection("Filters");
         _contractDeliverabilityFilter = DrawContractDeliverabilityFilter("1) Delivery Filter", _contractDeliverabilityFilter);
         _contractSpecificationFilter = DrawContractSpecificationFilter("2) Matching Plane Filter", _contractSpecificationFilter);
-        _contractQuantityFilterMin = DrawIntSlider("3) Required Aircraft Min", _contractQuantityFilterMin, 5, 500);
-        _contractQuantityFilterMax = DrawIntSlider("3) Required Aircraft Max", _contractQuantityFilterMax, 5, 500);
+        DrawContractRequestedCategoryFilter(
+            "3) Desired Aircraft Type",
+            ref _contractRequestedCategoryFilterEnabled,
+            ref _contractRequestedCategoryFilter);
+        _contractQuantityFilterMin = DrawIntSlider("4) Required Aircraft Min", _contractQuantityFilterMin, 5, 500);
+        _contractQuantityFilterMax = DrawIntSlider("4) Required Aircraft Max", _contractQuantityFilterMax, 5, 500);
         if (_contractQuantityFilterMin > _contractQuantityFilterMax)
         {
             _contractQuantityFilterMax = _contractQuantityFilterMin;
@@ -3151,6 +3170,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
             _contractSpecificationFilter = ContractSpecificationFilter.All;
+            _contractRequestedCategoryFilterEnabled = false;
+            _contractRequestedCategoryFilter = AircraftCategory.LightSportAndRecreational;
             _contractQuantityFilterMin = 5;
             _contractQuantityFilterMax = 500;
         }
@@ -4420,7 +4441,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             EngineDelta = existingType.EngineDelta,
             AirframeDelta = existingType.AirframeDelta,
             ResearchModifiers = new TypeResearchModifierPoints(),
-            RequiredLineToolLevel = existingType.RequiredLineToolLevel,
+            RequiredLineToolLevel = 1,
         };
 
         try
@@ -4680,7 +4701,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 EngineDelta = existingType.EngineDelta,
                 AirframeDelta = existingType.AirframeDelta,
                 ResearchModifiers = points.Clone(),
-                RequiredLineToolLevel = existingType.RequiredLineToolLevel,
+                RequiredLineToolLevel = 1,
             };
 
             try
@@ -4691,7 +4712,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     savedDesign.CatalogItem.DisplayName,
                     rebuiltAircraft,
                     savedDesign.CatalogItem.RequiredFactoryToolLevel,
-                    savedDesign.CatalogItem.RequiredLineToolLevel);
+                    1);
 
                 _savedAircraftDesigns[index] = new SavedAircraftDesign(
                     savedDesign.Name,
@@ -5638,7 +5659,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             var design = productionReadyDesigns[index];
             var categoryName = AircraftCategoryCatalog.GetProfile(design.CatalogItem.Category).DisplayName;
-            designOptions[index + 1] = $"{design.Name} | {categoryName} | Tool F{FormatUiInteger(design.CatalogItem.RequiredFactoryToolLevel)}/L{FormatUiInteger(design.CatalogItem.RequiredLineToolLevel)}";
+            designOptions[index + 1] = $"{design.Name} | {categoryName} | Tool F{FormatUiInteger(design.CatalogItem.RequiredFactoryToolLevel)}";
         }
 
         if (productionReadyDesigns.Length == 0)
@@ -5678,12 +5699,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             if (nextEmployees != line.Employees)
             {
                 _productionFactory.SetEmployees(line.LineId, nextEmployees);
-            }
-
-            var targetLineTool = DrawIntSlider($"Target Line Tool Level ({line.LineId})", line.LineToolLevel, line.LineToolLevel, 10);
-            if (targetLineTool > line.LineToolLevel && GUILayout.Button($"Upgrade {line.LineId} Tooling", GUILayout.Height(24f)))
-            {
-                _productionFactory.UpgradeLineToolLevel(line.LineId, targetLineTool);
             }
 
             if (GUILayout.Button($"Remove {line.LineId}", GUILayout.Height(24f)))
@@ -5736,7 +5751,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
 
             GUILayout.Label($"Produced: {FormatUiInteger(line.ProducedUnits)}");
-            GUILayout.Label($"Staff: {FormatUiInteger(line.Employees)} | Tool L{FormatUiInteger(line.LineToolLevel)} (Req L{FormatUiInteger(line.RequiredLineToolLevel)})");
+            GUILayout.Label($"Staff: {FormatUiInteger(line.Employees)}");
             GUILayout.Label($"MD: {FormatUiNumber(line.UsedManDays, "0.0")}/{FormatUiNumber(line.AvailableManDays, "0.0")} | Carry: {FormatUiNumber(line.CarryOverManDays, "0.0")}");
             GUILayout.Label($"Capacity: {FormatUiInteger(line.CapacityUnitsAtCurrentStaff)} units");
             GUILayout.Label($"Warehouse Units For Type: {FormatUiInteger(line.WarehouseUnitsAfterProduction)}");
@@ -5842,7 +5857,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             name,
             aircraftForCatalog,
             aircraftForCatalog.FamilyDefinition.RequiredFactoryToolLevel,
-            aircraftForCatalog.TypeDefinition.RequiredLineToolLevel);
+            1);
 
         var savedDesign = new SavedAircraftDesign(
             name,
@@ -6212,6 +6227,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return false;
         }
 
+        if (_contractRequestedCategoryFilterEnabled)
+        {
+            if (!snapshot.Contract.Requirements.RequiredCategory.HasValue)
+            {
+                return false;
+            }
+
+            if (snapshot.Contract.Requirements.RequiredCategory.Value != _contractRequestedCategoryFilter)
+            {
+                return false;
+            }
+        }
+
         return _contractSpecificationFilter switch
         {
             ContractSpecificationFilter.All => true,
@@ -6276,7 +6304,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _governmentContractActionMessage = string.Join(" ", governmentUpdate.Events);
             }
 
-            if (governmentUpdate.EvaluationResult is not null || governmentUpdate.ExpiredContract is not null)
+            if (governmentUpdate.GeneratedContract is not null)
+            {
+                OpenGovernmentContractNotebookWindow();
+            }
+            else if (governmentUpdate.EvaluationResult is not null || governmentUpdate.ExpiredContract is not null)
             {
                 CloseGovernmentContractNotebookWindow();
             }
@@ -7951,6 +7983,25 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return (ContractSpecificationFilter)nextIndex;
     }
 
+    private static void DrawContractRequestedCategoryFilter(
+        string label,
+        ref bool enabled,
+        ref AircraftCategory category)
+    {
+        GUILayout.BeginVertical(GUI.skin.box);
+        enabled = GUILayout.Toggle(enabled, $"{label} Enabled");
+        if (enabled)
+        {
+            category = DrawAircraftCategorySelector(label, category, Array.Empty<AircraftCategory>());
+        }
+        else
+        {
+            GUILayout.Label($"{label}: All");
+        }
+
+        GUILayout.EndVertical();
+    }
+
     private static AircraftCategory DrawAircraftCategorySelector(
         string label,
         AircraftCategory currentCategory,
@@ -9027,6 +9078,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public ContractDeliverabilityFilter ContractDeliverabilityFilter { get; set; }
 
         public ContractSpecificationFilter ContractSpecificationFilter { get; set; }
+
+        public bool ContractRequestedCategoryFilterEnabled { get; set; }
+
+        public AircraftCategory ContractRequestedCategoryFilter { get; set; }
 
         public int ContractQuantityFilterMin { get; set; }
 

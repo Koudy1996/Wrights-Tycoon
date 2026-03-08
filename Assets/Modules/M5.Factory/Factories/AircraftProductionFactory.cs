@@ -197,8 +197,6 @@ public sealed class AircraftProductionFactory
             {
                 designName = catalogItem.DisplayName;
                 requiredFactoryToolLevel = catalogItem.RequiredFactoryToolLevel;
-                requiredLineToolLevel = catalogItem.RequiredLineToolLevel;
-
                 var unitManDays = catalogItem.Aircraft.Performance.TotalProductionManDays;
                 if (unitManDays <= Numeric.Epsilon)
                 {
@@ -210,12 +208,6 @@ public sealed class AircraftProductionFactory
                 {
                     blocked = true;
                     status = $"Blocked by factory tool level ({FactoryToolLevel}/{requiredFactoryToolLevel}).";
-                    line.SetCarryOverWithoutProduction(availableManDays);
-                }
-                else if (line.LineToolLevel < requiredLineToolLevel)
-                {
-                    blocked = true;
-                    status = $"Blocked by line tool level ({line.LineToolLevel}/{requiredLineToolLevel}).";
                     line.SetCarryOverWithoutProduction(availableManDays);
                 }
                 else
@@ -407,12 +399,6 @@ public sealed class AircraftProductionFactory
                 state.AssignDesign(lineSnapshot.AssignedDesignId);
                 state.SetEmployees(System.Math.Max(lineSnapshot.Employees, 0));
                 state.SetCarryOverWithoutProduction(System.Math.Max(lineSnapshot.CarryOverManDays, 0d));
-
-                var targetToolLevel = System.Math.Max(lineSnapshot.LineToolLevel, 1);
-                if (targetToolLevel > 1)
-                {
-                    state.UpgradeLineToolLevel(targetToolLevel);
-                }
 
                 _lines.Add(state.LineId, state);
             }
