@@ -572,7 +572,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         SyncHistoricalCampaignDebugInputsToCurrentDate();
         LogHistoricalCampaignTechnologyModifiersIfYearChanged();
 
-        var openGovernmentNotebookAfterReset = false;
         if (_governmentContractBoard is not null)
         {
             var initialGovernmentUpdate = _governmentContractBoard.ProcessMonth(_currentDate);
@@ -580,15 +579,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             {
                 _governmentContractActionMessage = string.Join(" ", initialGovernmentUpdate.Events);
             }
-
-            openGovernmentNotebookAfterReset = initialGovernmentUpdate.GeneratedContract is not null;
         }
 
         ResetGovernmentContractNotebookWindow();
-        if (openGovernmentNotebookAfterReset)
-        {
-            OpenGovernmentContractNotebookWindow();
-        }
     }
 
     private void ApplyHistoricalCampaignEventsUpToCurrentDate()
@@ -1020,6 +1013,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         ResetRuntimeStateForNewGame(startDate);
         _runtimeScreen = RuntimeScreen.Gameplay;
+        if (_governmentContractBoard?.ActiveContract is not null)
+        {
+            OpenGovernmentContractNotebookWindow();
+        }
+
         _saveActionMessage = message;
         Debug.Log($"[Save] {message}");
     }
@@ -3546,6 +3544,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void OpenGovernmentContractNotebookWindow()
     {
+        if (_runtimeScreen != RuntimeScreen.Gameplay)
+        {
+            return;
+        }
+
         EnsureGovernmentContractNotebookWindow();
         RefreshGovernmentContractNotebookWindowContent();
         _governmentContractNotebookWindow?.Open();
