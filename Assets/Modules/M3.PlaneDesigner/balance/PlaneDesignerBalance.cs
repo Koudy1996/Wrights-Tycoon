@@ -106,6 +106,9 @@ public static class PlaneDesignerBalance
         public const double EmptyWeightPerCrewSystemsKilograms = 200d;
         public const double WetWeightMarginRatio = 0.05d;
         public const double MaximumLiftCoefficientTakeoff = 2.1d;
+        public const double TakeoffLiftReferenceCoefficient = 1.10d;
+        public const double TakeoffLiftScalingMin = 0.80d;
+        public const double TakeoffLiftScalingMax = 1.35d;
         public const double JetCruiseAltitudeMeters = 10000d;
         public const double PropCruiseAltitudeMeters = 5000d;
         public const double MinimumCruiseSpeedMetersPerSecond = 35d;

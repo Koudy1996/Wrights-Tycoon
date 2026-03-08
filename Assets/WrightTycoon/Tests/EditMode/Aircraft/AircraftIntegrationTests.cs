@@ -112,6 +112,12 @@ public sealed class AircraftIntegrationTests
         Assert.That(highSpeed, Is.LessThan(lowSpeed));
         Assert.That(biplaneSpeed, Is.LessThan(highSpeed));
         Assert.That(lowSpeed - biplaneSpeed, Is.GreaterThan(8d));
+        Assert.That(
+            biplaneAircraft.Performance.MaximumTakeoffWeightKilograms,
+            Is.GreaterThan(highWingAircraft.Performance.MaximumTakeoffWeightKilograms));
+        Assert.That(
+            biplaneAircraft.Performance.PayloadCapacity.Kilograms,
+            Is.GreaterThan(highWingAircraft.Performance.PayloadCapacity.Kilograms));
     }
     [Test]
     public void FamilyLocks_OverrideTypeParameterOverrides()

@@ -64,6 +64,8 @@ public sealed class AirframeCalculatorTests
         Assert.That(biplaneReport.TotalWeight.Kilograms, Is.LessThan(highWingReport.TotalWeight.Kilograms));
         Assert.That(biplaneReport.DragCoefficient, Is.GreaterThan(lowWingReport.DragCoefficient + 0.01d));
         Assert.That(biplaneReport.DragCoefficient, Is.GreaterThan(highWingReport.DragCoefficient + 0.01d));
+        Assert.That(biplaneReport.LiftCoefficient, Is.GreaterThan(lowWingReport.LiftCoefficient + 0.12d));
+        Assert.That(biplaneReport.LiftCoefficient, Is.GreaterThan(highWingReport.LiftCoefficient + 0.08d));
     }
 
     [Test]

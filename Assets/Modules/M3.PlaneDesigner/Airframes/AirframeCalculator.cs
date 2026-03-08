@@ -188,7 +188,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
         {
             WingPosition.High => 0.08d,
             WingPosition.Low => 0.03d,
-            WingPosition.Biplane => 0.22d,
+            WingPosition.Biplane => 0.30d,
             _ => 0d,
         };
 

@@ -100,11 +100,13 @@ public sealed class AircraftPerformanceCalculator
         var seaLevelThrustPerEngine = GetThrustAtAltitude(engine, 0d);
         var totalSeaLevelThrust = seaLevelThrustPerEngine * engineCount;
         var runwayLengthMeters = GetRunwayLengthMeters(airframe.Parameters.RunwayType);
+        var takeoffLiftCoefficient = CalculateTakeoffLiftCoefficient(liftCoefficient);
         var maximumWeightKilograms = CalculateMaximumWeightKilograms(
             runwayLengthMeters,
             seaLevelDensity,
             wingAreaSquareMeters,
-            totalSeaLevelThrust);
+            totalSeaLevelThrust,
+            takeoffLiftCoefficient);
         maximumWeightKilograms = System.Math.Max(maximumWeightKilograms, wetWeightKilograms);
         var usefulWeightKilograms = System.Math.Max(0d, maximumWeightKilograms - wetWeightKilograms);
 
@@ -315,12 +317,13 @@ public sealed class AircraftPerformanceCalculator
         double runwayLengthMeters,
         double seaLevelDensity,
         double wingAreaSquareMeters,
-        double totalSeaLevelThrustNewtons)
+        double totalSeaLevelThrustNewtons,
+        double takeoffLiftCoefficient)
     {
         var numerator = runwayLengthMeters
             * seaLevelDensity
             * wingAreaSquareMeters
-            * PlaneDesignerBalance.Performance.MaximumLiftCoefficientTakeoff
+            * takeoffLiftCoefficient
             * totalSeaLevelThrustNewtons;
         var denominator = PlaneDesignerBalance.Performance.GravityMetersPerSecondSquared;
         if (numerator <= 0d || denominator <= 0d)
@@ -329,6 +332,18 @@ public sealed class AircraftPerformanceCalculator
         }
 
         return System.Math.Sqrt(numerator / denominator);
+    }
+
+    private static double CalculateTakeoffLiftCoefficient(double liftCoefficient)
+    {
+        var referenceLiftCoefficient = System.Math.Max(
+            PlaneDesignerBalance.Performance.TakeoffLiftReferenceCoefficient,
+            Numeric.Epsilon);
+        var liftScaling = Numeric.Clamp(
+            liftCoefficient / referenceLiftCoefficient,
+            PlaneDesignerBalance.Performance.TakeoffLiftScalingMin,
+            PlaneDesignerBalance.Performance.TakeoffLiftScalingMax);
+        return PlaneDesignerBalance.Performance.MaximumLiftCoefficientTakeoff * liftScaling;
     }
 
     private static double CalculateCruiseSpeedMetersPerSecond(
