@@ -827,7 +827,7 @@ public sealed class EngineCalculator : IEngineCalculator
     {
         var baseArea = System.Math.PI * coreDiameterMeters * coreDiameterMeters * 0.25d;
         var compressionFactor = 1d + (parameters.CompressionRatio * EngineDesignerBalance.Engine.EngineFrontalAreaCompressionScale);
-        var coolingFactor = 1d - ((parameters.CoolingEfficiency - 0.5d) * EngineDesignerBalance.Engine.EngineFrontalAreaCoolingScale);
+        var coolingFactor = 1d + ((parameters.CoolingEfficiency - 0.5d) * EngineDesignerBalance.Engine.EngineFrontalAreaCoolingScale);
         var boostAreaFactor = GetBoostFrontalAreaFactor(parameters.BoostType);
         var frontalArea = baseArea * compressionFactor * coolingFactor * boostAreaFactor;
         return Numeric.Clamp(

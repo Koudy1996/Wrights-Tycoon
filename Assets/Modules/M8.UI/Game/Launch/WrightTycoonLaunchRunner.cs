@@ -2843,6 +2843,24 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return false;
     }
 
+    private static double ResolveEngineOutputAtSeaLevel(Engine engine)
+    {
+        if (engine is null)
+        {
+            return 0d;
+        }
+
+        if (TryGetEngineAltitudePerformanceValues(engine, 0d, out var seaLevelOutput, out _))
+        {
+            return seaLevelOutput;
+        }
+
+        var entries = engine.Performance.AltitudePerformance;
+        return entries.Count == 0
+            ? 0d
+            : entries[0].Output;
+    }
+
     private static void DrawTypeParameterComparisonRows(
         AirframeParameters originalAirframe,
         AirframeParameters newAirframe,
@@ -2911,6 +2929,30 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 hasOriginal ? FormatUiNumber(originalMaxSpeedMetersPerSecond * 3.6d, "0.0") : "N/A",
                 hasNew ? FormatUiNumber(newMaxSpeedMetersPerSecond * 3.6d, "0.0") : "N/A");
         }
+
+        var originalEngineOutputAtSeaLevel = ResolveEngineOutputAtSeaLevel(originalAircraft.Engine);
+        var newEngineOutputAtSeaLevel = ResolveEngineOutputAtSeaLevel(newAircraft.Engine);
+        var originalEngineCount = System.Math.Max(originalAircraft.Airframe.Parameters.EngineCount, 1);
+        var newEngineCount = System.Math.Max(newAircraft.Airframe.Parameters.EngineCount, 1);
+        var originalEngineOutputUnit = originalAircraft.Engine.Performance.OutputKind == EngineOutputKind.PowerKilowatts ? "kW" : "N";
+        var newEngineOutputUnit = newAircraft.Engine.Performance.OutputKind == EngineOutputKind.PowerKilowatts ? "kW" : "N";
+        var outputMetricLabel =
+            originalAircraft.Engine.Performance.OutputKind == EngineOutputKind.PowerKilowatts
+            && newAircraft.Engine.Performance.OutputKind == EngineOutputKind.PowerKilowatts
+                ? "Power"
+                : originalAircraft.Engine.Performance.OutputKind == EngineOutputKind.ThrustNewtons
+                  && newAircraft.Engine.Performance.OutputKind == EngineOutputKind.ThrustNewtons
+                    ? "Thrust"
+                    : "Output";
+
+        DrawVersionComparisonRow(
+            $"Engine {outputMetricLabel} @0m",
+            $"{FormatUiNumber(originalEngineOutputAtSeaLevel, "0.0")} {originalEngineOutputUnit}",
+            $"{FormatUiNumber(newEngineOutputAtSeaLevel, "0.0")} {newEngineOutputUnit}");
+        DrawVersionComparisonRow(
+            $"Total {outputMetricLabel} @0m",
+            $"{FormatUiNumber(originalEngineOutputAtSeaLevel * originalEngineCount, "0.0")} {originalEngineOutputUnit} ({FormatUiInteger(originalEngineCount)}x)",
+            $"{FormatUiNumber(newEngineOutputAtSeaLevel * newEngineCount, "0.0")} {newEngineOutputUnit} ({FormatUiInteger(newEngineCount)}x)");
 
         DrawVersionComparisonRow(
             "Range (km)",
@@ -3040,6 +3082,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"Category: {categoryProfile.DisplayName}");
         GUILayout.Label($"Type: {_aircraftPreview.TypeDefinition.DisplayName}");
         GUILayout.Label($"Engine: {_aircraftPreview.Engine.Definition.DisplayName} x{FormatUiInteger(_aircraftPreview.Airframe.Parameters.EngineCount)}");
+        var engineOutputAtSeaLevel = ResolveEngineOutputAtSeaLevel(_aircraftPreview.Engine);
+        var totalEngineOutputAtSeaLevel = engineOutputAtSeaLevel * System.Math.Max(_aircraftPreview.Airframe.Parameters.EngineCount, 1);
+        if (_aircraftPreview.Engine.Performance.OutputKind == EngineOutputKind.PowerKilowatts)
+        {
+            DrawMetric("Engine Power @0m (kW)", engineOutputAtSeaLevel, "0.0");
+            DrawMetric("Total Power @0m (kW)", totalEngineOutputAtSeaLevel, "0.0");
+        }
+        else
+        {
+            DrawMetric("Engine Thrust @0m (N)", engineOutputAtSeaLevel, "0.0");
+            DrawMetric("Total Thrust @0m (N)", totalEngineOutputAtSeaLevel, "0.0");
+        }
         GUILayout.Label($"Wing/Tail/Profile: {_aircraftPreview.Airframe.Parameters.WingPosition} {_aircraftPreview.Airframe.Parameters.WingShape}, {_aircraftPreview.Airframe.Parameters.TailType}, {_aircraftPreview.Airframe.Parameters.WingProfile}");
         GUILayout.Label($"Flaps: {_aircraftPreview.Airframe.Parameters.FlapType}, Leading Edge: {_aircraftPreview.Airframe.Parameters.HasLeadingEdgeFlaps}");
         GUILayout.Label($"Backup Systems: {_aircraftPreview.Airframe.Parameters.HasBackupSystems}");
@@ -4402,6 +4456,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var modifiedQuote = _researchCalculator.CalculateEngineQuote(engine, points);
         baseQuote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.Engine, researchId, baseQuote);
         modifiedQuote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.Engine, researchId, modifiedQuote);
+        baseQuote = ApplyEarlyResearchDiscountToResearchQuote(baseQuote);
+        modifiedQuote = ApplyEarlyResearchDiscountToResearchQuote(modifiedQuote);
         var modifiedReliability = ClampResearchPreviewReliability(engine.Performance.Reliability + effects.ReliabilityDelta);
         var modifiedProductionCost = System.Math.Max(0d, engine.Performance.Cost * effects.ProductionCostMultiplier);
         var modifiedProductionManDays = System.Math.Max(0d, engine.Performance.ProductionManDays * effects.ProductionManDaysMultiplier);
@@ -4443,6 +4499,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var aircraft = savedDesign.CatalogItem.Aircraft;
         var baseQuote = _researchCalculator.CalculateFamilyQuote(aircraft);
         var modifiedQuote = _researchCalculator.CalculateFamilyQuote(aircraft, points);
+        baseQuote = ApplyEarlyResearchDiscountToResearchQuote(baseQuote);
+        modifiedQuote = ApplyEarlyResearchDiscountToResearchQuote(modifiedQuote);
         var modifiedReliability = ClampResearchPreviewReliability(aircraft.Performance.OverallReliability + effects.ReliabilityDelta);
         var modifiedProductionCost = System.Math.Max(0d, aircraft.Performance.TotalProductionCost * effects.ProductionCostMultiplier);
         var modifiedProductionManDays = System.Math.Max(0d, aircraft.Performance.TotalProductionManDays * effects.ProductionManDaysMultiplier);
@@ -4490,6 +4548,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var modifiedQuote = _researchCalculator.CalculateTypeQuote(aircraft, points);
         baseQuote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.AircraftType, typeResearchId, baseQuote);
         modifiedQuote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.AircraftType, typeResearchId, modifiedQuote);
+        baseQuote = ApplyEarlyResearchDiscountToResearchQuote(baseQuote);
+        modifiedQuote = ApplyEarlyResearchDiscountToResearchQuote(modifiedQuote);
         var modifiedReliability = ClampResearchPreviewReliability(aircraft.Performance.OverallReliability + effects.ReliabilityDelta);
         var modifiedProductionCost = System.Math.Max(0d, aircraft.Performance.TotalProductionCost * effects.ProductionCostMultiplier);
         var modifiedProductionManDays = System.Math.Max(0d, aircraft.Performance.TotalProductionManDays * effects.ProductionManDaysMultiplier);
@@ -4712,6 +4772,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     displayName = savedEngine.Name;
                     quote = _researchCalculator.CalculateEngineQuote(engineSnapshot, modifierPoints);
                     quote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.Engine, project.SubjectId, quote);
+                    quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
                     return true;
                 }
                 catch (Exception ex)
@@ -4736,6 +4797,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
                 displayName = savedDesign.CatalogItem.Aircraft.FamilyDefinition.DisplayName;
                 quote = _researchCalculator.CalculateFamilyQuote(savedDesign.CatalogItem.Aircraft, modifierPoints);
+                quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
                 return true;
             }
 
@@ -4755,6 +4817,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 displayName = savedDesign.CatalogItem.Aircraft.TypeDefinition.DisplayName;
                 quote = _researchCalculator.CalculateTypeQuote(savedDesign.CatalogItem.Aircraft, modifierPoints);
                 quote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.AircraftType, project.SubjectId, quote);
+                quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
                 return true;
             }
 
@@ -5662,6 +5725,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
     }
 
+    private double ApplyEarlyResearchDiscountToCost(double baseCost)
+    {
+        var multiplier = ResearchBalance.ResolveEarlyResearchCostMultiplier(_currentDate.Year);
+        var adjustedCost = System.Math.Max(0d, baseCost * multiplier);
+        return System.Math.Round(adjustedCost, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private ResearchQuote ApplyEarlyResearchDiscountToResearchQuote(ResearchQuote quote) =>
+        new(
+            ApplyEarlyResearchDiscountToCost(quote.ResearchCost),
+            quote.ResearchTimeMonths,
+            quote.ComplexityNormalized);
+
     private ResearchQuote ApplyVersionDevelopmentQuoteAdjustments(ResearchQuote baseQuote, int baselineYear)
     {
         var baseCost = baseQuote.ResearchCost * VersionDevelopmentResearchCostMultiplier;
@@ -6178,6 +6254,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var points = GetResearchModifierPoints(ResearchSubjectType.Engine, savedDesign.ResearchId);
         var quote = _researchCalculator.CalculateEngineQuote(engineSnapshot, points);
         quote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.Engine, savedDesign.ResearchId, quote);
+        quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
         _researchBoard.UpsertProposal(
             ResearchSubjectType.Engine,
             savedDesign.ResearchId,
@@ -6204,6 +6281,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         var points = GetResearchModifierPoints(ResearchSubjectType.AircraftFamily, familyId);
         var quote = _researchCalculator.CalculateFamilyQuote(aircraft, points);
+        quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
         _researchBoard.UpsertProposal(
             ResearchSubjectType.AircraftFamily,
             familyId,
@@ -6221,6 +6299,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var points = GetResearchModifierPoints(ResearchSubjectType.AircraftType, typeId);
         var quote = _researchCalculator.CalculateTypeQuote(aircraft, points);
         quote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.AircraftType, typeId, quote);
+        quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
         _researchBoard.UpsertProposal(
             ResearchSubjectType.AircraftType,
             typeId,
@@ -6800,7 +6879,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             LockedEngineCount = _lockedEngineCount,
             Category = _selectedAircraftCategory,
             RequiredFactoryToolLevel = FixedFactoryToolRequirementLevel,
-            BaseDevelopmentCost = _baseDevelopmentCost,
+            BaseDevelopmentCost = ApplyEarlyResearchDiscountToCost(_baseDevelopmentCost),
             BaseDevelopmentManDays = _baseDevelopmentManDays,
             BaseEngineParameters = saved.Parameters.Clone(),
             BaseAirframeParameters = baseAirframe,

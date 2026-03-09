@@ -1,8 +1,16 @@
+using System;
+
 namespace WrightTycoon.Core.Balance;
 
 // M4 tuning surface: research approval costs, durations and complexity scaling.
 public static class ResearchBalance
 {
+    // earlyreserchediscount:
+    // In campaign start year this is applied as a direct research/development cost discount.
+    // The effective discount then linearly decays to 0 by campaign end year.
+    // Adjust this constant to tune early campaign difficulty.
+    public const double EarlyResearchDiscount = 0.40d;
+
     public static class Engine
     {
         public const double CostMultiplierMin = 3d;
@@ -70,5 +78,69 @@ public static class ResearchBalance
         public const double ResearchCostIncreasePerPoint = 0.05d;
         public const double FastDevelopmentTimeReductionPerPoint = 0.05d;
         public const double FastDevelopmentCostIncreasePerPoint = 0.10d;
+    }
+
+    // difficultyMultiplier is reserved for future player-selected difficulty tuning.
+    public static double ResolveEarlyResearchDiscount(
+        int year,
+        double difficultyMultiplier = 1d,
+        int playerYearOffset = 0)
+    {
+        if (year < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(year), "Year must be greater than or equal to 1.");
+        }
+
+        var effectiveYearLong = (long)year + playerYearOffset;
+        if (effectiveYearLong < int.MinValue)
+        {
+            effectiveYearLong = int.MinValue;
+        }
+        else if (effectiveYearLong > int.MaxValue)
+        {
+            effectiveYearLong = int.MaxValue;
+        }
+
+        var startYear = CoreBalance.HistoricalCampaignTechnology.StartYear;
+        var endYear = CoreBalance.HistoricalCampaignTechnology.EndYear;
+        var effectiveYear = (int)effectiveYearLong;
+        var normalizedDifficultyMultiplier = System.Math.Max(0d, difficultyMultiplier);
+        var clampedBaseDiscount = Clamp(EarlyResearchDiscount, 0d, 0.95d);
+
+        if (effectiveYear <= startYear)
+        {
+            return Clamp(clampedBaseDiscount * normalizedDifficultyMultiplier, 0d, 0.95d);
+        }
+
+        if (effectiveYear >= endYear)
+        {
+            return 0d;
+        }
+
+        var yearRange = endYear - startYear;
+        if (yearRange <= 0)
+        {
+            return 0d;
+        }
+
+        var blend = (effectiveYear - startYear) / (double)yearRange;
+        var discount = clampedBaseDiscount * (1d - blend) * normalizedDifficultyMultiplier;
+        return Clamp(discount, 0d, 0.95d);
+    }
+
+    public static double ResolveEarlyResearchCostMultiplier(
+        int year,
+        double difficultyMultiplier = 1d,
+        int playerYearOffset = 0) =>
+        1d - ResolveEarlyResearchDiscount(year, difficultyMultiplier, playerYearOffset);
+
+    private static double Clamp(double value, double min, double max)
+    {
+        if (value < min)
+        {
+            return min;
+        }
+
+        return value > max ? max : value;
     }
 }
