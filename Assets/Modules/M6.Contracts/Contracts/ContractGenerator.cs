@@ -134,9 +134,10 @@ public sealed class ContractGenerator : IContractGenerator
             switch (requirementTypes[index])
             {
                 case RequirementType.Reliability:
-                    var sampledReliability = SampleBandValue(_options.MinReliability, _options.MaxReliability, demandBand);
-                    var scaledReliability = TypeRequirementBalance.ScaleMinimumReliability(sampledReliability, generationYear);
-                    reliability = Round(scaledReliability, 3);
+                    var minimumReliabilityBound = TypeRequirementBalance.ScaleMinimumReliability(_options.MinReliability, generationYear);
+                    var maximumReliabilityBound = TypeRequirementBalance.ScaleMaximumReliability(_options.MaxReliability, generationYear);
+                    var sampledReliability = SampleBandValue(minimumReliabilityBound, maximumReliabilityBound, demandBand);
+                    reliability = Round(sampledReliability, 3);
                     break;
                 case RequirementType.MaximumWeight:
                     maximumWeight = Round(SampleBandValue(categoryProfile.MinMaximumWeightKilograms, categoryProfile.MaxMaximumWeightKilograms, demandBand), 1);

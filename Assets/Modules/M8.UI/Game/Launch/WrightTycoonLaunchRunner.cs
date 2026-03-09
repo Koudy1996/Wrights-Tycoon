@@ -3998,7 +3998,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawSection("Demand");
         var currentYear = _currentDate.Year;
         var forecastYear = System.Math.Min(CoreBalance.HistoricalCampaignTechnology.EndYear, currentYear + 3);
-        GUILayout.Label("Year-scaled demand uses minimum type requirements (reliability/range/speed/payload).");
+        GUILayout.Label("Year-scaled demand uses min/max type requirements (reliability/range/speed/payload).");
         DrawMetric("Current Year", currentYear, "0");
         DrawMetric("Forecast Year (+3)", forecastYear, "0");
         DrawMetric("Demand Multiplier (Current)", TypeRequirementBalance.ResolveMinimumRequirementMultiplier(currentYear), "0.000");
@@ -4014,8 +4014,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var forecastYear = System.Math.Min(CoreBalance.HistoricalCampaignTechnology.EndYear, currentYear + 3);
         GUILayout.Label($"Type requirements preview: {FormatUiInteger(currentYear)} vs {FormatUiInteger(forecastYear)}.");
 
-        var currentReliability = TypeRequirementBalance.ScaleMinimumReliability(ContractBalance.MinReliability, currentYear);
-        var forecastReliability = TypeRequirementBalance.ScaleMinimumReliability(ContractBalance.MinReliability, forecastYear);
+        var currentMinimumReliability = TypeRequirementBalance.ScaleMinimumReliability(ContractBalance.MinReliability, currentYear);
+        var forecastMinimumReliability = TypeRequirementBalance.ScaleMinimumReliability(ContractBalance.MinReliability, forecastYear);
+        var currentMaximumReliability = TypeRequirementBalance.ScaleMaximumReliability(ContractBalance.MaxReliability, currentYear);
+        var forecastMaximumReliability = TypeRequirementBalance.ScaleMaximumReliability(ContractBalance.MaxReliability, forecastYear);
         var baseProfiles = AircraftCategoryCatalog.GetAllProfiles();
         for (var index = 0; index < baseProfiles.Count; index++)
         {
@@ -4024,10 +4026,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             var forecastProfile = TypeRequirementBalance.CreateYearAdjustedProfile(baseProfile, forecastYear);
 
             DrawSection(currentProfile.DisplayName);
-            DrawDemandRequirementRow("Minimum Reliability", currentReliability, forecastReliability, "0.000");
+            DrawDemandRequirementRow("Minimum Reliability", currentMinimumReliability, forecastMinimumReliability, "0.000");
+            DrawDemandRequirementRow("Maximum Reliability", currentMaximumReliability, forecastMaximumReliability, "0.000");
             DrawDemandRequirementRow("Minimum Range (km)", currentProfile.MinRequiredRangeKilometers, forecastProfile.MinRequiredRangeKilometers, "0.0");
+            DrawDemandRequirementRow("Maximum Range (km)", currentProfile.MaxRequiredRangeKilometers, forecastProfile.MaxRequiredRangeKilometers, "0.0");
             DrawDemandRequirementRow("Minimum Speed (km/h)", currentProfile.MinRequiredSpeedKilometersPerHour, forecastProfile.MinRequiredSpeedKilometersPerHour, "0.0");
+            DrawDemandRequirementRow("Maximum Speed (km/h)", currentProfile.MaxRequiredSpeedKilometersPerHour, forecastProfile.MaxRequiredSpeedKilometersPerHour, "0.0");
             DrawDemandRequirementRow("Minimum Payload (kg)", currentProfile.MinRequiredPayloadKilograms, forecastProfile.MinRequiredPayloadKilograms, "0.0");
+            DrawDemandRequirementRow("Maximum Payload (kg)", currentProfile.MaxRequiredPayloadKilograms, forecastProfile.MaxRequiredPayloadKilograms, "0.0");
         }
     }
 

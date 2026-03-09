@@ -5,7 +5,7 @@ using WrightTycoon.Core.Math;
 
 namespace WrightTycoon.Core.Balance;
 
-// Shared year-based scaling for minimum demand thresholds used by aircraft type categories.
+// Shared year-based scaling for category demand thresholds used by aircraft type categories.
 public static class TypeRequirementBalance
 {
     public const int RequirementYearOffset = 0;
@@ -49,7 +49,31 @@ public static class TypeRequirementBalance
         return Numeric.Clamp(value * multiplier, 0d, 1d);
     }
 
+    public static double ScaleMaximumReliability(double value, int year, int playerYearOffset = 0)
+    {
+        Numeric.ThrowIfNotFinite(value, nameof(value));
+        if (value < 0d || value > 1d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), "Reliability must be within [0, 1].");
+        }
+
+        var multiplier = ResolveMinimumRequirementMultiplier(year, playerYearOffset);
+        return Numeric.Clamp(value * multiplier, 0d, 1d);
+    }
+
     public static double ScaleMinimumRangeKilometers(double value, int year, int playerYearOffset = 0)
+    {
+        Numeric.ThrowIfNotFinite(value, nameof(value));
+        if (value < 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), "Range must be greater than or equal to zero.");
+        }
+
+        var multiplier = ResolveMinimumRequirementMultiplier(year, playerYearOffset);
+        return System.Math.Max(0d, value * multiplier);
+    }
+
+    public static double ScaleMaximumRangeKilometers(double value, int year, int playerYearOffset = 0)
     {
         Numeric.ThrowIfNotFinite(value, nameof(value));
         if (value < 0d)
@@ -73,7 +97,31 @@ public static class TypeRequirementBalance
         return System.Math.Max(0d, value * multiplier);
     }
 
+    public static double ScaleMaximumSpeedKilometersPerHour(double value, int year, int playerYearOffset = 0)
+    {
+        Numeric.ThrowIfNotFinite(value, nameof(value));
+        if (value < 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), "Speed must be greater than or equal to zero.");
+        }
+
+        var multiplier = ResolveMinimumRequirementMultiplier(year, playerYearOffset);
+        return System.Math.Max(0d, value * multiplier);
+    }
+
     public static double ScaleMinimumPayloadKilograms(double value, int year, int playerYearOffset = 0)
+    {
+        Numeric.ThrowIfNotFinite(value, nameof(value));
+        if (value < 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), "Payload must be greater than or equal to zero.");
+        }
+
+        var multiplier = ResolveMinimumRequirementMultiplier(year, playerYearOffset);
+        return System.Math.Max(0d, value * multiplier);
+    }
+
+    public static double ScaleMaximumPayloadKilograms(double value, int year, int playerYearOffset = 0)
     {
         Numeric.ThrowIfNotFinite(value, nameof(value));
         if (value < 0d)
@@ -107,20 +155,32 @@ public static class TypeRequirementBalance
             baseProfile.MinRequiredPayloadKilograms,
             year,
             playerYearOffset);
+        var maxSpeed = ScaleMaximumSpeedKilometersPerHour(
+            baseProfile.MaxRequiredSpeedKilometersPerHour,
+            year,
+            playerYearOffset);
+        var maxRange = ScaleMaximumRangeKilometers(
+            baseProfile.MaxRequiredRangeKilometers,
+            year,
+            playerYearOffset);
+        var maxPayload = ScaleMaximumPayloadKilograms(
+            baseProfile.MaxRequiredPayloadKilograms,
+            year,
+            playerYearOffset);
 
-        if (minSpeed > baseProfile.MaxRequiredSpeedKilometersPerHour)
+        if (minSpeed > maxSpeed)
         {
-            minSpeed = baseProfile.MaxRequiredSpeedKilometersPerHour;
+            minSpeed = maxSpeed;
         }
 
-        if (minRange > baseProfile.MaxRequiredRangeKilometers)
+        if (minRange > maxRange)
         {
-            minRange = baseProfile.MaxRequiredRangeKilometers;
+            minRange = maxRange;
         }
 
-        if (minPayload > baseProfile.MaxRequiredPayloadKilograms)
+        if (minPayload > maxPayload)
         {
-            minPayload = baseProfile.MaxRequiredPayloadKilograms;
+            minPayload = maxPayload;
         }
 
         return new AircraftCategoryProfile(
@@ -131,11 +191,11 @@ public static class TypeRequirementBalance
             baseProfile.MinMaximumWeightKilograms,
             baseProfile.MaxMaximumWeightKilograms,
             minSpeed,
-            baseProfile.MaxRequiredSpeedKilometersPerHour,
+            maxSpeed,
             minRange,
-            baseProfile.MaxRequiredRangeKilometers,
+            maxRange,
             minPayload,
-            baseProfile.MaxRequiredPayloadKilograms,
+            maxPayload,
             baseProfile.WeightModifierKilograms,
             baseProfile.SpeedModifierMetersPerSecond,
             baseProfile.ReliabilityModifierDelta,
