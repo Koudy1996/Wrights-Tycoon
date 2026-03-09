@@ -31,8 +31,9 @@ public sealed class GovernmentContractGenerator : IGovernmentContractGenerator
             throw new ArgumentOutOfRangeException(nameof(contractSequence), "Contract sequence must be >= 0.");
         }
 
+        var generationYear = generatedOn.Year;
         var aircraftType = NextAircraftType(generatedOn);
-        var profile = AircraftCategoryCatalog.GetProfile(aircraftType);
+        var profile = AircraftCategoryCatalog.GetProfileForYear(aircraftType, generationYear);
         var speedBand = (GovernmentContractSpeedAltitudeBand)_random.NextIntInclusive(0, 2);
 
         var minimumSpeedMetersPerSecond = Round(
@@ -42,7 +43,11 @@ public sealed class GovernmentContractGenerator : IGovernmentContractGenerator
             decimals: 1);
         var minimumRangeKilometers = Round(SampleTopThird(profile.MinRequiredRangeKilometers, profile.MaxRequiredRangeKilometers), 1);
         var minimumPayloadKilograms = Round(SampleTopThird(profile.MinRequiredPayloadKilograms, profile.MaxRequiredPayloadKilograms), 1);
-        var minimumReliability = Round(SampleTopThird(_options.MinReliability, _options.MaxReliability), 3);
+        var minimumReliability = Round(
+            TypeRequirementBalance.ScaleMinimumReliability(
+                SampleTopThird(_options.MinReliability, _options.MaxReliability),
+                generationYear),
+            3);
         var minimumCrewSize = SampleTopThirdInt(profile.MinCrew, profile.MaxCrew);
         var maximumRunwayLengthMeters = ContractBalance.ResolveRequiredRunwayLengthMeters(aircraftType, _random.NextDouble());
 

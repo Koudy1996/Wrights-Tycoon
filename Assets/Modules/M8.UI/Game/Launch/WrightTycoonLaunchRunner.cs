@@ -47,7 +47,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     [SerializeField] private double _baseDevelopmentManDays = 240d;
 
     private readonly int[] _engineCountOptions = { 1, 2, 3, 4, 5, 6 };
-    private readonly string[] _tabs = { "Engine Designer", "Airframe + Type Designer", "My machines", "Research", "Factory", "Contracts", "Government Contracts", "Finance" };
+    private readonly string[] _tabs = { "Engine Designer", "Airframe + Type Designer", "My machines", "Research", "Demand", "Factory", "Contracts", "Government Contracts", "Finance" };
     private readonly string[] _financeSubTabs = { "Income / Expense", "Last Month Details" };
     private readonly string[] _researchSubTabs = { "Current Research", "For Approval" };
     private readonly string[] _myMachinesSubTabs = { "Engines", "Families + Types" };
@@ -344,13 +344,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
         else if (_tab == 4)
         {
-            DrawFactoryTab();
+            DrawDemandTab();
         }
         else if (_tab == 5)
         {
-            DrawContractsTab();
+            DrawFactoryTab();
         }
         else if (_tab == 6)
+        {
+            DrawContractsTab();
+        }
+        else if (_tab == 7)
         {
             DrawGovernmentContractsTab();
         }
@@ -382,13 +386,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
         else if (_tab == 4)
         {
-            DrawFactoryReport();
+            DrawDemandReport();
         }
         else if (_tab == 5)
         {
-            DrawContractsReport();
+            DrawFactoryReport();
         }
         else if (_tab == 6)
+        {
+            DrawContractsReport();
+        }
+        else if (_tab == 7)
         {
             DrawGovernmentContractsReport();
         }
@@ -2438,7 +2446,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (_aircraftPreview is not null)
         {
             DrawSection("Live Category Control");
-            var liveCategoryProfile = AircraftCategoryCatalog.GetProfile(_aircraftPreview.FamilyDefinition.Category);
+            var liveCategoryProfile = AircraftCategoryCatalog.GetProfileForYear(_aircraftPreview.FamilyDefinition.Category, _currentDate.Year);
             var liveCompliance = _categoryComplianceEvaluator.Evaluate(_aircraftPreview, liveCategoryProfile);
             if (liveCompliance.IsCompliant)
             {
@@ -3076,7 +3084,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         var perf = _aircraftPreview.Performance;
         var airframePerf = _aircraftPreview.Airframe.Performance;
-        var categoryProfile = AircraftCategoryCatalog.GetProfile(_aircraftPreview.FamilyDefinition.Category);
+        var categoryProfile = AircraftCategoryCatalog.GetProfileForYear(_aircraftPreview.FamilyDefinition.Category, _currentDate.Year);
 
         GUILayout.Label($"Family: {_aircraftPreview.FamilyDefinition.DisplayName}");
         GUILayout.Label($"Category: {categoryProfile.DisplayName}");
@@ -3983,6 +3991,53 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawMetric("Minimum Reliability", requirements.MinimumReliability, "0.000");
         DrawMetric("Minimum Crew", requirements.MinimumCrewSize, "0");
         DrawMetric("Maximum Runway Length (m)", requirements.MaximumRequiredRunwayLengthMeters, "0.0");
+    }
+
+    private void DrawDemandTab()
+    {
+        DrawSection("Demand");
+        var currentYear = _currentDate.Year;
+        var forecastYear = System.Math.Min(CoreBalance.HistoricalCampaignTechnology.EndYear, currentYear + 3);
+        GUILayout.Label("Year-scaled demand uses minimum type requirements (reliability/range/speed/payload).");
+        DrawMetric("Current Year", currentYear, "0");
+        DrawMetric("Forecast Year (+3)", forecastYear, "0");
+        DrawMetric("Demand Multiplier (Current)", TypeRequirementBalance.ResolveMinimumRequirementMultiplier(currentYear), "0.000");
+        DrawMetric("Demand Multiplier (+3)", TypeRequirementBalance.ResolveMinimumRequirementMultiplier(forecastYear), "0.000");
+        GUILayout.Space(6f);
+        GUILayout.Label("Detailed type list is shown on the right panel.");
+    }
+
+    private void DrawDemandReport()
+    {
+        DrawSection("Demand");
+        var currentYear = _currentDate.Year;
+        var forecastYear = System.Math.Min(CoreBalance.HistoricalCampaignTechnology.EndYear, currentYear + 3);
+        GUILayout.Label($"Type requirements preview: {FormatUiInteger(currentYear)} vs {FormatUiInteger(forecastYear)}.");
+
+        var currentReliability = TypeRequirementBalance.ScaleMinimumReliability(ContractBalance.MinReliability, currentYear);
+        var forecastReliability = TypeRequirementBalance.ScaleMinimumReliability(ContractBalance.MinReliability, forecastYear);
+        var baseProfiles = AircraftCategoryCatalog.GetAllProfiles();
+        for (var index = 0; index < baseProfiles.Count; index++)
+        {
+            var baseProfile = baseProfiles[index];
+            var currentProfile = TypeRequirementBalance.CreateYearAdjustedProfile(baseProfile, currentYear);
+            var forecastProfile = TypeRequirementBalance.CreateYearAdjustedProfile(baseProfile, forecastYear);
+
+            DrawSection(currentProfile.DisplayName);
+            DrawDemandRequirementRow("Minimum Reliability", currentReliability, forecastReliability, "0.000");
+            DrawDemandRequirementRow("Minimum Range (km)", currentProfile.MinRequiredRangeKilometers, forecastProfile.MinRequiredRangeKilometers, "0.0");
+            DrawDemandRequirementRow("Minimum Speed (km/h)", currentProfile.MinRequiredSpeedKilometersPerHour, forecastProfile.MinRequiredSpeedKilometersPerHour, "0.0");
+            DrawDemandRequirementRow("Minimum Payload (kg)", currentProfile.MinRequiredPayloadKilograms, forecastProfile.MinRequiredPayloadKilograms, "0.0");
+        }
+    }
+
+    private static void DrawDemandRequirementRow(string label, double currentValue, double forecastValue, string format)
+    {
+        GUILayout.BeginHorizontal(GUI.skin.box);
+        GUILayout.Label(label, GUILayout.Width(220f));
+        GUILayout.Label($"Now: {FormatUiNumber(currentValue, format)}", GUILayout.Width(210f));
+        GUILayout.Label($"+3y: {FormatUiNumber(forecastValue, format)}");
+        GUILayout.EndHorizontal();
     }
 
     private void DrawResearchTab()
@@ -7413,7 +7468,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             $"militaryMix={modifiers.MilitaryCategoryWeightMultiplier:F3}, " +
             $"civilPrice={modifiers.CivilPriceMultiplier:F3}, " +
             $"militaryPrice={modifiers.MilitaryPriceMultiplier:F3}, " +
-            $"reqDifficulty={modifiers.ContractRequirementDifficultyMultiplier:F3}, " +
             $"fuelParamUnlocked={fuelConsumptionUnlocked}");
     }
 

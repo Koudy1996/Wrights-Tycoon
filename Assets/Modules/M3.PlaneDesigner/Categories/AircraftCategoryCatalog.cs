@@ -25,6 +25,15 @@ public static class AircraftCategoryCatalog
         return profile;
     }
 
+    public static AircraftCategoryProfile GetProfileForYear(
+        AircraftCategory category,
+        int year,
+        int playerYearOffset = 0)
+    {
+        var baseProfile = GetProfile(category);
+        return TypeRequirementBalance.CreateYearAdjustedProfile(baseProfile, year, playerYearOffset);
+    }
+
     private static IReadOnlyList<AircraftCategoryProfile> BuildProfiles()
     {
         var profiles = PlaneDesignerBalance.CategoryEntries

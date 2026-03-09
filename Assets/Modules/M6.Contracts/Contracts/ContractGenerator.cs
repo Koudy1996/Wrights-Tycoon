@@ -112,9 +112,9 @@ public sealed class ContractGenerator : IContractGenerator
 
     private ContractRequirements GenerateRequirements(AircraftCategory category, OrderDemandBand demandBand)
     {
-        var categoryProfile = AircraftCategoryCatalog.GetProfile(category);
+        var generationYear = ResolveGenerationYear(_lastGeneratedMonthIndex);
+        var categoryProfile = AircraftCategoryCatalog.GetProfileForYear(category, generationYear);
         var includeFuelConsumptionRequirement = IsFuelConsumptionRequirementUnlocked();
-        var requirementDifficultyMultiplier = ResolveRequirementDifficultyMultiplier();
         var requirementTypes = CreateRequirementTypePool(includeFuelConsumptionRequirement);
 
         Shuffle(requirementTypes);
@@ -135,16 +135,7 @@ public sealed class ContractGenerator : IContractGenerator
             {
                 case RequirementType.Reliability:
                     var sampledReliability = SampleBandValue(_options.MinReliability, _options.MaxReliability, demandBand);
-                    var scaledReliability = sampledReliability * requirementDifficultyMultiplier;
-                    if (scaledReliability < 0d)
-                    {
-                        scaledReliability = 0d;
-                    }
-                    else if (scaledReliability > 1d)
-                    {
-                        scaledReliability = 1d;
-                    }
-
+                    var scaledReliability = TypeRequirementBalance.ScaleMinimumReliability(sampledReliability, generationYear);
                     reliability = Round(scaledReliability, 3);
                     break;
                 case RequirementType.MaximumWeight:
@@ -157,7 +148,7 @@ public sealed class ContractGenerator : IContractGenerator
                         _options.MinRangeKilometers,
                         _options.MaxRangeKilometers);
                     range = Round(
-                        System.Math.Max(1d, SampleBandValue(minRange, maxRange, demandBand) * requirementDifficultyMultiplier),
+                        System.Math.Max(1d, SampleBandValue(minRange, maxRange, demandBand)),
                         1);
                     break;
                 case RequirementType.Speed:
@@ -167,7 +158,7 @@ public sealed class ContractGenerator : IContractGenerator
                         categoryProfile.MaxRequiredSpeedKilometersPerHour,
                         _options.MinSpeedMetersPerSecond * 3.6d,
                         _options.MaxSpeedMetersPerSecond * 3.6d);
-                    var minimumSpeedKmh = SampleBandValue(minSpeedKmh, maxSpeedKmh, demandBand) * requirementDifficultyMultiplier;
+                    var minimumSpeedKmh = SampleBandValue(minSpeedKmh, maxSpeedKmh, demandBand);
                     var minimumSpeed = Round(minimumSpeedKmh / 3.6d, 1);
                     speed = new ContractSpeedRequirement(altitude, minimumSpeed);
                     break;
@@ -178,7 +169,7 @@ public sealed class ContractGenerator : IContractGenerator
                         _options.MinPayloadKilograms,
                         _options.MaxPayloadKilograms);
                     payload = Round(
-                        System.Math.Max(0d, SampleBandValue(minPayload, maxPayload, demandBand) * requirementDifficultyMultiplier),
+                        System.Math.Max(0d, SampleBandValue(minPayload, maxPayload, demandBand)),
                         1);
                     break;
                 case RequirementType.Crew:
@@ -414,23 +405,6 @@ public sealed class ContractGenerator : IContractGenerator
         var modifiers = _campaignModifierSource?.GetCurrentModifiers();
         return modifiers is not null
             && modifiers.IsContractParameterUnlocked(ContractBalance.HistoricalCampaignContractParameterFuelConsumption);
-    }
-
-    private double ResolveRequirementDifficultyMultiplier()
-    {
-        var modifiers = _campaignModifierSource?.GetCurrentModifiers();
-        if (modifiers is null)
-        {
-            return 1d;
-        }
-
-        var multiplier = modifiers.ContractRequirementDifficultyMultiplier;
-        if (double.IsNaN(multiplier) || double.IsInfinity(multiplier) || multiplier <= 0d)
-        {
-            return 1d;
-        }
-
-        return multiplier;
     }
 
     private static RequirementType[] CreateRequirementTypePool(bool includeFuelConsumptionRequirement)

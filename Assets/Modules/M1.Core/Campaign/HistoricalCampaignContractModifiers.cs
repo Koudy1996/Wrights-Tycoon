@@ -18,6 +18,7 @@ public sealed class HistoricalCampaignContractModifiers
 
     public double MilitaryPriceMultiplier { get; private set; } = 1d;
 
+    [Obsolete("Use TypeRequirementBalance to scale requirement minima by year.")]
     public double ContractRequirementDifficultyMultiplier { get; private set; } = 1d;
 
     public bool HasCategoryMixAdjustment =>
@@ -100,6 +101,7 @@ public sealed class HistoricalCampaignContractModifiers
         return _unlockedContractParameters.Contains(normalizedParameterId);
     }
 
+    [Obsolete("Use TypeRequirementBalance to scale requirement minima by year.")]
     public void SetContractRequirementDifficultyMultiplier(double multiplier)
     {
         if (!IsValidMultiplier(multiplier))
