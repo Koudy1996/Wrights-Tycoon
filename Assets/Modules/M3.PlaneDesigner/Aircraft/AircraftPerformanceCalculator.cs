@@ -120,11 +120,14 @@ public sealed class AircraftPerformanceCalculator
             cruiseDensity,
             wingAreaSquareMeters,
             liftCoefficient);
-        var maxSpeedAtCruise = GetSpeedAtAltitude(speedPoints, cruiseAltitudeMeters);
+        var maxSpeedAtCruise = System.Math.Max(0d, GetSpeedAtAltitude(speedPoints, cruiseAltitudeMeters));
+        var minimumCruiseSpeedAtAltitude = System.Math.Min(
+            PlaneDesignerBalance.Performance.MinimumCruiseSpeedMetersPerSecond,
+            maxSpeedAtCruise);
         optimalCruiseSpeedMetersPerSecond = Numeric.Clamp(
             optimalCruiseSpeedMetersPerSecond,
-            PlaneDesignerBalance.Performance.MinimumCruiseSpeedMetersPerSecond,
-            System.Math.Max(PlaneDesignerBalance.Performance.MinimumCruiseSpeedMetersPerSecond, maxSpeedAtCruise));
+            minimumCruiseSpeedAtAltitude,
+            maxSpeedAtCruise);
 
         var cruiseDragCoefficient = ApplySpeedDependentWingDragModifiers(
             dragCoefficient,
