@@ -12,7 +12,7 @@ public static class PlaneDesignerBalance
         public const int CrewMin = 1;
         public const int CrewMax = 20;
         public const double FuelMinLiters = 40d;
-        public const double FuelMaxLiters = 50000d;
+        public const double FuelMaxLiters = 500000d;
         public const double WoodFabricMaximumTotalWeightKilograms = 15000d;
         public const double WoodFabricEqualWeightThresholdKilograms = 800d;
         public const double WoodFabricHeavyWeightReferenceKilograms = 12000d;

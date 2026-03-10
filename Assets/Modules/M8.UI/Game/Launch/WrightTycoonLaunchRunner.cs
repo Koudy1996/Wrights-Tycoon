@@ -36,6 +36,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const double VersionDevelopmentResearchTimeMultiplier = 0.1d;
     private const double VersionDevelopmentTechnologyProgressWeight = 0.5d;
     private const double ExponentialSliderPower = 2d;
+    private const double TypeWingAreaMinSquareMeters = 1d;
+    private const double TypeWingAreaMaxSquareMeters = 1000d;
 
     [Header("Default Definition IDs")]
     [SerializeField] private string _engineDefinitionId = "eng.radial.main";
@@ -2272,7 +2274,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _ =>
                 "Laminar 6-series: up to +5% lift and -5% drag (full effect at 50 m2, fades to 0 at 500 m2).",
         });
-        _typeWingAreaSquareMeters = DrawSlider("Wing Area (m2)", _typeWingAreaSquareMeters, 1d, 1000d, "0.0");
+        _typeWingAreaSquareMeters = DrawWingAreaSliderWithOptimizationButton(
+            "Wing Area (m2)",
+            _typeWingAreaSquareMeters,
+            TypeWingAreaMinSquareMeters,
+            TypeWingAreaMaxSquareMeters,
+            "0.0");
 
         DrawSection("Type Engine");
         if (isTypeVersionDevelopment)
@@ -8132,6 +8139,80 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return GUILayout.TextField(value ?? string.Empty);
     }
 
+    private double DrawWingAreaSliderWithOptimizationButton(string label, double value, double min, double max, string format)
+    {
+        var currentValue = Math.Clamp(value, min, max);
+        var key = BuildNumericFieldKey("double", label, min, max);
+        var controlName = BuildControlName("double", key);
+        _doubleSliderHadFocus.TryGetValue(key, out var hadFocus);
+
+        if (!_doubleSliderInputBuffer.TryGetValue(key, out var currentInput))
+        {
+            currentInput = FormatUiNumber(currentValue, format);
+            _doubleSliderInputBuffer[key] = currentInput;
+        }
+
+        GUILayout.Label($"{label}: {FormatUiNumber(currentValue, format)}");
+        GUILayout.BeginHorizontal();
+        var sliderPosition = ToExponentialSliderPosition(currentValue, min, max);
+        var nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
+        GUI.SetNextControlName(controlName);
+        var nextInput = GUILayout.TextField(currentInput, GUILayout.Width(120f));
+        GUILayout.Label(
+            $"[{FormatUiNumber(min, format)} - {FormatUiNumber(max, format)}]",
+            GUILayout.Width(185f));
+        var optimizeClicked = GUILayout.Button("Best Payload", GUILayout.Width(120f), GUILayout.Height(24f));
+        GUILayout.EndHorizontal();
+
+        var hasFocus = GUI.GetNameOfFocusedControl() == controlName;
+        var pressedEnter = hasFocus
+            && Event.current.type == EventType.KeyDown
+            && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter);
+        var lostFocus = hadFocus && !hasFocus;
+
+        var sliderMappedValue = FromExponentialSliderPosition(nextSliderPosition, min, max);
+        var sliderRounded = Math.Clamp(Math.Round(sliderMappedValue, 4, MidpointRounding.AwayFromZero), min, max);
+        var sliderChanged = Math.Abs(sliderRounded - currentValue) > 1e-6;
+
+        if (sliderChanged)
+        {
+            currentValue = sliderRounded;
+        }
+
+        _doubleSliderInputBuffer[key] = nextInput;
+
+        if (pressedEnter || lostFocus)
+        {
+            if (TryParseDecimalCandidate(nextInput, out var parsedValue)
+                && parsedValue >= min
+                && parsedValue <= max)
+            {
+                currentValue = Math.Round(parsedValue, 4, MidpointRounding.AwayFromZero);
+            }
+
+            if (pressedEnter)
+            {
+                Event.current.Use();
+            }
+        }
+
+        if (optimizeClicked)
+        {
+            FindBestWingAreaForMaximumPayloadCapacity(min, max);
+            _doubleSliderInputBuffer[key] = FormatUiNumber(_typeWingAreaSquareMeters, format);
+            _doubleSliderHadFocus[key] = false;
+            return _typeWingAreaSquareMeters;
+        }
+
+        if (!hasFocus || sliderChanged)
+        {
+            _doubleSliderInputBuffer[key] = FormatUiNumber(currentValue, format);
+        }
+
+        _doubleSliderHadFocus[key] = hasFocus;
+        return currentValue;
+    }
+
     private double DrawSlider(string label, double value, double min, double max, string format)
     {
         var currentValue = Math.Clamp(value, min, max);
@@ -8262,6 +8343,176 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _intSliderHadFocus[key] = hasFocus;
         return currentValue;
+    }
+
+    private void FindBestWingAreaForMaximumPayloadCapacity(double minWingArea, double maxWingArea)
+    {
+        var originalWingArea = Math.Clamp(_typeWingAreaSquareMeters, minWingArea, maxWingArea);
+        var bestWingArea = originalWingArea;
+        var bestPayloadKilograms = 0d;
+        var hasBestCandidate = false;
+        var lastError = string.Empty;
+
+        ScanWingAreaRangeForPayload(
+            minWingArea,
+            maxWingArea,
+            step: 5d,
+            originalWingArea,
+            ref hasBestCandidate,
+            ref bestWingArea,
+            ref bestPayloadKilograms,
+            ref lastError);
+
+        if (hasBestCandidate)
+        {
+            ScanWingAreaRangeForPayload(
+                Math.Max(minWingArea, bestWingArea - 10d),
+                Math.Min(maxWingArea, bestWingArea + 10d),
+                step: 1d,
+                originalWingArea,
+                ref hasBestCandidate,
+                ref bestWingArea,
+                ref bestPayloadKilograms,
+                ref lastError);
+
+            ScanWingAreaRangeForPayload(
+                Math.Max(minWingArea, bestWingArea - 1d),
+                Math.Min(maxWingArea, bestWingArea + 1d),
+                step: 0.1d,
+                originalWingArea,
+                ref hasBestCandidate,
+                ref bestWingArea,
+                ref bestPayloadKilograms,
+                ref lastError);
+        }
+
+        if (!hasBestCandidate)
+        {
+            _typeWingAreaSquareMeters = originalWingArea;
+            RebuildAircraftPreview();
+            _factoryActionMessage = string.IsNullOrWhiteSpace(lastError)
+                ? "Wing area optimization failed: aircraft preview is unavailable for current setup."
+                : $"Wing area optimization failed: {lastError}";
+            return;
+        }
+
+        _typeWingAreaSquareMeters = Math.Round(bestWingArea, 4, MidpointRounding.AwayFromZero);
+        RebuildAircraftPreview();
+        _factoryActionMessage =
+            $"Best wing area for maximum useful load: {FormatUiNumber(_typeWingAreaSquareMeters, "0.0")} m2 " +
+            $"(payload {FormatUiNumber(bestPayloadKilograms, "0.0")} kg).";
+    }
+
+    private void ScanWingAreaRangeForPayload(
+        double minWingArea,
+        double maxWingArea,
+        double step,
+        double originalWingArea,
+        ref bool hasBestCandidate,
+        ref double bestWingArea,
+        ref double bestPayloadKilograms,
+        ref string lastError)
+    {
+        if (step <= 0d || minWingArea > maxWingArea)
+        {
+            return;
+        }
+
+        var candidateWingArea = minWingArea;
+        var guard = 0;
+        while (candidateWingArea <= maxWingArea + 1e-9d && guard < 20000)
+        {
+            var normalizedWingArea = Math.Clamp(
+                Math.Round(candidateWingArea, 4, MidpointRounding.AwayFromZero),
+                minWingArea,
+                maxWingArea);
+
+            if (TryBuildAircraftSnapshotForWingArea(normalizedWingArea, out var candidateAircraft, out var errorMessage))
+            {
+                var payloadCapacityKilograms = candidateAircraft.Performance.PayloadCapacity.Kilograms;
+                if (!double.IsNaN(payloadCapacityKilograms) && !double.IsInfinity(payloadCapacityKilograms))
+                {
+                    var isBetterPayload = !hasBestCandidate || payloadCapacityKilograms > bestPayloadKilograms + 1e-6d;
+                    var isEquivalentPayload = hasBestCandidate
+                        && System.Math.Abs(payloadCapacityKilograms - bestPayloadKilograms) <= 1e-6d;
+                    var isCloserToOriginal = isEquivalentPayload
+                        && System.Math.Abs(normalizedWingArea - originalWingArea) < System.Math.Abs(bestWingArea - originalWingArea);
+
+                    if (isBetterPayload || isCloserToOriginal)
+                    {
+                        hasBestCandidate = true;
+                        bestWingArea = normalizedWingArea;
+                        bestPayloadKilograms = payloadCapacityKilograms;
+                    }
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                lastError = errorMessage;
+            }
+
+            candidateWingArea += step;
+            guard++;
+        }
+    }
+
+    private bool TryBuildAircraftSnapshotForWingArea(double wingAreaSquareMeters, out Aircraft aircraft, out string errorMessage)
+    {
+        aircraft = null!;
+        errorMessage = string.Empty;
+
+        if (_savedEngines.Count == 0)
+        {
+            errorMessage = "Save at least one engine first.";
+            return false;
+        }
+
+        if (_aircraftFactory is null)
+        {
+            errorMessage = "Aircraft factory is not initialized.";
+            return false;
+        }
+
+        try
+        {
+            SavedEngineDesign savedEngine;
+            if (_typeVersionDevelopment is not null)
+            {
+                var sourceEngineIndex = FindSavedEngineIndexByResearchId(_typeVersionDevelopment.SourceEngineResearchId);
+                if (sourceEngineIndex < 0 || sourceEngineIndex >= _savedEngines.Count)
+                {
+                    errorMessage = "Source engine for this type version is missing.";
+                    return false;
+                }
+
+                savedEngine = _savedEngines[sourceEngineIndex];
+            }
+            else if (!TryGetSelectedCompatibleSavedEngine(out savedEngine, out errorMessage))
+            {
+                return false;
+            }
+
+            var previousWingArea = _typeWingAreaSquareMeters;
+            _typeWingAreaSquareMeters = wingAreaSquareMeters;
+            try
+            {
+                var family = _typeVersionDevelopment is not null
+                    ? _typeVersionDevelopment.SourceFamilyDefinition
+                    : BuildFamily(savedEngine);
+                var type = BuildType(family.Id);
+                aircraft = _aircraftFactory.CreateAircraft(family, type);
+                return true;
+            }
+            finally
+            {
+                _typeWingAreaSquareMeters = previousWingArea;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            return false;
+        }
     }
 
     private static float ToExponentialSliderPosition(double value, double min, double max)
