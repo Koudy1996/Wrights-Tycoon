@@ -2101,7 +2101,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawSection("Effect Summary");
         GUILayout.Label("Higher compression/boost gives more output but higher fuel burn and lower reliability.");
         GUILayout.Label("Turbine diameter and bypass ratio strongly affect jet-family engines.");
-        GUILayout.Label("Cooling improves durability and operating margin.");
+        GUILayout.Label("Higher cooling improves durability but increases mass and trims peak output.");
 
         DrawEngineComparisonOnRightPanel();
     }
@@ -2121,6 +2121,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
 
             return;
+        }
+
+        var compositeMaterialUnlocked = IsCompositeMaterialUnlockedForCurrentState();
+        if (!compositeMaterialUnlocked && _lockedMaterial == MaterialType.Composite)
+        {
+            _lockedMaterial = MaterialType.Aluminum;
+            _baseAirframeParameters.MaterialType = _lockedMaterial;
         }
 
         if (isTypeVersionDevelopment)
@@ -2153,7 +2160,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label($"Family ID (auto): {BuildFamilyId()}");
             _lockedEngineCount = DrawIntSlider("Number Of Engines", _lockedEngineCount, 1, 6);
             _lockedStructure = DrawEnum("Structure Type", _lockedStructure);
-            _lockedMaterial = DrawMaterialSelector("Material", _lockedMaterial);
+            _lockedMaterial = DrawMaterialSelector("Material", _lockedMaterial, compositeMaterialUnlocked);
+            if (!compositeMaterialUnlocked)
+            {
+                GUILayout.Label(
+                    $"Composite material unlocks after event '{PlaneDesignerBalance.Airframe.CompositeMaterialUnlockEventId}' " +
+                    $"({FormatUiInteger(PlaneDesignerBalance.Airframe.CompositeMaterialFallbackUnlockYear)}).");
+            }
             _baseAirframeParameters.WingPosition = DrawWingPositionSelector("Wing Position", _baseAirframeParameters.WingPosition);
             _familyAllowedEngineFamily = DrawFamilyAllowedEngineSelector("Engine Type", _familyAllowedEngineFamily);
 
@@ -3174,6 +3187,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawSection("Category Control (M3)");
         var compliance = _categoryComplianceEvaluator.Evaluate(_aircraftPreview, categoryProfile);
         GUILayout.Label($"Target Category: {categoryProfile.DisplayName}");
+        GUILayout.Label($"Runway options for this category: {FormatCategoryRunwayLengths(categoryProfile.Category)}");
         if (categoryProfile.HasPassengerCapacityRequirement)
         {
             GUILayout.Label(
@@ -4034,6 +4048,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawDemandRequirementRow("Maximum Speed (km/h)", currentProfile.MaxRequiredSpeedKilometersPerHour, forecastProfile.MaxRequiredSpeedKilometersPerHour, "0.0");
             DrawDemandRequirementRow("Minimum Payload (kg)", currentProfile.MinRequiredPayloadKilograms, forecastProfile.MinRequiredPayloadKilograms, "0.0");
             DrawDemandRequirementRow("Maximum Payload (kg)", currentProfile.MaxRequiredPayloadKilograms, forecastProfile.MaxRequiredPayloadKilograms, "0.0");
+            DrawDemandSingleValueRow("Runway Lengths (m)", FormatCategoryRunwayLengths(currentProfile.Category));
         }
     }
 
@@ -4044,6 +4059,31 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"Now: {FormatUiNumber(currentValue, format)}", GUILayout.Width(210f));
         GUILayout.Label($"+3y: {FormatUiNumber(forecastValue, format)}");
         GUILayout.EndHorizontal();
+    }
+
+    private static void DrawDemandSingleValueRow(string label, string value)
+    {
+        GUILayout.BeginHorizontal(GUI.skin.box);
+        GUILayout.Label(label, GUILayout.Width(220f));
+        GUILayout.Label(value);
+        GUILayout.EndHorizontal();
+    }
+
+    private static string FormatCategoryRunwayLengths(AircraftCategory category)
+    {
+        var runwayLengths = ContractBalance.ResolveAllowedRunwayLengthMeters(category);
+        if (runwayLengths.Length == 0)
+        {
+            return "N/A";
+        }
+
+        var parts = new string[runwayLengths.Length];
+        for (var index = 0; index < runwayLengths.Length; index++)
+        {
+            parts[index] = $"{FormatUiNumber(runwayLengths[index], "0")} m";
+        }
+
+        return string.Join(" / ", parts);
     }
 
     private void DrawResearchTab()
@@ -6217,6 +6257,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void SaveCurrentFamily()
     {
+        if (_lockedMaterial == MaterialType.Composite && !IsCompositeMaterialUnlockedForCurrentState())
+        {
+            _factoryActionMessage =
+                $"Composite material is locked until event '{PlaneDesignerBalance.Airframe.CompositeMaterialUnlockEventId}'.";
+            return;
+        }
+
         var name = string.IsNullOrWhiteSpace(_familyName)
             ? $"Family {_savedFamilies.Count + 1}"
             : _familyName.Trim();
@@ -6257,13 +6304,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _lockedEngineCount = saved.LockedEngineCount;
         _lockedStructure = saved.LockedStructureType;
         _lockedMaterial = saved.LockedMaterialType;
+        if (_lockedMaterial == MaterialType.Composite && !IsCompositeMaterialUnlockedForCurrentState())
+        {
+            _lockedMaterial = MaterialType.Aluminum;
+        }
+
         _baseAirframeParameters.WingPosition = saved.WingPosition;
         _baseAirframeParameters.EngineCount = saved.LockedEngineCount;
         _baseAirframeParameters.StructureType = saved.LockedStructureType;
-        _baseAirframeParameters.MaterialType = saved.LockedMaterialType;
+        _baseAirframeParameters.MaterialType = _lockedMaterial;
         _familyAllowedEngineFamily = saved.AllowedEngineFamily;
         _selectedSavedFamilyIndex = index;
-        _factoryActionMessage = $"Loaded family '{BuildFamilyDisplayName(saved.Name, saved.LockedEngineCount, saved.LockedMaterialType, saved.LockedStructureType, saved.AllowedEngineFamily)}'.";
+        _factoryActionMessage = $"Loaded family '{BuildFamilyDisplayName(saved.Name, saved.LockedEngineCount, _lockedMaterial, saved.LockedStructureType, saved.AllowedEngineFamily)}'.";
     }
 
     private void ResetFamilyConfig()
@@ -7616,6 +7668,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return _historicalCampaignContractModifierSource.GetCurrentModifiers().IsCategoryUnlocked(category);
     }
 
+    private bool IsCompositeMaterialUnlockedForCurrentState()
+    {
+        if (_historicalCampaign is null)
+        {
+            return _currentDate.Year >= PlaneDesignerBalance.Airframe.CompositeMaterialFallbackUnlockYear;
+        }
+
+        return _historicalCampaignState.HasFired(PlaneDesignerBalance.Airframe.CompositeMaterialUnlockEventId)
+            || _currentDate.Year >= PlaneDesignerBalance.Airframe.CompositeMaterialFallbackUnlockYear;
+    }
+
     private void NormalizeSelectedAircraftCategoryForHistoricalCampaign()
     {
         if (IsAircraftCategoryUnlockedForCurrentState(_selectedAircraftCategory))
@@ -8442,11 +8505,20 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return fuelLitersPerHour / System.Math.Max(output, 0.001d);
     }
 
-    private static MaterialType DrawMaterialSelector(string label, MaterialType currentMaterial)
+    private static MaterialType DrawMaterialSelector(string label, MaterialType currentMaterial, bool compositeUnlocked)
     {
         GUILayout.Label(label);
-        var values = new[] { MaterialType.WoodFabric, MaterialType.Aluminum, MaterialType.Composite };
-        var labels = new[] { "Wood", "Aluminum", "Composite" };
+        var values = compositeUnlocked
+            ? new[] { MaterialType.WoodFabric, MaterialType.Aluminum, MaterialType.Composite }
+            : new[] { MaterialType.WoodFabric, MaterialType.Aluminum };
+        var labels = compositeUnlocked
+            ? new[] { "Wood", "Aluminum", "Composite" }
+            : new[] { "Wood", "Aluminum" };
+        if (!compositeUnlocked && currentMaterial == MaterialType.Composite)
+        {
+            currentMaterial = MaterialType.Aluminum;
+        }
+
         var index = Array.IndexOf(values, currentMaterial);
         if (index < 0)
         {

@@ -43,6 +43,8 @@ public static class PlaneDesignerBalance
         public const double RunwayShortLengthMeters = 500d;
         public const double RunwayMediumLengthMeters = 1000d;
         public const double RunwayLongLengthMeters = 2000d;
+        public const int CompositeMaterialFallbackUnlockYear = 1982;
+        public const string CompositeMaterialUnlockEventId = "evt.advanced_aero_research";
 
         public const double StructuralAreaScaleMinRatio = 0.2d;
         public const double StructuralAreaScaleExponent = 1.28d;

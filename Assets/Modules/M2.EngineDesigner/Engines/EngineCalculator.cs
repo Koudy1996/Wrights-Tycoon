@@ -210,7 +210,8 @@ public sealed class EngineCalculator : IEngineCalculator
         var effectiveCoolingEfficiency = GetCoolingEfficiencyWithOptimizations(parameters);
         var outputRetentionFactor = GetEfficiencyPowerRetentionFactor(parameters);
         var compressionPowerFactor = 1d + (System.Math.Max(0d, parameters.CompressionRatio - PistonCompressionMin) * 0.032d);
-        var coolingPowerFactor = 0.9d + (effectiveCoolingEfficiency * 0.2d);
+        // Better cooling hardware adds thermal headroom reliability, but costs output.
+        var coolingPowerFactor = 1.1d - (effectiveCoolingEfficiency * 0.2d);
         var boostPowerFactor = GetBoostPowerFactor(parameters.BoostType);
         var arrangementFactor = definition.EngineType switch
         {
@@ -250,7 +251,8 @@ public sealed class EngineCalculator : IEngineCalculator
         var bypassModifier = definition.EngineType == EngineType.Turbofan
             ? 1d + (parameters.BypassRatio * 0.03d)
             : 1d;
-        var coolingFactor = 0.9d + (parameters.CoolingEfficiency * 0.16d);
+        // Better cooling hardware adds drag/mass complexity and trims peak thrust.
+        var coolingFactor = 1.06d - (parameters.CoolingEfficiency * 0.16d);
         var compressionFactor = 1d + (System.Math.Max(0d, parameters.CompressionRatio - JetCompressionMin) * 0.012d);
         var speedFactor = Numeric.Clamp(System.Math.Pow(parameters.MaximumSpeed / 50000d, 0.4d), 0.6d, 1.9d);
         var turbineTypeFactor = definition.EngineType switch
@@ -394,7 +396,7 @@ public sealed class EngineCalculator : IEngineCalculator
             * speedFactor;
 
         var compressionHardware = System.Math.Max(0d, parameters.CompressionRatio - 25d) * 8d;
-        var techFactor = Numeric.Clamp(1.06d - ((parameters.CoolingEfficiency - 0.75d) * 0.45d), 0.8d, 1.12d);
+        var techFactor = Numeric.Clamp(1.06d + ((parameters.CoolingEfficiency - 0.75d) * 0.45d), 0.8d, 1.22d);
 
         var weight = definition.BaseWeightKilograms
             + ((fanMass + coreMass + bypassHardware + compressionHardware + rpmHardware) * techFactor);
@@ -459,12 +461,12 @@ public sealed class EngineCalculator : IEngineCalculator
             0.42d
             + (parameters.CompressionRatio * 0.05d)
             + ((parameters.MaximumSpeed / 3000d) * 0.24d)
-            + (parameters.CoolingEfficiency * 0.26d)
+            + ((1d - parameters.CoolingEfficiency) * 0.26d)
             + GetPistonSpecificPowerBoost(parameters.BoostType),
             0.4d,
             2.2d);
         var outputMass = (seaLevelPowerKilowatts / specificPowerTarget) * 0.18d;
-        var techFactor = Numeric.Clamp(1.08d - ((parameters.CoolingEfficiency - 0.6d) * 0.28d), 0.82d, 1.12d);
+        var techFactor = Numeric.Clamp(1.08d + ((parameters.CoolingEfficiency - 0.6d) * 0.28d), 0.82d, 1.22d);
 
         return (definition.BaseWeightKilograms * baseWeightScale)
             + ((displacementMass
