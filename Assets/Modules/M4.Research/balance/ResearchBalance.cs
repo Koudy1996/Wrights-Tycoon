@@ -10,6 +10,8 @@ public static class ResearchBalance
     // The effective discount then linearly decays to 0 by campaign end year.
     // Adjust this constant to tune early campaign difficulty.
     public const double EarlyResearchDiscount = 0.40d;
+    public const int FirstYearApprovalSpeedBonusMonths = 20;
+    public const int FirstYearApprovalSpeedBonusWindowMonths = 12;
 
     public static class Engine
     {

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Globalization;
+using WrightTycoon.Core.Balance;
 
 namespace WrightTycoon.Core.Research;
 
@@ -80,6 +81,12 @@ public sealed class ResearchBoard
             return false;
         }
 
+        var speedBonusApplied = false;
+        if (expenseMonthIndex <= ResearchBalance.FirstYearApprovalSpeedBonusWindowMonths)
+        {
+            speedBonusApplied = project.TryApplyApprovalSpeedBonus(ResearchBalance.FirstYearApprovalSpeedBonusMonths);
+        }
+
         if (!project.TryApprove(expenseMonthIndex, out var bookedExpense))
         {
             approvedProject = project;
@@ -89,7 +96,9 @@ public sealed class ResearchBoard
 
         BookResearchExpense(expenseMonthIndex, bookedExpense);
         approvedProject = project;
-        message = $"Approved '{project.DisplayName}'. Cost: {FormatUiNumber(bookedExpense, "0.00")}, duration: {FormatUiInteger(project.ResearchTimeMonths)} months.";
+        var speedBonusSuffix = speedBonusApplied ? " First-year speed bonus applied." : string.Empty;
+        message =
+            $"Approved '{project.DisplayName}'. Cost: {FormatUiNumber(bookedExpense, "0.00")}, duration: {FormatUiInteger(project.ResearchTimeMonths)} months.{speedBonusSuffix}";
         return true;
     }
 

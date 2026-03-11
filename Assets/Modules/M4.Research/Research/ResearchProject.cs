@@ -106,6 +106,23 @@ public sealed class ResearchProject
         return true;
     }
 
+    public bool TryApplyApprovalSpeedBonus(int bonusMonths)
+    {
+        if (Status != ResearchStatus.Proposed || bonusMonths <= 0)
+        {
+            return false;
+        }
+
+        var adjustedMonths = System.Math.Max(1, ResearchTimeMonths - bonusMonths);
+        if (adjustedMonths == ResearchTimeMonths)
+        {
+            return false;
+        }
+
+        ResearchTimeMonths = adjustedMonths;
+        return true;
+    }
+
     public bool AdvanceMonth(int monthIndex)
     {
         if (Status != ResearchStatus.Ongoing)
