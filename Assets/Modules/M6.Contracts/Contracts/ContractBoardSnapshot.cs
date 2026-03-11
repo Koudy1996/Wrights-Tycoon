@@ -57,6 +57,8 @@ public sealed class ContractRequirementsSnapshot
 
     public double? MinimumPayloadKilograms { get; set; }
 
+    public double? MinimumManeuverability { get; set; }
+
     public int? MinimumCrew { get; set; }
 
     public double? MinimumSpeedAltitudeMeters { get; set; }

@@ -12,6 +12,7 @@ public readonly record struct GovernmentContractAircraftMetrics(
     double RangeKilometers,
     double PayloadKilograms,
     double Reliability,
+    double Maneuverability,
     int CrewSize,
     double RequiredRunwayLengthMeters,
     double DevelopmentCost)
@@ -37,6 +38,7 @@ public readonly record struct GovernmentContractAircraftMetrics(
         Numeric.ThrowIfNotFinite(RangeKilometers, nameof(RangeKilometers));
         Numeric.ThrowIfNotFinite(PayloadKilograms, nameof(PayloadKilograms));
         Numeric.ThrowIfNotFinite(Reliability, nameof(Reliability));
+        Numeric.ThrowIfNotFinite(Maneuverability, nameof(Maneuverability));
         Numeric.ThrowIfNotFinite(RequiredRunwayLengthMeters, nameof(RequiredRunwayLengthMeters));
         Numeric.ThrowIfNotFinite(DevelopmentCost, nameof(DevelopmentCost));
 
@@ -60,6 +62,11 @@ public readonly record struct GovernmentContractAircraftMetrics(
         if (Reliability < 0d || Reliability > 1d)
         {
             throw new ArgumentOutOfRangeException(nameof(Reliability), "Reliability must be within [0, 1].");
+        }
+
+        if (Maneuverability < 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(Maneuverability), "Maneuverability must be >= 0.");
         }
 
         if (CrewSize < 1)

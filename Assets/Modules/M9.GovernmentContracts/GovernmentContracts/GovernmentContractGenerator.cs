@@ -43,6 +43,7 @@ public sealed class GovernmentContractGenerator : IGovernmentContractGenerator
             decimals: 1);
         var minimumRangeKilometers = Round(SampleTopThird(profile.MinRequiredRangeKilometers, profile.MaxRequiredRangeKilometers), 1);
         var minimumPayloadKilograms = Round(SampleTopThird(profile.MinRequiredPayloadKilograms, profile.MaxRequiredPayloadKilograms), 1);
+        var minimumManeuverability = Round(SampleTopThird(profile.MinRequiredManeuverability, profile.MaxRequiredManeuverability), 1);
         var minimumReliabilityBound = TypeRequirementBalance.ScaleMinimumReliability(_options.MinReliability, generationYear);
         var maximumReliabilityBound = TypeRequirementBalance.ScaleMaximumReliability(_options.MaxReliability, generationYear);
         var minimumReliability = Round(
@@ -59,6 +60,7 @@ public sealed class GovernmentContractGenerator : IGovernmentContractGenerator
             MinimumRangeKilometers = minimumRangeKilometers,
             MinimumPayloadKilograms = minimumPayloadKilograms,
             MinimumReliability = minimumReliability,
+            MinimumManeuverability = minimumManeuverability,
             MinimumCrewSize = minimumCrewSize,
             MaximumRequiredRunwayLengthMeters = maximumRunwayLengthMeters,
         };

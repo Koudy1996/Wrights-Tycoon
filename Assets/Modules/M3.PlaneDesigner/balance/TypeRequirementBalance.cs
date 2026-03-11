@@ -133,6 +133,30 @@ public static class TypeRequirementBalance
         return System.Math.Max(0d, value * multiplier);
     }
 
+    public static double ScaleMinimumManeuverability(double value, int year, int playerYearOffset = 0)
+    {
+        Numeric.ThrowIfNotFinite(value, nameof(value));
+        if (value < 0d || value > 100d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), "Maneuverability must be within [0, 100].");
+        }
+
+        var multiplier = ResolveMinimumRequirementMultiplier(year, playerYearOffset);
+        return Numeric.Clamp(value * multiplier, 0d, 100d);
+    }
+
+    public static double ScaleMaximumManeuverability(double value, int year, int playerYearOffset = 0)
+    {
+        Numeric.ThrowIfNotFinite(value, nameof(value));
+        if (value < 0d || value > 100d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), "Maneuverability must be within [0, 100].");
+        }
+
+        var multiplier = ResolveMinimumRequirementMultiplier(year, playerYearOffset);
+        return Numeric.Clamp(value * multiplier, 0d, 100d);
+    }
+
     public static AircraftCategoryProfile CreateYearAdjustedProfile(
         AircraftCategoryProfile baseProfile,
         int year,
@@ -167,6 +191,14 @@ public static class TypeRequirementBalance
             baseProfile.MaxRequiredPayloadKilograms,
             year,
             playerYearOffset);
+        var minManeuverability = ScaleMinimumManeuverability(
+            baseProfile.MinRequiredManeuverability,
+            year,
+            playerYearOffset);
+        var maxManeuverability = ScaleMaximumManeuverability(
+            baseProfile.MaxRequiredManeuverability,
+            year,
+            playerYearOffset);
 
         if (minSpeed > maxSpeed)
         {
@@ -183,6 +215,11 @@ public static class TypeRequirementBalance
             minPayload = maxPayload;
         }
 
+        if (minManeuverability > maxManeuverability)
+        {
+            minManeuverability = maxManeuverability;
+        }
+
         return new AircraftCategoryProfile(
             baseProfile.Category,
             baseProfile.DisplayName,
@@ -196,6 +233,8 @@ public static class TypeRequirementBalance
             maxRange,
             minPayload,
             maxPayload,
+            minManeuverability,
+            maxManeuverability,
             baseProfile.WeightModifierKilograms,
             baseProfile.SpeedModifierMetersPerSecond,
             baseProfile.ReliabilityModifierDelta,

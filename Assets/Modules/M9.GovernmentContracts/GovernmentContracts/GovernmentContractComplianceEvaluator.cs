@@ -58,6 +58,12 @@ public sealed class GovernmentContractComplianceEvaluator
             unmetRequirements.Add($"Reliability {metrics.Reliability:0.000} is below required {requirements.MinimumReliability:0.000}.");
         }
 
+        if (metrics.Maneuverability + Numeric.Epsilon < requirements.MinimumManeuverability)
+        {
+            unmetRequirements.Add(
+                $"Maneuverability {metrics.Maneuverability:0.0} is below required {requirements.MinimumManeuverability:0.0}.");
+        }
+
         if (metrics.CrewSize < requirements.MinimumCrewSize)
         {
             unmetRequirements.Add($"Crew size {metrics.CrewSize} is below required {requirements.MinimumCrewSize}.");
@@ -85,7 +91,7 @@ public sealed class GovernmentContractComplianceEvaluator
         requirements.Validate();
         metrics.Validate();
 
-        var bonuses = new List<GovernmentContractParameterBonus>(capacity: 6)
+        var bonuses = new List<GovernmentContractParameterBonus>(capacity: 7)
         {
             GovernmentContractProbabilityCalculator.CreateHigherIsBetterBonus(
                 GovernmentContractParameter.MaximumSpeed,
@@ -106,6 +112,11 @@ public sealed class GovernmentContractComplianceEvaluator
                 GovernmentContractParameter.Reliability,
                 requirements.MinimumReliability,
                 metrics.Reliability),
+
+            GovernmentContractProbabilityCalculator.CreateHigherIsBetterBonus(
+                GovernmentContractParameter.Maneuverability,
+                requirements.MinimumManeuverability,
+                metrics.Maneuverability),
 
             GovernmentContractProbabilityCalculator.CreateHigherIsBetterBonus(
                 GovernmentContractParameter.CrewSize,

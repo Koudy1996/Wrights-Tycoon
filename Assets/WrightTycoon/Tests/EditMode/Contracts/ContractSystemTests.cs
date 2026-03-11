@@ -28,7 +28,7 @@ public sealed class ContractSystemTests
             var contract = contracts[index];
             Assert.That(contract.QuantityUnits, Is.InRange(5, 500));
             Assert.That(contract.DeadlineMonths, Is.InRange(6, 36));
-            Assert.That(contract.Requirements.DefinedRequirementCount, Is.InRange(2, 7));
+            Assert.That(contract.Requirements.DefinedRequirementCount, Is.InRange(2, 8));
             Assert.That(contract.Requirements.RequiredCategory.HasValue, Is.True);
             Assert.That(contract.Requirements.MaximumRequiredRunwayLengthMeters.HasValue, Is.True);
             var allowedRunwayLengths = ContractBalance.ResolveAllowedRunwayLengthMeters(contract.Requirements.RequiredCategory!.Value);
@@ -51,6 +51,11 @@ public sealed class ContractSystemTests
             if (contract.Requirements.MinimumPayloadKilograms.HasValue)
             {
                 Assert.That(contract.Requirements.MinimumPayloadKilograms.Value, Is.InRange(profile.MinRequiredPayloadKilograms, profile.MaxRequiredPayloadKilograms));
+            }
+
+            if (contract.Requirements.MinimumManeuverability.HasValue)
+            {
+                Assert.That(contract.Requirements.MinimumManeuverability.Value, Is.InRange(profile.MinRequiredManeuverability, profile.MaxRequiredManeuverability));
             }
 
             if (contract.Requirements.MinimumCrew.HasValue)
@@ -516,6 +521,7 @@ public sealed class ContractSystemTests
                 Assert.That(reduced.MinimumPayloadKilograms!.Value, Is.EqualTo(expected).Within(0.1d));
             }
 
+            Assert.That(reduced.MinimumManeuverability, Is.EqualTo(baseline.MinimumManeuverability));
             Assert.That(reduced.MaximumTotalWeightKilograms, Is.EqualTo(baseline.MaximumTotalWeightKilograms));
             Assert.That(reduced.MinimumCrew, Is.EqualTo(baseline.MinimumCrew));
             Assert.That(reduced.MaximumRequiredRunwayLengthMeters, Is.EqualTo(baseline.MaximumRequiredRunwayLengthMeters));
@@ -955,6 +961,17 @@ public sealed class ContractSystemTests
                 requirements.MinimumPayloadKilograms.Value,
                 minPayload,
                 maxPayload,
+                options,
+                expectLowBand,
+                tolerance: 0.1d);
+        }
+
+        if (requirements.MinimumManeuverability.HasValue)
+        {
+            AssertWithinBand(
+                requirements.MinimumManeuverability.Value,
+                categoryProfile.MinRequiredManeuverability,
+                categoryProfile.MaxRequiredManeuverability,
                 options,
                 expectLowBand,
                 tolerance: 0.1d);

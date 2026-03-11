@@ -91,6 +91,17 @@ public sealed class ContractEvaluator : IContractEvaluator
             }
         }
 
+        if (requirements.MinimumManeuverability.HasValue)
+        {
+            var minimumManeuverability = requirements.MinimumManeuverability.Value;
+            var actualManeuverability = aircraft.Airframe.Performance.Maneuverability;
+            if (actualManeuverability + Numeric.Epsilon < minimumManeuverability)
+            {
+                unmetRequirements.Add(
+                    $"Maneuverability {FormatUiNumber(actualManeuverability, "0.0")} < {FormatUiNumber(minimumManeuverability, "0.0")}");
+            }
+        }
+
         if (requirements.MinimumCrew.HasValue)
         {
             var minimumCrew = requirements.MinimumCrew.Value;

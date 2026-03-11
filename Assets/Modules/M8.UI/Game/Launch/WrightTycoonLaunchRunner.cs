@@ -3723,6 +3723,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         lines.Add($"- Minimum Range: {FormatUiNumber(requirements.MinimumRangeKilometers, "0.0")} km");
         lines.Add($"- Minimum Payload: {FormatUiNumber(requirements.MinimumPayloadKilograms, "0.0")} kg");
         lines.Add($"- Minimum Reliability: {FormatUiNumber(requirements.MinimumReliability, "0.000")}");
+        lines.Add($"- Minimum Maneuverability: {FormatUiNumber(requirements.MinimumManeuverability, "0.0")}");
         lines.Add($"- Minimum Crew: {FormatUiInteger(requirements.MinimumCrewSize)}");
         lines.Add($"- Maximum Runway Length: {FormatUiNumber(requirements.MaximumRequiredRunwayLengthMeters, "0.0")} m");
 
@@ -3855,6 +3856,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         GUILayout.Label($"{candidate.DisplayName} ({candidate.DesignId})");
                         GUILayout.Label($"Lifecycle: {candidate.LifecycleStage}");
                         DrawMetric("Reliability", candidate.Metrics.Reliability, "0.000");
+                        DrawMetric("Maneuverability", candidate.Metrics.Maneuverability, "0.0");
                         DrawMetric("Range (km)", candidate.Metrics.RangeKilometers, "0.0");
                         DrawMetric("Payload (kg)", candidate.Metrics.PayloadKilograms, "0.0");
                         DrawMetric("Runway Length (m)", candidate.Metrics.RequiredRunwayLengthMeters, "0.0");
@@ -4022,6 +4024,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawMetric("Minimum Range (km)", requirements.MinimumRangeKilometers, "0.0");
         DrawMetric("Minimum Payload (kg)", requirements.MinimumPayloadKilograms, "0.0");
         DrawMetric("Minimum Reliability", requirements.MinimumReliability, "0.000");
+        DrawMetric("Minimum Maneuverability", requirements.MinimumManeuverability, "0.0");
         DrawMetric("Minimum Crew", requirements.MinimumCrewSize, "0");
         DrawMetric("Maximum Runway Length (m)", requirements.MaximumRequiredRunwayLengthMeters, "0.0");
     }
@@ -4031,7 +4034,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawSection("Demand");
         var currentYear = _currentDate.Year;
         var forecastYear = System.Math.Min(CoreBalance.HistoricalCampaignTechnology.EndYear, currentYear + 3);
-        GUILayout.Label("Year-scaled demand uses min/max type requirements (reliability/range/speed/payload).");
+        GUILayout.Label("Year-scaled demand uses min/max type requirements (reliability/range/speed/payload/maneuverability).");
         DrawMetric("Current Year", currentYear, "0");
         DrawMetric("Forecast Year (+3)", forecastYear, "0");
         DrawMetric("Demand Multiplier (Current)", TypeRequirementBalance.ResolveMinimumRequirementMultiplier(currentYear), "0.000");
@@ -4067,6 +4070,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawDemandRequirementRow("Maximum Speed (km/h)", currentProfile.MaxRequiredSpeedKilometersPerHour, forecastProfile.MaxRequiredSpeedKilometersPerHour, "0.0");
             DrawDemandRequirementRow("Minimum Payload (kg)", currentProfile.MinRequiredPayloadKilograms, forecastProfile.MinRequiredPayloadKilograms, "0.0");
             DrawDemandRequirementRow("Maximum Payload (kg)", currentProfile.MaxRequiredPayloadKilograms, forecastProfile.MaxRequiredPayloadKilograms, "0.0");
+            DrawDemandRequirementRow("Minimum Maneuverability", currentProfile.MinRequiredManeuverability, forecastProfile.MinRequiredManeuverability, "0.0");
+            DrawDemandRequirementRow("Maximum Maneuverability", currentProfile.MaxRequiredManeuverability, forecastProfile.MaxRequiredManeuverability, "0.0");
             DrawDemandSingleValueRow("Runway Lengths (m)", FormatCategoryRunwayLengths(currentProfile.Category));
         }
     }
@@ -7429,6 +7434,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             MinimumRangeKilometers = requirements.MinimumRangeKilometers,
             MinimumSpeed = minimumSpeed,
             MinimumPayloadKilograms = requirements.MinimumPayloadKilograms,
+            MinimumManeuverability = requirements.MinimumManeuverability,
             MinimumCrew = requirements.MinimumCrew,
             MaximumRequiredRunwayLengthMeters = requirements.MaximumRequiredRunwayLengthMeters,
             MaximumFuelConsumptionKilogramsPerHour = requirements.MaximumFuelConsumptionKilogramsPerHour,
@@ -8871,6 +8877,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (requirements.MinimumPayloadKilograms.HasValue)
         {
             GUILayout.Label($"Payload >= {FormatUiNumber(requirements.MinimumPayloadKilograms.Value, "0.0")} kg");
+        }
+
+        if (requirements.MinimumManeuverability.HasValue)
+        {
+            GUILayout.Label($"Maneuverability >= {FormatUiNumber(requirements.MinimumManeuverability.Value, "0.0")}");
         }
 
         if (requirements.MinimumCrew.HasValue)

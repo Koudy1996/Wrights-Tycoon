@@ -277,6 +277,15 @@ public sealed class ContractPricingCalculator
                 invert: false));
         }
 
+        if (requirements.MinimumManeuverability.HasValue)
+        {
+            AddMetric(ref sum, ref count, Normalize(
+                requirements.MinimumManeuverability.Value,
+                profile.MinRequiredManeuverability,
+                profile.MaxRequiredManeuverability,
+                invert: false));
+        }
+
         if (requirements.MinimumCrew.HasValue)
         {
             AddMetric(ref sum, ref count, Normalize(

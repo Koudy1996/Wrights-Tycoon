@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Categories;
+using WrightTycoon.Core.Math;
 using WrightTycoon.Core.Simulation;
 
 namespace WrightTycoon.Core.Contracts;
@@ -16,6 +17,7 @@ public sealed class ContractGenerator : IContractGenerator
         RequirementType.Range,
         RequirementType.Speed,
         RequirementType.Payload,
+        RequirementType.Maneuverability,
         RequirementType.Crew,
     };
 
@@ -26,6 +28,7 @@ public sealed class ContractGenerator : IContractGenerator
         RequirementType.Range,
         RequirementType.Speed,
         RequirementType.Payload,
+        RequirementType.Maneuverability,
         RequirementType.Crew,
         RequirementType.FuelConsumption,
     };
@@ -49,8 +52,9 @@ public sealed class ContractGenerator : IContractGenerator
         Range = 2,
         Speed = 3,
         Payload = 4,
-        Crew = 5,
-        FuelConsumption = 6,
+        Maneuverability = 5,
+        Crew = 6,
+        FuelConsumption = 7,
     }
 
     private enum OrderDemandBand
@@ -125,6 +129,7 @@ public sealed class ContractGenerator : IContractGenerator
         double? range = null;
         ContractSpeedRequirement? speed = null;
         double? payload = null;
+        double? maneuverability = null;
         int? crew = null;
         double? maximumFuelConsumption = null;
         var maximumRunwayLengthMeters = ContractBalance.ResolveRequiredRunwayLengthMeters(category, _random.NextDouble());
@@ -173,6 +178,17 @@ public sealed class ContractGenerator : IContractGenerator
                         System.Math.Max(0d, SampleBandValue(minPayload, maxPayload, demandBand)),
                         1);
                     break;
+                case RequirementType.Maneuverability:
+                    maneuverability = Round(
+                        Numeric.Clamp(
+                            SampleBandValue(
+                                categoryProfile.MinRequiredManeuverability,
+                                categoryProfile.MaxRequiredManeuverability,
+                                demandBand),
+                            0d,
+                            100d),
+                        1);
+                    break;
                 case RequirementType.Crew:
                     var (minCrew, maxCrew) = ResolveBoundedRange(
                         categoryProfile.MinCrew,
@@ -201,6 +217,7 @@ public sealed class ContractGenerator : IContractGenerator
             MinimumRangeKilometers = range,
             MinimumSpeed = speed,
             MinimumPayloadKilograms = payload,
+            MinimumManeuverability = maneuverability,
             MinimumCrew = crew,
             MaximumRequiredRunwayLengthMeters = maximumRunwayLengthMeters,
             MaximumFuelConsumptionKilogramsPerHour = maximumFuelConsumption,

@@ -8,4 +8,5 @@ public enum GovernmentContractParameter
     Reliability = 3,
     CrewSize = 4,
     RunwayLength = 5,
+    Maneuverability = 6,
 }

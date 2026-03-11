@@ -31,6 +31,7 @@ public sealed class GovernmentContractPricingService : IGovernmentContractPricin
                 requirements.SpeedAltitudeBand.ToAltitudeMeters(),
                 requirements.MinimumMaximumSpeedMetersPerSecond),
             MinimumPayloadKilograms = requirements.MinimumPayloadKilograms,
+            MinimumManeuverability = requirements.MinimumManeuverability,
             MinimumCrew = requirements.MinimumCrewSize,
         };
 

@@ -64,6 +64,11 @@ public sealed class GovernmentContractModuleTests
             profile.MaxRequiredPayloadKilograms,
             tolerance: 0.1d);
         AssertThatWithinTopThird(
+            requirements.MinimumManeuverability,
+            profile.MinRequiredManeuverability,
+            profile.MaxRequiredManeuverability,
+            tolerance: 0.1d);
+        AssertThatWithinTopThird(
             requirements.MinimumReliability,
             options.MinReliability,
             options.MaxReliability,
@@ -241,6 +246,7 @@ public sealed class GovernmentContractModuleTests
             MinimumRangeKilometers = 3000d,
             MinimumPayloadKilograms = 10000d,
             MinimumReliability = 0.9d,
+            MinimumManeuverability = 35d,
             MinimumCrewSize = 2,
             MaximumRequiredRunwayLengthMeters = ContractBalance.ResolveRequiredRunwayLengthMeters(AircraftCategory.RegionalJet),
         };
@@ -255,6 +261,7 @@ public sealed class GovernmentContractModuleTests
         var range = requirements.MinimumRangeKilometers * multiplier;
         var payload = requirements.MinimumPayloadKilograms * multiplier;
         var reliability = System.Math.Min(1d, requirements.MinimumReliability * multiplier);
+        var maneuverability = requirements.MinimumManeuverability * multiplier;
         var crew = System.Math.Max(requirements.MinimumCrewSize, (int)System.Math.Ceiling(requirements.MinimumCrewSize * multiplier));
         var runway = requirements.MaximumRequiredRunwayLengthMeters / System.Math.Max(multiplier, 1d);
 
@@ -266,6 +273,7 @@ public sealed class GovernmentContractModuleTests
             RangeKilometers: range,
             PayloadKilograms: payload,
             Reliability: reliability,
+            Maneuverability: maneuverability,
             CrewSize: crew,
             RequiredRunwayLengthMeters: runway,
             DevelopmentCost: 200000d);

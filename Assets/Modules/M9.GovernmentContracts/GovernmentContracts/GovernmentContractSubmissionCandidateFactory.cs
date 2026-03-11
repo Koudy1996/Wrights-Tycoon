@@ -60,6 +60,7 @@ public static class GovernmentContractSubmissionCandidateFactory
             aircraft.Performance.RangeKilometers,
             aircraft.Performance.PayloadCapacity.Kilograms,
             aircraft.Performance.OverallReliability,
+            aircraft.Airframe.Performance.Maneuverability,
             aircraft.Airframe.Parameters.CrewCount,
             runwayLength,
             aircraft.Development.DevelopmentCost);

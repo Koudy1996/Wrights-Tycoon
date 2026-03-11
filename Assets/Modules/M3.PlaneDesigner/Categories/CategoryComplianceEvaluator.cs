@@ -76,6 +76,14 @@ public sealed class CategoryComplianceEvaluator
             unmet.Add($"Payload {FormatUiNumber(payload, "0.0")} kg outside [{FormatUiNumber(profile.MinRequiredPayloadKilograms, "0.0")}, {FormatUiNumber(profile.MaxRequiredPayloadKilograms, "0.0")}] kg");
         }
 
+        var maneuverability = aircraft.Airframe.Performance.Maneuverability;
+        if (maneuverability < profile.MinRequiredManeuverability
+            || maneuverability > profile.MaxRequiredManeuverability)
+        {
+            unmet.Add(
+                $"Maneuverability {FormatUiNumber(maneuverability, "0.0")} outside [{FormatUiNumber(profile.MinRequiredManeuverability, "0.0")}, {FormatUiNumber(profile.MaxRequiredManeuverability, "0.0")}]");
+        }
+
         if (profile.HasPassengerCapacityRequirement)
         {
             var passengers = aircraft.Performance.GetPassengerCapacity(PlaneDesignerBalance.Categories.PayloadKilogramsPerPassenger);

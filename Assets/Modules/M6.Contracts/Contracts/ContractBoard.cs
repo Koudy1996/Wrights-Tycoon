@@ -227,6 +227,7 @@ public sealed class ContractBoard
             MaximumTotalWeightKilograms = requirements.MaximumTotalWeightKilograms,
             MinimumRangeKilometers = requirements.MinimumRangeKilometers,
             MinimumPayloadKilograms = requirements.MinimumPayloadKilograms,
+            MinimumManeuverability = requirements.MinimumManeuverability,
             MinimumCrew = requirements.MinimumCrew,
             MinimumSpeedAltitudeMeters = requirements.MinimumSpeed?.AltitudeMeters,
             MinimumSpeedMetersPerSecond = requirements.MinimumSpeed?.MinimumSpeedMetersPerSecond,
@@ -306,6 +307,7 @@ public sealed class ContractBoard
             MinimumRangeKilometers = snapshot.MinimumRangeKilometers,
             MinimumSpeed = minimumSpeed,
             MinimumPayloadKilograms = snapshot.MinimumPayloadKilograms,
+            MinimumManeuverability = snapshot.MinimumManeuverability,
             MinimumCrew = snapshot.MinimumCrew,
             MaximumFuelConsumptionKilogramsPerHour = snapshot.MaximumFuelConsumptionKilogramsPerHour,
         };

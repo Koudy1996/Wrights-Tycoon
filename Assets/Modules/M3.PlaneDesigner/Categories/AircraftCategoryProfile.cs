@@ -19,6 +19,8 @@ public sealed class AircraftCategoryProfile
         double maxRequiredRangeKilometers,
         double minRequiredPayloadKilograms,
         double maxRequiredPayloadKilograms,
+        double minRequiredManeuverability,
+        double maxRequiredManeuverability,
         double weightModifierKilograms = 0d,
         double speedModifierMetersPerSecond = 0d,
         double reliabilityModifierDelta = 0d,
@@ -36,6 +38,8 @@ public sealed class AircraftCategoryProfile
         MaxRequiredRangeKilometers = maxRequiredRangeKilometers;
         MinRequiredPayloadKilograms = minRequiredPayloadKilograms;
         MaxRequiredPayloadKilograms = maxRequiredPayloadKilograms;
+        MinRequiredManeuverability = minRequiredManeuverability;
+        MaxRequiredManeuverability = maxRequiredManeuverability;
         WeightModifierKilograms = weightModifierKilograms;
         SpeedModifierMetersPerSecond = speedModifierMetersPerSecond;
         ReliabilityModifierDelta = reliabilityModifierDelta;
@@ -67,6 +71,10 @@ public sealed class AircraftCategoryProfile
     public double MinRequiredPayloadKilograms { get; }
 
     public double MaxRequiredPayloadKilograms { get; }
+
+    public double MinRequiredManeuverability { get; }
+
+    public double MaxRequiredManeuverability { get; }
 
     public double WeightModifierKilograms { get; }
 
@@ -137,6 +145,7 @@ public sealed class AircraftCategoryProfile
         ValidateRange(MinRequiredSpeedKilometersPerHour, MaxRequiredSpeedKilometersPerHour, nameof(MinRequiredSpeedKilometersPerHour), nameof(MaxRequiredSpeedKilometersPerHour));
         ValidateRange(MinRequiredRangeKilometers, MaxRequiredRangeKilometers, nameof(MinRequiredRangeKilometers), nameof(MaxRequiredRangeKilometers));
         ValidateRange(MinRequiredPayloadKilograms, MaxRequiredPayloadKilograms, nameof(MinRequiredPayloadKilograms), nameof(MaxRequiredPayloadKilograms));
+        ValidateRange(MinRequiredManeuverability, MaxRequiredManeuverability, nameof(MinRequiredManeuverability), nameof(MaxRequiredManeuverability));
 
         Numeric.ThrowIfNotFinite(WeightModifierKilograms, nameof(WeightModifierKilograms));
         Numeric.ThrowIfNotFinite(SpeedModifierMetersPerSecond, nameof(SpeedModifierMetersPerSecond));

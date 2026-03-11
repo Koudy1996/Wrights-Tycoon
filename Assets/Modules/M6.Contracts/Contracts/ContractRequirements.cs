@@ -18,6 +18,8 @@ public sealed class ContractRequirements
 
     public double? MinimumPayloadKilograms { get; init; }
 
+    public double? MinimumManeuverability { get; init; }
+
     public int? MinimumCrew { get; init; }
 
     public double? MaximumRequiredRunwayLengthMeters { get; init; }
@@ -30,6 +32,7 @@ public sealed class ContractRequirements
         + CountIfDefined(MinimumRangeKilometers.HasValue)
         + CountIfDefined(MinimumSpeed.HasValue)
         + CountIfDefined(MinimumPayloadKilograms.HasValue)
+        + CountIfDefined(MinimumManeuverability.HasValue)
         + CountIfDefined(MinimumCrew.HasValue)
         + CountIfDefined(MaximumRequiredRunwayLengthMeters.HasValue)
         + CountIfDefined(MaximumFuelConsumptionKilogramsPerHour.HasValue);
@@ -84,6 +87,15 @@ public sealed class ContractRequirements
             if (MinimumPayloadKilograms.Value < 0d)
             {
                 throw new ArgumentOutOfRangeException(nameof(MinimumPayloadKilograms), "Minimum payload must be greater than or equal to zero.");
+            }
+        }
+
+        if (MinimumManeuverability.HasValue)
+        {
+            Numeric.ThrowIfNotFinite(MinimumManeuverability.Value, nameof(MinimumManeuverability));
+            if (MinimumManeuverability.Value < 0d || MinimumManeuverability.Value > 100d)
+            {
+                throw new ArgumentOutOfRangeException(nameof(MinimumManeuverability), "Minimum maneuverability must be within [0, 100].");
             }
         }
 

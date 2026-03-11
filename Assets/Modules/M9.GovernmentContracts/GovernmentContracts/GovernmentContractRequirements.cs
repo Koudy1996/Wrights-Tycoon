@@ -18,6 +18,8 @@ public sealed class GovernmentContractRequirements
 
     public double MinimumReliability { get; init; }
 
+    public double MinimumManeuverability { get; init; }
+
     public int MinimumCrewSize { get; init; }
 
     public double MaximumRequiredRunwayLengthMeters { get; init; }
@@ -30,6 +32,7 @@ public sealed class GovernmentContractRequirements
         Numeric.ThrowIfNotFinite(MinimumRangeKilometers, nameof(MinimumRangeKilometers));
         Numeric.ThrowIfNotFinite(MinimumPayloadKilograms, nameof(MinimumPayloadKilograms));
         Numeric.ThrowIfNotFinite(MinimumReliability, nameof(MinimumReliability));
+        Numeric.ThrowIfNotFinite(MinimumManeuverability, nameof(MinimumManeuverability));
         Numeric.ThrowIfNotFinite(MaximumRequiredRunwayLengthMeters, nameof(MaximumRequiredRunwayLengthMeters));
 
         if (MinimumMaximumSpeedMetersPerSecond <= 0d)
@@ -50,6 +53,11 @@ public sealed class GovernmentContractRequirements
         if (MinimumReliability < 0d || MinimumReliability > 1d)
         {
             throw new ArgumentOutOfRangeException(nameof(MinimumReliability), "Minimum reliability must be within [0, 1].");
+        }
+
+        if (MinimumManeuverability < 0d || MinimumManeuverability > 100d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MinimumManeuverability), "Minimum maneuverability must be within [0, 100].");
         }
 
         if (MinimumCrewSize < 1)
