@@ -2103,6 +2103,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             FormatUiNumber(report.ProductionManDays, "0.0"),
             hasInlineComparison,
             FormatUiNumber(originalReport.ProductionManDays, "0.0"));
+        var currentEngineResearchTimeMonths = ResolveEngineResearchTimeMonthsForDesignerPreview(
+            _enginePreview,
+            _engineVersionDevelopment?.SourceDevelopmentStartedYear);
+        var originalEngineResearchTimeMonths = hasInlineComparison
+            ? ResolveEngineResearchTimeMonthsForDesignerPreview(originalEngine)
+            : currentEngineResearchTimeMonths;
+        DrawInlineComparisonRow(
+            "Research Time (months)",
+            FormatUiInteger(currentEngineResearchTimeMonths),
+            hasInlineComparison,
+            FormatUiInteger(originalEngineResearchTimeMonths));
 
         DrawSection("Effect Summary");
         GUILayout.Label("Higher compression/boost gives more output but higher fuel burn and lower reliability.");
@@ -3177,6 +3188,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         DrawMetric("Production Cost", perf.TotalProductionCost, "0");
         DrawMetric("Production MD", perf.TotalProductionManDays, "0.0");
+        DrawMetric(
+            "Research Time (months)",
+            ResolveTypeResearchTimeMonthsForDesignerPreview(
+                _aircraftPreview,
+                _typeVersionDevelopment?.SourceDevelopmentStartedYear),
+            "0");
         if (_aircraftPreview.Airframe.Parameters.MaterialType == MaterialType.WoodFabric
             && perf.TotalWeight.Kilograms > PlaneDesignerBalance.Airframe.WoodFabricMaximumTotalWeightKilograms)
         {
@@ -5922,6 +5939,30 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var multiplier = ResearchBalance.ResolveEarlyResearchCostMultiplier(_currentDate.Year);
         var adjustedCost = System.Math.Max(0d, baseCost * multiplier);
         return System.Math.Round(adjustedCost, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private int ResolveEngineResearchTimeMonthsForDesignerPreview(Engine previewEngine, int? versionBaselineYear = null)
+    {
+        var quote = _researchCalculator.CalculateEngineQuote(previewEngine);
+        if (versionBaselineYear.HasValue)
+        {
+            quote = ApplyVersionDevelopmentQuoteAdjustments(quote, versionBaselineYear.Value);
+        }
+
+        quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
+        return System.Math.Max(quote.ResearchTimeMonths, 1);
+    }
+
+    private int ResolveTypeResearchTimeMonthsForDesignerPreview(Aircraft previewAircraft, int? versionBaselineYear = null)
+    {
+        var quote = _researchCalculator.CalculateTypeQuote(previewAircraft);
+        if (versionBaselineYear.HasValue)
+        {
+            quote = ApplyVersionDevelopmentQuoteAdjustments(quote, versionBaselineYear.Value);
+        }
+
+        quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
+        return System.Math.Max(quote.ResearchTimeMonths, 1);
     }
 
     private ResearchQuote ApplyEarlyResearchDiscountToResearchQuote(ResearchQuote quote) =>
