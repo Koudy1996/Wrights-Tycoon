@@ -3038,14 +3038,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "Production MD",
             FormatUiNumber(originalAircraft.Performance.TotalProductionManDays, "0.0"),
             FormatUiNumber(newAircraft.Performance.TotalProductionManDays, "0.0"));
-        DrawVersionComparisonRow(
-            "Development Cost",
-            FormatUiNumber(originalAircraft.Development.DevelopmentCost, "0"),
-            FormatUiNumber(newAircraft.Development.DevelopmentCost, "0"));
-        DrawVersionComparisonRow(
-            "Development MD",
-            FormatUiNumber(originalAircraft.Development.DevelopmentManDays, "0.0"),
-            FormatUiNumber(newAircraft.Development.DevelopmentManDays, "0.0"));
     }
 
     private static bool TryGetAircraftMaxSpeedAtAltitude(
@@ -3185,8 +3177,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         DrawMetric("Production Cost", perf.TotalProductionCost, "0");
         DrawMetric("Production MD", perf.TotalProductionManDays, "0.0");
-        DrawMetric("Development Cost", _aircraftPreview.Development.DevelopmentCost, "0");
-        DrawMetric("Development MD", _aircraftPreview.Development.DevelopmentManDays, "0.0");
         if (_aircraftPreview.Airframe.Parameters.MaterialType == MaterialType.WoodFabric
             && perf.TotalWeight.Kilograms > PlaneDesignerBalance.Airframe.WoodFabricMaximumTotalWeightKilograms)
         {
@@ -3733,7 +3723,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         GUILayout.Label("A single government contract is generated each January.");
-        GUILayout.Label("Accepting grants immediate upfront funding (75% of development cost).");
+        GUILayout.Label("Accepting grants immediate upfront funding.");
         GUILayout.Label("Delivery contracts auto-ship monthly from warehouse stock.");
 
         var activeContract = _governmentContractBoard.ActiveContract;
@@ -3847,7 +3837,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         GUILayout.BeginVertical(GUI.skin.box);
                         GUILayout.Label($"{candidate.DisplayName} ({candidate.DesignId})");
                         GUILayout.Label($"Lifecycle: {candidate.LifecycleStage}");
-                        DrawMetric("Development Cost", candidate.Metrics.DevelopmentCost, "0.00");
                         DrawMetric("Reliability", candidate.Metrics.Reliability, "0.000");
                         DrawMetric("Range (km)", candidate.Metrics.RangeKilometers, "0.0");
                         DrawMetric("Payload (kg)", candidate.Metrics.PayloadKilograms, "0.0");
@@ -4238,6 +4227,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label($"{GetResearchNameFieldLabel(project.SubjectType)}: {displayName}");
             DrawMetric("Research Cost", project.ResearchCost, "0.00");
             DrawMetric("Research Time (months)", project.ResearchTimeMonths, "0");
+            if (IsFirstYearResearchApprovalWindow())
+            {
+                GUILayout.Label(BuildResearchTimeBonusFormula(project.ResearchTimeMonths));
+            }
             DrawMetric("Complexity (%)", project.ComplexityNormalized * 100d, "0.0");
             DrawResearchModifierEditor(project);
             if (isDetailed)
@@ -4276,6 +4269,21 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         _researchActionMessage = message;
+    }
+
+    private bool IsFirstYearResearchApprovalWindow()
+    {
+        var bookingMonthIndex = _elapsedMonths + 1;
+        return bookingMonthIndex >= 1
+            && bookingMonthIndex <= ResearchBalance.FirstYearApprovalSpeedBonusWindowMonths;
+    }
+
+    private string BuildResearchTimeBonusFormula(int baseResearchMonths)
+    {
+        var normalizedBaseMonths = System.Math.Max(baseResearchMonths, 1);
+        var bonusMonths = System.Math.Max(ResearchBalance.FirstYearApprovalSpeedBonusMonths, 0);
+        var adjustedMonths = System.Math.Max(1, normalizedBaseMonths - bonusMonths);
+        return $"Research time = {FormatUiInteger(normalizedBaseMonths)} - {FormatUiInteger(bonusMonths)} = {FormatUiInteger(adjustedMonths)}";
     }
 
     private void ApplyApprovedYearForApprovedProject(ResearchProject project, int approvedYear)
@@ -4375,6 +4383,33 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             var campaignStart = ResolveCampaignStartDate();
             approvedYear = campaignStart.AddMonths(project.StartedMonthIndex.Value).Year;
             return approvedYear >= 1;
+        }
+
+        return false;
+    }
+
+    private bool TryResolveResearchTimeMonthsFromResearchBoard(
+        ResearchSubjectType subjectType,
+        string subjectId,
+        out int researchTimeMonths)
+    {
+        researchTimeMonths = 0;
+        if (_researchBoard is null || string.IsNullOrWhiteSpace(subjectId))
+        {
+            return false;
+        }
+
+        var projects = _researchBoard.GetAllProjects();
+        for (var index = 0; index < projects.Count; index++)
+        {
+            var project = projects[index];
+            if (project.SubjectType != subjectType || !string.Equals(project.SubjectId, subjectId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            researchTimeMonths = System.Math.Max(project.ResearchTimeMonths, 1);
+            return true;
         }
 
         return false;
@@ -5465,6 +5500,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawParameterValueRow("Development Start Year", FormatUiInteger(selected.DevelopmentStartedYear));
         DrawParameterValueRow("Current Variant Start Year", FormatUiInteger(selected.VariantDevelopmentStartedYear));
         DrawParameterValueRow("Approved Year", FormatApprovedYear(selected.ApprovedYear));
+        if (TryResolveResearchTimeMonthsFromResearchBoard(ResearchSubjectType.Engine, selected.ResearchId, out var engineResearchTimeMonths))
+        {
+            DrawParameterValueRow("Research Time (months)", FormatUiInteger(engineResearchTimeMonths));
+        }
         DrawParameterValueRow("Definition", $"{selected.Definition.DisplayName} ({selected.Definition.EngineType})");
         DrawParameterValueRow("Engine Type", selected.Definition.EngineType.ToString());
         if (IsJetFamily(selected.Definition.EngineType))
@@ -5529,6 +5568,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawParameterValueRow("Development Start Year", FormatUiInteger(selected.DevelopmentStartedYear));
         DrawParameterValueRow("Current Variant Start Year", FormatUiInteger(selected.VariantDevelopmentStartedYear));
         DrawParameterValueRow("Approved Year", FormatApprovedYear(selected.ApprovedYear));
+        if (TryResolveResearchTimeMonthsFromResearchBoard(ResearchSubjectType.AircraftType, selected.TypeResearchId, out var typeResearchTimeMonths))
+        {
+            DrawParameterValueRow("Research Time (months)", FormatUiInteger(typeResearchTimeMonths));
+        }
         DrawParameterValueRow("Category", category);
         DrawParameterValueRow(
             "Engine",
