@@ -8,21 +8,21 @@ namespace WrightTycoon.Core.Balance;
 public static class ContractBalance
 {
     public const int MinContractsPerMonth = 1;
-    public const int MaxContractsPerMonth = 5;
-    public const int MinQuantityUnits = 5;
+    public const int MaxContractsPerMonth = 6;
+    public const int MinQuantityUnits = 20;
     public const int MaxQuantityUnits = 500;
     public const double SmallOrderShare = 0.75d;
-    public const int SmallOrderMinQuantityUnits = 5;
+    public const int SmallOrderMinQuantityUnits = 20;
     public const int SmallOrderMaxQuantityUnits = 99;
     public const int LargeOrderMinQuantityUnits = 100;
     public const int LargeOrderMaxQuantityUnits = 500;
     public const int MinDeadlineMonths = 6;
     public const int MaxDeadlineMonths = 36;
 
-    public const double MinReliability = 0.72d;
-    public const double MaxReliability = 0.985d;
+    public const double MinReliability = 0.65d;
+    public const double MaxReliability = 0.9d;
     public const double MinRangeKilometers = 320d;
-    public const double MaxRangeKilometers = 7200d;
+    public const double MaxRangeKilometers = 7000d;
     public const double MinSpeedMetersPerSecond = 55d;
     public const double MaxSpeedMetersPerSecond = 220d;
     public const double MinPayloadKilograms = 250d;
@@ -74,8 +74,8 @@ public static class ContractBalance
     public const int PricingEstimatedEngineCountMax = 4;
 
     public const double PricingMinimumUnitCostFloor = 25000d;
-    public const double SmallOrderContractMarkup = 0.25d;
-    public const double LargeOrderContractMarkup = 0.20d;
+    public const double SmallOrderContractMarkup = 0.30d;
+    public const double LargeOrderContractMarkup = 0.25d;
     public const double CampaignAdjustedMarkupFloor = 0.02d;
     public const int CampaignWeightedCategoryPoolBaseCopies = 4;
     public const int CampaignWeightedCategoryPoolMinimumCopies = 1;

@@ -52,7 +52,7 @@ public static class PlaneDesignerBalance
         public const double StructuralAreaScaleMax = 40d;
 
         public const double WingMassExponent = 1.44d;
-        public const double WingMassCoefficient = 5.2d;
+        public const double WingMassCoefficient = 5d;
         public const double WingReinforcementMassBaseShare = 0.07d;
         public const double WingReinforcementMassExponent = 1.7d;
         public const double WingSystemsMassBasePerSquareMeter = 1.18d;
@@ -62,12 +62,12 @@ public static class PlaneDesignerBalance
         public const double AerodynamicCleanlinessManDaysBaseShare = 0.65d;
 
         public const double AircraftLengthBaseMeters = 3.5d;
-        public const double AircraftLengthWingAreaScale = 0.70d;
+        public const double AircraftLengthWingAreaScale = 0.80d;
         public const double AircraftLengthWingAreaExponent = 0.46d;
         public const double AircraftLengthWeightScale = 1.35d;
         public const double AircraftLengthWeightExponent = 0.31d;
         public const double AircraftLengthMinMeters = 4d;
-        public const double AircraftLengthMaxMeters = 95d;
+        public const double AircraftLengthMaxMeters = 150d;
         public const double AircraftLengthWingStretchReferenceArea = 30d;
         public const double AircraftLengthWingStretchExponent = 0.35d;
         public const double AircraftLengthWingStretchScale = 0.5d;
@@ -89,7 +89,7 @@ public static class PlaneDesignerBalance
         public const double FuelDensityKilogramsPerLiter = 0.72d;
         public const double GravityMetersPerSecondSquared = 9.80665d;
         public const double MinimumDragCoefficient = 0.010d;
-        public const double MaximumDragCoefficient = 0.15d;
+        public const double MaximumDragCoefficient = 0.19d;
         public const double SpeedCalculationMaximumDragCoefficient = 0.24d;
         public const double WingPositionSpeedDragFactorLow = 1d;
         public const double WingPositionSpeedDragFactorHigh = 1.1d;
@@ -114,7 +114,7 @@ public static class PlaneDesignerBalance
         public const double JetCruiseAltitudeMeters = 10000d;
         public const double PropCruiseAltitudeMeters = 5000d;
         public const double MinimumCruiseSpeedMetersPerSecond = 35d;
-        public const double ManeuverabilityWeightPenaltyPerKilogram = 0.0004d;
+        public const double ManeuverabilityWeightPenaltyPerKilogram = 0.00035d;
         public const double BodyFrontalAreaBaseSquareMeters = 0.8d;
         public const double BodyFrontalAreaWeightExponent = 0.55d;
         public const double BodyFrontalAreaWeightScale = 0.3d;
@@ -176,7 +176,7 @@ public static class PlaneDesignerBalance
             MaxCrew: 2,
             MinMaximumWeightKilograms: 0d,
             MaxMaximumWeightKilograms: 1200d,
-            MinRequiredSpeedKilometersPerHour: 0d,
+            MinRequiredSpeedKilometersPerHour: 80d,
             MaxRequiredSpeedKilometersPerHour: 150d,
             MinRequiredRangeKilometers: 100d,
             MaxRequiredRangeKilometers: 1000d,
@@ -195,7 +195,7 @@ public static class PlaneDesignerBalance
             MaxCrew: 2,
             MinMaximumWeightKilograms: 0d,
             MaxMaximumWeightKilograms: 6000d,
-            MinRequiredSpeedKilometersPerHour: 0d,
+            MinRequiredSpeedKilometersPerHour: 120d,
             MaxRequiredSpeedKilometersPerHour: 300d,
             MinRequiredRangeKilometers: 400d,
             MaxRequiredRangeKilometers: 1500d,
@@ -257,7 +257,7 @@ public static class PlaneDesignerBalance
             MinRequiredRangeKilometers: 3000d,
             MaxRequiredRangeKilometers: 10000d,
             MinRequiredPayloadKilograms: 10000d,
-            MaxRequiredPayloadKilograms: 50000d,
+            MaxRequiredPayloadKilograms: 45000d,
             MinRequiredManeuverability: 12d,
             MaxRequiredManeuverability: 34d,
             WeightModifierKilograms: 3000d,
@@ -276,7 +276,7 @@ public static class PlaneDesignerBalance
             MinRequiredRangeKilometers: 8000d,
             MaxRequiredRangeKilometers: 15000d,
             MinRequiredPayloadKilograms: 30000d,
-            MaxRequiredPayloadKilograms: 300000d,
+            MaxRequiredPayloadKilograms: 200000d,
             MinRequiredManeuverability: 4d,
             MaxRequiredManeuverability: 18d,
             WeightModifierKilograms: 5000d,
@@ -291,14 +291,14 @@ public static class PlaneDesignerBalance
             MinMaximumWeightKilograms: 4000d,
             MaxMaximumWeightKilograms: 60000d,
             MinRequiredSpeedKilometersPerHour: 150d,
-            MaxRequiredSpeedKilometersPerHour: 600d,
+            MaxRequiredSpeedKilometersPerHour: 550d,
             MinRequiredRangeKilometers: 500d,
             MaxRequiredRangeKilometers: 2500d,
             MinRequiredPayloadKilograms: 1500d,
-            MaxRequiredPayloadKilograms: 8000d,
+            MaxRequiredPayloadKilograms: 5000d,
             MinRequiredManeuverability: 20d,
             MaxRequiredManeuverability: 55d,
-            WeightModifierKilograms: 3000d,
+            WeightModifierKilograms: 2000d,
             SpeedModifierMetersPerSecond: -8d,
             ReliabilityModifierDelta: 0d,
             FuelConsumptionMultiplier: 0.92d),
@@ -314,10 +314,10 @@ public static class PlaneDesignerBalance
             MinRequiredRangeKilometers: 2500d,
             MaxRequiredRangeKilometers: 9000d,
             MinRequiredPayloadKilograms: 1500d,
-            MaxRequiredPayloadKilograms: 15000d,
+            MaxRequiredPayloadKilograms: 10000d,
             MinRequiredManeuverability: 24d,
             MaxRequiredManeuverability: 58d,
-            WeightModifierKilograms: 2000d,
+            WeightModifierKilograms: 1500d,
             SpeedModifierMetersPerSecond: 3d,
             ReliabilityModifierDelta: 0.1d,
             FuelConsumptionMultiplier: 0.8d),
@@ -348,9 +348,9 @@ public static class PlaneDesignerBalance
             MinMaximumWeightKilograms: 20000d,
             MaxMaximumWeightKilograms: 200000d,
             MinRequiredSpeedKilometersPerHour: 500d,
-            MaxRequiredSpeedKilometersPerHour: 900d,
+            MaxRequiredSpeedKilometersPerHour: 700d,
             MinRequiredRangeKilometers: 3000d,
-            MaxRequiredRangeKilometers: 10000d,
+            MaxRequiredRangeKilometers: 8000d,
             MinRequiredPayloadKilograms: 9000d,
             MaxRequiredPayloadKilograms: 200000d,
             MinRequiredManeuverability: 8d,
@@ -365,12 +365,12 @@ public static class PlaneDesignerBalance
     {
         public static readonly IReadOnlyList<YearlyBalancePoint> AirframeEfficiencyCurve = Array.AsReadOnly(new[]
         {
-            new YearlyBalancePoint(1946, 0.75d),
-            new YearlyBalancePoint(1955, 0.79d),
-            new YearlyBalancePoint(1965, 0.82d),
-            new YearlyBalancePoint(1975, 0.86d),
-            new YearlyBalancePoint(1985, 0.89d),
-            new YearlyBalancePoint(1995, 0.94d),
+            new YearlyBalancePoint(1946, 0.78d),
+            new YearlyBalancePoint(1955, 0.81d),
+            new YearlyBalancePoint(1965, 0.84d),
+            new YearlyBalancePoint(1975, 0.87d),
+            new YearlyBalancePoint(1985, 0.90d),
+            new YearlyBalancePoint(1995, 0.95d),
             new YearlyBalancePoint(2005, 0.97d),
             new YearlyBalancePoint(2015, 0.995d),
             new YearlyBalancePoint(2020, 1.0d),
@@ -378,8 +378,8 @@ public static class PlaneDesignerBalance
 
         public static readonly IReadOnlyList<YearlyBalancePoint> AerodynamicsEfficiencyCurve = Array.AsReadOnly(new[]
         {
-            new YearlyBalancePoint(1946, 0.76d),
-            new YearlyBalancePoint(1955, 0.80d),
+            new YearlyBalancePoint(1946, 0.78d),
+            new YearlyBalancePoint(1955, 0.81d),
             new YearlyBalancePoint(1965, 0.84d),
             new YearlyBalancePoint(1975, 0.88d),
             new YearlyBalancePoint(1985, 0.91d),

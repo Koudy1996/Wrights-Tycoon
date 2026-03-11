@@ -9,14 +9,14 @@ public static class EngineDesignerBalance
     public static class Engine
     {
         public const double MinimumReliability = 0.3d;
-        public const double MaximumReliability = 0.995d;
+        public const double MaximumReliability = 0.9d;
 
         public const int PistonCylinderMin = 2;
         public const int PistonCylinderMax = 48;
         public const int InlineCylinderMax = 8;
         public const double PistonCompressionMin = 3d;
         public const double PistonCompressionMax = 12d;
-        public const double PistonOptimizationMin = 1000d;
+        public const double PistonOptimizationMin = 0d;
         public const double PistonOptimizationMax = 10000d;
         public const double PistonSpeedMinRpm = 500d;
         public const double PistonSpeedMaxRpm = 7000d;
@@ -28,7 +28,7 @@ public static class EngineDesignerBalance
         public const double EfficiencyOptimizationFuelBurnReductionAtMax = 0.30d;
 
         public const double JetCompressionMin = 5d;
-        public const double JetCompressionMax = 70d;
+        public const double JetCompressionMax = 50d;
         public const double JetTurbineDiameterMinMeters = 0.05d;
         public const double JetTurbineDiameterMaxMeters = 4.0d;
         public const double JetBypassRatioMin = 0.1d;
@@ -98,8 +98,8 @@ public static class EngineDesignerBalance
         public const double TurboBoostPistonReliabilityPenalty = 0.06d;
         public const double SuperchargerBoostPistonReliabilityPenalty = 0.045d;
 
-        public const double CarburetorPowerFactor = 0.93d;
-        public const double CarburetorCostDiscount = 4200d;
+        public const double CarburetorPowerFactor = 0.88d;
+        public const double CarburetorCostDiscount = 6200d;
         public const double CarburetorProductionManDayDiscount = 6d;
 
         public const double PistonDerivedDiameterBaseMeters = 0.22d;
@@ -126,8 +126,8 @@ public static class EngineDesignerBalance
         public const double EngineLengthMinMeters = 0.4d;
         public const double EngineLengthMaxMeters = 12d;
 
-        public const double EngineFrontalAreaCompressionScale = 0.006d;
-        public const double EngineFrontalAreaCoolingScale = 0.2d;
+        public const double EngineFrontalAreaCompressionScale = 0.009d;
+        public const double EngineFrontalAreaCoolingScale = 0.22d;
         public const double EngineFrontalAreaTurboBoostFactor = 0.12d;
         public const double EngineFrontalAreaSuperchargerBoostFactor = 0.08d;
         public const double EngineFrontalAreaMinSquareMeters = 0.04d;
@@ -159,12 +159,12 @@ public static class EngineDesignerBalance
     {
         public static readonly IReadOnlyList<YearlyBalancePoint> PistonEnginePerformanceCurve = Array.AsReadOnly(new[]
         {
-            new YearlyBalancePoint(1946, 0.80d),
-            new YearlyBalancePoint(1955, 0.83d),
-            new YearlyBalancePoint(1965, 0.86d),
-            new YearlyBalancePoint(1975, 0.91d),
-            new YearlyBalancePoint(1985, 0.93d),
-            new YearlyBalancePoint(1995, 0.94d),
+            new YearlyBalancePoint(1946, 0.85d),
+            new YearlyBalancePoint(1955, 0.88d),
+            new YearlyBalancePoint(1965, 0.91d),
+            new YearlyBalancePoint(1975, 0.93d),
+            new YearlyBalancePoint(1985, 0.94d),
+            new YearlyBalancePoint(1995, 0.96d),
             new YearlyBalancePoint(2005, 0.975d),
             new YearlyBalancePoint(2015, 0.995d),
             new YearlyBalancePoint(2020, 1.0d),
