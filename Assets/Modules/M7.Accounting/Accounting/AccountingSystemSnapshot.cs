@@ -7,6 +7,8 @@ public sealed class AccountingSystemSnapshot
     public double Cash { get; set; }
 
     public List<AccountingMonthSnapshot> Months { get; set; } = new();
+
+    public List<AccountingTransactionSnapshot> Transactions { get; set; } = new();
 }
 
 public sealed class AccountingMonthSnapshot
@@ -28,4 +30,21 @@ public sealed class AccountingMonthSnapshot
     public List<InventoryValueEntry> InventoryEntries { get; set; } = new();
 
     public double InventoryValue { get; set; }
+}
+
+public sealed class AccountingTransactionSnapshot
+{
+    public int Sequence { get; set; }
+
+    public int MonthIndex { get; set; }
+
+    public int Year { get; set; }
+
+    public int Month { get; set; }
+
+    public string Description { get; set; } = string.Empty;
+
+    public double Amount { get; set; }
+
+    public double CashAfterTransaction { get; set; }
 }

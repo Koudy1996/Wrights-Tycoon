@@ -50,7 +50,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private readonly int[] _engineCountOptions = { 1, 2, 3, 4, 5, 6 };
     private readonly string[] _tabs = { "Engine Designer", "Airframe + Type Designer", "My machines", "Research", "Demand", "Factory", "Contracts", "Government Contracts", "Finance" };
-    private readonly string[] _financeSubTabs = { "Income / Expense", "Last Month Details" };
+    private readonly string[] _financeSubTabs = { "Income / Expense", "Last Month Details", "Transactions" };
     private readonly string[] _researchSubTabs = { "Current Research", "For Approval" };
     private readonly string[] _myMachinesSubTabs = { "Engines", "Families + Types" };
     private readonly IsaAtmosphereModel _atmosphereModel = new();
@@ -3490,7 +3490,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                             _elapsedMonths,
                             _currentDate,
                             contractIncomeToBook,
-                            inventoryByDesign);
+                            inventoryByDesign,
+                            $"Contract delivery income: {contractToDeliver.Id}");
                     }
                 }
             }
@@ -3870,7 +3871,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                                     _elapsedMonths,
                                     _currentDate,
                                     acceptance.UpfrontFundingGranted,
-                                    inventoryByDesign);
+                                    inventoryByDesign,
+                                    $"Government upfront funding: {activeContract.ContractId}");
                                 _governmentContractActionMessage =
                                     $"{acceptance.Message} Revenue booked: {FormatCurrency(acceptance.UpfrontFundingGranted)}.";
                             }
@@ -5169,6 +5171,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label("Track cash, monthly fixed/variable costs (including R&D), income, inventory value and profit/loss.");
         DrawMetric("Current Cash", _accountingSystem.Cash, "0.00");
         DrawMetric("Recorded Months", _accountingSystem.GetHistory().Count, "0");
+        DrawMetric("Recorded Transactions", _accountingSystem.GetTransactions().Count, "0");
 
         _financeSubTab = Mathf.Clamp(_financeSubTab, 0, _financeSubTabs.Length - 1);
         _financeSubTab = GUILayout.Toolbar(_financeSubTab, _financeSubTabs, GUILayout.Height(30f));
@@ -5184,19 +5187,33 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         var history = _accountingSystem.GetHistory();
+        var transactions = _accountingSystem.GetTransactions();
         DrawMetric("Cash", _accountingSystem.Cash, "0.00");
-
-        if (history.Count == 0)
-        {
-            GUILayout.Label("No financial history yet. Press Next Month to process production costs.");
-            return;
-        }
 
         _financeSubTab = Mathf.Clamp(_financeSubTab, 0, _financeSubTabs.Length - 1);
         if (_financeSubTab == 0)
         {
+            if (history.Count == 0)
+            {
+                GUILayout.Label("No financial history yet. Press Next Month to process production costs.");
+                return;
+            }
+
             DrawSection("Income / Expense Timeline");
             DrawIncomeExpenseTimelineChart(history);
+            return;
+        }
+
+        if (_financeSubTab == 2)
+        {
+            DrawSection("Transactions");
+            DrawFinanceTransactionsReport(transactions);
+            return;
+        }
+
+        if (history.Count == 0)
+        {
+            GUILayout.Label("No financial history yet. Press Next Month to process production costs.");
             return;
         }
 
@@ -5234,6 +5251,26 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 GUILayout.Label($"Unit {FormatCurrency(inventoryItem.UnitCost)} | Total {FormatCurrency(inventoryItem.TotalValue)}");
                 GUILayout.EndHorizontal();
             }
+        }
+    }
+
+    private void DrawFinanceTransactionsReport(IReadOnlyList<AccountingTransactionEntry> transactions)
+    {
+        if (transactions.Count == 0)
+        {
+            GUILayout.Label("No transactions recorded yet.");
+            return;
+        }
+
+        for (var index = transactions.Count - 1; index >= 0; index--)
+        {
+            var transaction = transactions[index];
+            GUILayout.BeginHorizontal(GUI.skin.box);
+            GUILayout.Label(FormatSimulationDate(transaction.Date), GUILayout.Width(145f));
+            GUILayout.Label(transaction.Description, GUILayout.Width(360f));
+            DrawSignedCurrencyInline($"Amount: {FormatCurrency(transaction.Amount)}", transaction.Amount, 210f);
+            GUILayout.Label($"Cash: {FormatCurrency(transaction.CashAfterTransaction)}");
+            GUILayout.EndHorizontal();
         }
     }
 
@@ -6736,27 +6773,42 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 var deliveryContractBefore = _governmentContractBoard.ActiveDeliveryContract;
                 var deliveryUpdate = _governmentContractBoard.ProcessDeliveryFromInventory(_currentDate, _governmentInventoryGateway);
 
-                var bookedIncome = 0d;
+                var deliveryIncome = 0d;
                 if (deliveryContractBefore is not null && deliveryUpdate.DeliveredUnitsThisMonth > 0)
                 {
-                    bookedIncome += deliveryUpdate.DeliveredUnitsThisMonth * deliveryContractBefore.UnitPrice;
+                    deliveryIncome = deliveryUpdate.DeliveredUnitsThisMonth * deliveryContractBefore.UnitPrice;
                 }
 
-                if (deliveryUpdate.CompletionBonusGranted > 0d)
-                {
-                    bookedIncome += deliveryUpdate.CompletionBonusGranted;
-                }
+                var completionBonusIncome = deliveryUpdate.CompletionBonusGranted > 0d
+                    ? deliveryUpdate.CompletionBonusGranted
+                    : 0d;
+                var bookedIncome = deliveryIncome + completionBonusIncome;
 
                 if (_accountingSystem is not null && bookedIncome > 0d)
                 {
                     var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
                         _productionFactory.WarehouseUnitsByDesign,
                         fullCatalog);
-                    _accountingSystem.RegisterContractIncome(
-                        _elapsedMonths,
-                        _currentDate,
-                        bookedIncome,
-                        inventoryByDesign);
+                    if (deliveryIncome > 0d)
+                    {
+                        _accountingSystem.RegisterContractIncome(
+                            _elapsedMonths,
+                            _currentDate,
+                            deliveryIncome,
+                            inventoryByDesign,
+                            $"Government delivery income: {deliveryContractBefore?.DeliveryId ?? "delivery"}");
+                    }
+
+                    if (completionBonusIncome > 0d)
+                    {
+                        _accountingSystem.RegisterContractIncome(
+                            _elapsedMonths,
+                            _currentDate,
+                            completionBonusIncome,
+                            inventoryByDesign,
+                            $"Government completion bonus: {deliveryContractBefore?.DeliveryId ?? "delivery"}");
+                    }
+
                     _governmentDeliveryActionMessage = $"{deliveryUpdate.Message} Revenue booked: {FormatCurrency(bookedIncome)}.";
                 }
                 else if (deliveryContractBefore is not null

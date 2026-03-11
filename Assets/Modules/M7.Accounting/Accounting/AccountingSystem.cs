@@ -8,6 +8,8 @@ namespace WrightTycoon.Core.Accounting;
 public sealed class AccountingSystem
 {
     private readonly Dictionary<int, MonthlyAccumulator> _monthAccumulators = new();
+    private readonly List<AccountingTransactionEntry> _transactions = new();
+    private int _nextTransactionSequence = 1;
 
     public AccountingSystem(double startingCash)
     {
@@ -16,6 +18,8 @@ public sealed class AccountingSystem
     }
 
     public double Cash { get; private set; }
+
+    public IReadOnlyList<AccountingTransactionEntry> GetTransactions() => _transactions.AsReadOnly();
 
     public IReadOnlyList<MonthlyAccountingSnapshot> GetHistory()
     {
@@ -79,6 +83,23 @@ public sealed class AccountingSystem
         }
 
         snapshot.Months.Sort(static (left, right) => left.MonthIndex.CompareTo(right.MonthIndex));
+
+        for (var index = 0; index < _transactions.Count; index++)
+        {
+            var transaction = _transactions[index];
+            snapshot.Transactions.Add(new AccountingTransactionSnapshot
+            {
+                Sequence = transaction.Sequence,
+                MonthIndex = transaction.MonthIndex,
+                Year = transaction.Date.Year,
+                Month = transaction.Date.Month,
+                Description = transaction.Description,
+                Amount = transaction.Amount,
+                CashAfterTransaction = transaction.CashAfterTransaction,
+            });
+        }
+
+        snapshot.Transactions.Sort(static (left, right) => left.Sequence.CompareTo(right.Sequence));
         return snapshot;
     }
 
@@ -92,6 +113,8 @@ public sealed class AccountingSystem
         Numeric.ThrowIfNotFinite(snapshot.Cash, nameof(snapshot.Cash));
 
         _monthAccumulators.Clear();
+        _transactions.Clear();
+        _nextTransactionSequence = 1;
 
         if (snapshot.Months is not null)
         {
@@ -141,6 +164,45 @@ public sealed class AccountingSystem
             }
         }
 
+        if (snapshot.Transactions is not null)
+        {
+            for (var index = 0; index < snapshot.Transactions.Count; index++)
+            {
+                var transaction = snapshot.Transactions[index];
+                if (transaction is null)
+                {
+                    continue;
+                }
+
+                if (transaction.Sequence <= 0 || transaction.MonthIndex < 0 || string.IsNullOrWhiteSpace(transaction.Description))
+                {
+                    continue;
+                }
+
+                Numeric.ThrowIfNotFinite(transaction.Amount, nameof(snapshot.Transactions));
+                Numeric.ThrowIfNotFinite(transaction.CashAfterTransaction, nameof(snapshot.Transactions));
+
+                var year = transaction.Year <= 0 ? 1 : transaction.Year;
+                var month = transaction.Month < 1 ? 1 : transaction.Month > 12 ? 12 : transaction.Month;
+                var date = new SimulationDate(year, month);
+
+                _transactions.Add(new AccountingTransactionEntry(
+                    transaction.Sequence,
+                    transaction.MonthIndex,
+                    date,
+                    transaction.Description.Trim(),
+                    transaction.Amount,
+                    transaction.CashAfterTransaction));
+
+                if (transaction.Sequence >= _nextTransactionSequence)
+                {
+                    _nextTransactionSequence = transaction.Sequence + 1;
+                }
+            }
+
+            _transactions.Sort(static (left, right) => left.Sequence.CompareTo(right.Sequence));
+        }
+
         Cash = snapshot.Cash;
     }
 
@@ -169,13 +231,17 @@ public sealed class AccountingSystem
 
         if (accumulator.HasFactoryCostsBooked)
         {
-            Cash += accumulator.Costs.TotalCosts;
+            AppendTransaction(
+                monthIndex,
+                date,
+                "Factory cost reversal (rebook).",
+                accumulator.Costs.TotalCosts);
         }
 
         accumulator.Costs = costs;
         accumulator.HasFactoryCostsBooked = true;
 
-        Cash -= costs.TotalCosts;
+        ApplyFactoryCostTransactions(monthIndex, date, costs);
 
         accumulator.SetInventory(inventoryByDesign);
         accumulator.CashAfterTransactions = Cash;
@@ -185,7 +251,8 @@ public sealed class AccountingSystem
         int monthIndex,
         SimulationDate date,
         double income,
-        IReadOnlyDictionary<string, InventoryValueEntry> inventoryByDesign)
+        IReadOnlyDictionary<string, InventoryValueEntry> inventoryByDesign,
+        string description = "Contract income.")
     {
         if (monthIndex < 0)
         {
@@ -203,12 +270,56 @@ public sealed class AccountingSystem
             throw new ArgumentNullException(nameof(inventoryByDesign));
         }
 
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Income description cannot be empty.", nameof(description));
+        }
+
         var accumulator = GetOrCreateAccumulator(monthIndex, date);
         accumulator.Income += income;
         accumulator.SetInventory(inventoryByDesign);
 
-        Cash += income;
+        AppendTransaction(monthIndex, date, description.Trim(), income);
         accumulator.CashAfterTransactions = Cash;
+    }
+
+    private void ApplyFactoryCostTransactions(int monthIndex, SimulationDate date, AccountingCostBreakdown costs)
+    {
+        ApplyCostComponentTransaction(monthIndex, date, "Factory fixed costs - production lines.", costs.FixedProductionLineExpenses);
+        ApplyCostComponentTransaction(monthIndex, date, "Factory variable costs - engine staff.", costs.VariableEngineStaffExpenses);
+        ApplyCostComponentTransaction(monthIndex, date, "Factory variable costs - engine build.", costs.VariableEngineBuildExpenses);
+        ApplyCostComponentTransaction(monthIndex, date, "Factory variable costs - aircraft staff.", costs.VariablePlaneStaffExpenses);
+        ApplyCostComponentTransaction(monthIndex, date, "Factory variable costs - aircraft build.", costs.VariablePlaneBuildExpenses);
+        ApplyCostComponentTransaction(monthIndex, date, "Factory variable costs - R&D.", costs.VariableResearchExpenses);
+    }
+
+    private void ApplyCostComponentTransaction(int monthIndex, SimulationDate date, string description, double amount)
+    {
+        Numeric.ThrowIfNotFinite(amount, nameof(amount));
+        if (amount <= 0d)
+        {
+            return;
+        }
+
+        AppendTransaction(monthIndex, date, description, -amount);
+    }
+
+    private void AppendTransaction(int monthIndex, SimulationDate date, string description, double amount)
+    {
+        Numeric.ThrowIfNotFinite(amount, nameof(amount));
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Transaction description cannot be empty.", nameof(description));
+        }
+
+        Cash += amount;
+        _transactions.Add(new AccountingTransactionEntry(
+            _nextTransactionSequence++,
+            monthIndex,
+            date,
+            description.Trim(),
+            amount,
+            Cash));
     }
 
     private MonthlyAccumulator GetOrCreateAccumulator(int monthIndex, SimulationDate date)
