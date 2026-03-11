@@ -65,7 +65,7 @@ public sealed class AircraftPerformanceCalculator
         var systemsMassKilograms = PlaneDesignerBalance.Performance.EmptyWeightBaseSystemsKilograms
             + (engineCount * PlaneDesignerBalance.Performance.EmptyWeightPerEngineSystemsKilograms)
             + (airframe.Parameters.CrewCount * PlaneDesignerBalance.Performance.EmptyWeightPerCrewSystemsKilograms);
-        systemsMassKilograms *= CalculateUltralightSystemsMassFactor(engine, airframe);
+        systemsMassKilograms *= CalculateSmallAircraftSystemsMassFactor(engine, airframe);
 
         // Category weight modifiers can be negative (for very light categories), so do not clamp.
         var categoryStructuralMassKilograms = categoryProfile.WeightModifierKilograms;
@@ -403,37 +403,40 @@ public sealed class AircraftPerformanceCalculator
         return Numeric.Clamp(overall, 0.2d, 0.995d);
     }
 
-    private static double CalculateUltralightSystemsMassFactor(Engine engine, Airframe airframe)
+    private static double CalculateSmallAircraftSystemsMassFactor(Engine engine, Airframe airframe)
     {
         if (engine.Performance.OutputKind != EngineOutputKind.PowerKilowatts)
         {
             return 1d;
         }
 
-        if (airframe.Parameters.EngineCount != 1
-            || airframe.Parameters.MaterialType != MaterialType.WoodFabric
-            || airframe.Parameters.StructureType != StructureType.Truss)
-        {
-            return 1d;
-        }
-
         var seaLevelPowerKilowatts = engine.Performance.GetPerformanceAtAltitude(0d).Output;
-        if (seaLevelPowerKilowatts > PlaneDesignerBalance.Performance.UltralightSystemsMassMaxPowerKilowatts)
+        var powerBlend = CalculateSmallAircraftBlend(
+            seaLevelPowerKilowatts,
+            PlaneDesignerBalance.Performance.SmallAircraftSystemsMassReferencePowerKilowatts,
+            PlaneDesignerBalance.Performance.SmallAircraftSystemsMassFullScalePowerKilowatts);
+        var wingBlend = CalculateSmallAircraftBlend(
+            airframe.Parameters.WingAreaSquareMeters,
+            PlaneDesignerBalance.Performance.SmallAircraftSystemsMassReferenceWingAreaSquareMeters,
+            PlaneDesignerBalance.Performance.SmallAircraftSystemsMassFullScaleWingAreaSquareMeters);
+        var crewBlend = CalculateSmallAircraftBlend(
+            airframe.Parameters.CrewCount,
+            PlaneDesignerBalance.Performance.SmallAircraftSystemsMassReferenceCrew,
+            PlaneDesignerBalance.Performance.SmallAircraftSystemsMassFullScaleCrew);
+        var blend = System.Math.Max(powerBlend, System.Math.Max(wingBlend, crewBlend));
+        var minimumFactor = Numeric.Clamp(PlaneDesignerBalance.Performance.SmallAircraftSystemsMassMinimumFactor, 0.05d, 1d);
+        return Numeric.Clamp(Lerp(minimumFactor, 1d, blend), minimumFactor, 1d);
+    }
+
+    private static double CalculateSmallAircraftBlend(double value, double referenceValue, double fullScaleValue)
+    {
+        if (value <= referenceValue)
         {
-            return 1d;
+            return 0d;
         }
 
-        if (airframe.Parameters.WingAreaSquareMeters > PlaneDesignerBalance.Performance.UltralightSystemsMassMaxWingAreaSquareMeters)
-        {
-            return 1d;
-        }
-
-        if (airframe.Parameters.CrewCount > PlaneDesignerBalance.Performance.UltralightSystemsMassMaxCrew)
-        {
-            return 1d;
-        }
-
-        return Numeric.Clamp(PlaneDesignerBalance.Performance.UltralightSystemsMassFactorAt50Kilowatts, 0.05d, 1d);
+        var range = System.Math.Max(fullScaleValue - referenceValue, Numeric.Epsilon);
+        return Numeric.Clamp((value - referenceValue) / range, 0d, 1d);
     }
 
     private static double GetMaximumSpeedKilometersPerHour(IReadOnlyList<AircraftPerformancePoint> speedPoints)

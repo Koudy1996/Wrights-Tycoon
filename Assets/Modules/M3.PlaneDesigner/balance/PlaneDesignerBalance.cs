@@ -37,7 +37,7 @@ public static class PlaneDesignerBalance
         public const double WingPositionMassFactorBiplane = 0.75d;
         public const double WingPositionDragDeltaLow = 0d;
         public const double WingPositionDragDeltaHigh = 0.006d;
-        public const double WingPositionDragDeltaBiplane = 0.05d;
+        public const double WingPositionDragDeltaBiplane = 0.015d;
         public const double AerodynamicCleanlinessMinPercent = 0d;
         public const double AerodynamicCleanlinessMaxPercent = 20d;
         public const double RunwayShortLengthMeters = 500d;
@@ -93,7 +93,7 @@ public static class PlaneDesignerBalance
         public const double SpeedCalculationMaximumDragCoefficient = 0.24d;
         public const double WingPositionSpeedDragFactorLow = 1d;
         public const double WingPositionSpeedDragFactorHigh = 1.1d;
-        public const double WingPositionSpeedDragFactorBiplane = 1.35d;
+        public const double WingPositionSpeedDragFactorBiplane = 1.12d;
         public const double DeltaWingHighSpeedDragReductionStartKilometersPerHour = 500d;
         public const double DeltaWingHighSpeedDragReductionEndKilometersPerHour = 2000d;
         public const double DeltaWingHighSpeedDragReductionMaxRatio = 0.30d;
@@ -123,10 +123,13 @@ public static class PlaneDesignerBalance
         public const double BodyFrontalAreaMinSquareMeters = 0.5d;
         public const double BodyFrontalAreaMaxSquareMeters = 180d;
         public const double MultiEngineReliabilityPenaltyFactor = 0.55d;
-        public const double UltralightSystemsMassFactorAt50Kilowatts = 0.33d;
-        public const double UltralightSystemsMassMaxPowerKilowatts = 5d;
-        public const double UltralightSystemsMassMaxWingAreaSquareMeters = 3d;
-        public const int UltralightSystemsMassMaxCrew = 1;
+        public const double SmallAircraftSystemsMassMinimumFactor = 0.15d;
+        public const double SmallAircraftSystemsMassReferencePowerKilowatts = 60d;
+        public const double SmallAircraftSystemsMassReferenceWingAreaSquareMeters = 10d;
+        public const int SmallAircraftSystemsMassReferenceCrew = 1;
+        public const double SmallAircraftSystemsMassFullScalePowerKilowatts = 240d;
+        public const double SmallAircraftSystemsMassFullScaleWingAreaSquareMeters = 60d;
+        public const int SmallAircraftSystemsMassFullScaleCrew = 4;
 
         public static readonly IReadOnlyList<SpeedWeightFactorPoint> SpeedWeightFactorCurve = Array.AsReadOnly(new[]
         {
@@ -180,7 +183,7 @@ public static class PlaneDesignerBalance
             MinRequiredPayloadKilograms: 50d,
             MaxRequiredPayloadKilograms: 350d,
             WeightModifierKilograms: -350d,
-            SpeedModifierMetersPerSecond: -14d,
+            SpeedModifierMetersPerSecond: 0d,
             ReliabilityModifierDelta: 0d,
             FuelConsumptionMultiplier: 1.02d),
         new AircraftCategoryBalanceEntry(

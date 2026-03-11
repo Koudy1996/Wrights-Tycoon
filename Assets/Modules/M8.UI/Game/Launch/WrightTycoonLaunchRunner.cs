@@ -40,8 +40,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const double TypeWingAreaMaxSquareMeters = 1000d;
 
     [Header("Default Definition IDs")]
-    [SerializeField] private string _engineDefinitionId = "eng.radial.main";
-    [SerializeField] private string _airframeDefinitionId = "air.medium.main";
+    [SerializeField] private string _engineDefinitionId = "eng.piston.sport";
+    [SerializeField] private string _airframeDefinitionId = "air.sport.light";
 
     [Header("Family Defaults")]
     [SerializeField] private int _defaultEngineCount = 1;
@@ -506,9 +506,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void ResetRuntimeStateForNewGame(SimulationDate? startDate = null)
     {
+        _selectedAircraftCategory = AircraftCategory.LightSportAndRecreational;
         _selectedEngineDefinitionIndex = FindIndexById(_engineDefinitions.Select(d => d.Id).ToArray(), _engineDefinitionId);
         _selectedAirframeDefinitionIndex = FindIndexById(_airframeDefinitions.Select(d => d.Id).ToArray(), _airframeDefinitionId);
         _lockedEngineCount = NormalizeEngineCount(_defaultEngineCount);
+        _lockedStructure = StructureType.Truss;
+        _lockedMaterial = MaterialType.WoodFabric;
+        _familyAllowedEngineFamily = AircraftAllowedEngineFamily.Propeller;
         SyncEngineSelectorsFromDefinition(_engineDefinitions[_selectedEngineDefinitionIndex].EngineType);
 
         _engineParameters = CreateDefaultEngineParameters(_engineDefinitions[_selectedEngineDefinitionIndex]);
@@ -6328,8 +6332,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private void ResetFamilyConfig()
     {
         _lockedEngineCount = NormalizeEngineCount(_defaultEngineCount);
-        _lockedStructure = StructureType.Monocoque;
-        _lockedMaterial = MaterialType.Aluminum;
+        _lockedStructure = StructureType.Truss;
+        _lockedMaterial = MaterialType.WoodFabric;
         _familyAllowedEngineFamily = AircraftAllowedEngineFamily.Propeller;
         _baseAirframeParameters = CreateDefaultAirframeParameters(_lockedEngineCount);
     }
@@ -9145,18 +9149,23 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private static EngineParameters CreateDefaultEngineParameters(EngineDefinition definition)
     {
         var isJet = definition.EngineType is EngineType.Jet or EngineType.Turbojet or EngineType.Turbofan;
+        var isSportPistonCore = string.Equals(definition.Id, "eng.piston.sport", StringComparison.OrdinalIgnoreCase);
         return new EngineParameters
         {
-            DisplacementLiters = isJet ? 6d : 17d,
-            CylinderCount = isJet ? 12 : 12,
-            CompressionRatio = isJet ? 16d : 8.6d,
+            DisplacementLiters = isJet
+                ? 6d
+                : isSportPistonCore
+                    ? 2.4d
+                    : 17d,
+            CylinderCount = isJet ? 12 : isSportPistonCore ? 4 : 12,
+            CompressionRatio = isJet ? 16d : isSportPistonCore ? 7.2d : 8.6d,
             BoostType = BoostType.None,
-            PistonInjectionType = PistonInjectionType.DirectInjection,
-            OptimizationAltitudeMeters = isJet ? 3600d : 1800d,
+            PistonInjectionType = isSportPistonCore ? PistonInjectionType.Carburetor : PistonInjectionType.DirectInjection,
+            OptimizationAltitudeMeters = isJet ? 3600d : isSportPistonCore ? 1200d : 1800d,
             TurbineDiameterMeters = isJet ? 1.35d : 1d,
             BypassRatio = definition.EngineType == EngineType.Turbofan ? 4.2d : 0d,
-            MaximumSpeed = isJet ? 45000d : 2500d,
-            CoolingEfficiency = 0.77d,
+            MaximumSpeed = isJet ? 45000d : isSportPistonCore ? 1800d : 2500d,
+            CoolingEfficiency = isSportPistonCore ? 0.82d : 0.77d,
             EfficiencyOptimizationsPercent = EngineDesignerBalance.Engine.EfficiencyOptimizationMinPercent,
             HasAfterburner = false,
         };
@@ -9167,22 +9176,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return new AirframeParameters
         {
             EngineCount = engineCount,
-            StructureType = StructureType.Monocoque,
-            MaterialType = MaterialType.Aluminum,
-            WingPosition = WingPosition.Low,
+            StructureType = StructureType.Truss,
+            MaterialType = MaterialType.WoodFabric,
+            WingPosition = WingPosition.Biplane,
             WingShape = WingShape.Straight,
             WingProfile = WingProfileType.Standard,
-            WingAreaSquareMeters = 36d,
+            WingAreaSquareMeters = 9.8d,
             TailType = TailType.Classic,
-            FlapType = FlapType.Fowler,
+            FlapType = FlapType.Plain,
             HasLeadingEdgeFlaps = false,
             HasBackupSystems = false,
-            LandingGearType = LandingGearType.SemiRetractable,
-            RunwayType = RunwayType.Medium,
-            EngineCowling = 0.55d,
-            AerodynamicCleanlinessPercent = 0d,
-            FuelAmountLiters = 1500d,
-            CrewCount = 2,
+            LandingGearType = LandingGearType.Retractable,
+            RunwayType = RunwayType.Short,
+            EngineCowling = 0.9d,
+            AerodynamicCleanlinessPercent = 20d,
+            FuelAmountLiters = 100d,
+            CrewCount = 1,
         };
     }
 
