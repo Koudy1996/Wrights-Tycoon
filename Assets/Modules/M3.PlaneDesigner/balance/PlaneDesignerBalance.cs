@@ -122,7 +122,7 @@ public static class PlaneDesignerBalance
         public const double BodyFrontalAreaWingScale = 0.08d;
         public const double BodyFrontalAreaMinSquareMeters = 0.5d;
         public const double BodyFrontalAreaMaxSquareMeters = 180d;
-        public const double MultiEngineReliabilityPenaltyFactor = 0.55d;
+        public const double MultiEngineReliabilityPenaltyFactor = 0.20d;
         public const double SmallAircraftSystemsMassMinimumFactor = 0.15d;
         public const double SmallAircraftSystemsMassReferencePowerKilowatts = 60d;
         public const double SmallAircraftSystemsMassReferenceWingAreaSquareMeters = 10d;
