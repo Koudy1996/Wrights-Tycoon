@@ -5394,6 +5394,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label(BuildEngineDisplayName(savedEngine.Name, savedEngine.Definition.EngineType, savedEngine.Parameters));
             GUILayout.Label($"Research: {ResolveResearchStatusLabel(ResearchSubjectType.Engine, savedEngine.ResearchId)}");
             GUILayout.Label($"Approved Year: {FormatApprovedYear(savedEngine.ApprovedYear)}");
+            if (_engineBuilder is not null)
+            {
+                try
+                {
+                    var built = _engineBuilder.Build(savedEngine.Definition, savedEngine.Parameters.Clone());
+                    var outputAtSeaLevel = ResolveEngineOutputAtSeaLevel(built);
+                    var outputLabel = built.Performance.OutputKind == EngineOutputKind.PowerKilowatts
+                        ? "Engine Power @0m (kW)"
+                        : "Engine Thrust @0m (N)";
+                    GUILayout.Label($"{outputLabel}: {FormatUiNumber(outputAtSeaLevel, "0.0")}");
+                }
+                catch
+                {
+                    GUILayout.Label("Engine output @0m: N/A");
+                }
+            }
 
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Select", GUILayout.Width(90f), GUILayout.Height(24f)))
@@ -5548,6 +5564,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         try
         {
             var built = _engineBuilder.Build(selected.Definition, selected.Parameters.Clone());
+            var outputAtSeaLevel = ResolveEngineOutputAtSeaLevel(built);
+            if (built.Performance.OutputKind == EngineOutputKind.PowerKilowatts)
+            {
+                DrawParameterValueRow("Engine Power @0m (kW)", FormatUiNumber(outputAtSeaLevel, "0.0"));
+            }
+            else
+            {
+                DrawParameterValueRow("Engine Thrust @0m (N)", FormatUiNumber(outputAtSeaLevel, "0.0"));
+            }
+
             DrawParameterValueRow("Reliability", FormatUiNumber(built.Performance.Reliability, "0.000"));
             DrawParameterValueRow("Weight (kg)", FormatUiNumber(built.Performance.Weight.Kilograms, "0.0"));
             DrawParameterValueRow("Engine Length (m)", FormatUiNumber(built.Performance.EngineLengthMeters, "0.00"));
