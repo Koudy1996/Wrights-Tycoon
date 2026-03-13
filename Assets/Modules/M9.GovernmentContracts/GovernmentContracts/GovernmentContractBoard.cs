@@ -13,6 +13,7 @@ public sealed class GovernmentContractBoard
     private readonly IGovernmentContractPricingService _pricingService;
     private readonly List<GovernmentContract> _expiredContracts = new();
     private readonly List<GovernmentContract> _evaluatedContracts = new();
+    private readonly List<GovernmentDeliveryContract> _activeDeliveryContracts = new();
     private readonly List<GovernmentDeliveryContract> _closedDeliveryContracts = new();
     private int _contractSequence;
 
@@ -30,7 +31,12 @@ public sealed class GovernmentContractBoard
 
     public GovernmentContract? ActiveContract { get; private set; }
 
-    public GovernmentDeliveryContract? ActiveDeliveryContract { get; private set; }
+    public GovernmentDeliveryContract? ActiveDeliveryContract =>
+        _activeDeliveryContracts.Count == 0
+            ? null
+            : _activeDeliveryContracts[0];
+
+    public IReadOnlyList<GovernmentDeliveryContract> ActiveDeliveryContracts => _activeDeliveryContracts;
 
     public IReadOnlyList<GovernmentContract> ExpiredContracts => _expiredContracts;
 
@@ -73,20 +79,29 @@ public sealed class GovernmentContractBoard
             if (evaluationResult.IsSuccess)
             {
                 createdDeliveryContract = CreateDeliveryContract(evaluatedContract, evaluationResult, currentDate);
-                ActiveDeliveryContract = createdDeliveryContract;
+                _activeDeliveryContracts.Add(createdDeliveryContract);
                 events.Add($"Delivery contract created ({createdDeliveryContract.DeliveryId}) for {createdDeliveryContract.TotalUnitsRequired} units.");
+            }
+            else
+            {
+                events.Add($"Government contract failed evaluation ({evaluatedContract.ContractId}).");
             }
         }
 
-        if (ActiveDeliveryContract is not null
-            && ActiveDeliveryContract.Status == GovernmentDeliveryContractStatus.Active
-            && IsOnOrAfter(currentDate, ActiveDeliveryContract.EndsOn)
-            && ActiveDeliveryContract.RemainingUnits > 0)
+        for (var index = _activeDeliveryContracts.Count - 1; index >= 0; index--)
         {
-            ActiveDeliveryContract.MarkEnded(currentDate);
-            _closedDeliveryContracts.Add(ActiveDeliveryContract);
-            events.Add($"Delivery contract ended without full completion ({ActiveDeliveryContract.DeliveryId}).");
-            ActiveDeliveryContract = null;
+            var deliveryContract = _activeDeliveryContracts[index];
+            if (deliveryContract.Status != GovernmentDeliveryContractStatus.Active
+                || !IsOnOrAfter(currentDate, deliveryContract.EndsOn)
+                || deliveryContract.RemainingUnits <= 0)
+            {
+                continue;
+            }
+
+            deliveryContract.MarkEnded(currentDate);
+            _closedDeliveryContracts.Add(deliveryContract);
+            events.Add($"Delivery contract ended without full completion ({deliveryContract.DeliveryId}).");
+            _activeDeliveryContracts.RemoveAt(index);
         }
 
         if (currentDate.Month == 1 && ActiveContract is null)
@@ -183,7 +198,10 @@ public sealed class GovernmentContractBoard
                 compliance);
         }
 
-        var upfrontFunding = submission.Metrics.DevelopmentCost * GovernmentContractBalance.UpfrontFundingShare;
+        var eligibleDevelopmentPrice = submission.DevelopmentPriceBreakdown.TotalPrice > 0d
+            ? submission.DevelopmentPriceBreakdown.TotalPrice
+            : submission.Metrics.DevelopmentCost;
+        var upfrontFunding = eligibleDevelopmentPrice * GovernmentContractBalance.UpfrontFundingShare;
         ActiveContract.Accept(currentDate, submission, upfrontFunding);
 
         return new GovernmentContractAcceptanceResult(
@@ -202,86 +220,161 @@ public sealed class GovernmentContractBoard
             throw new ArgumentNullException(nameof(inventory));
         }
 
-        if (ActiveDeliveryContract is null || ActiveDeliveryContract.Status != GovernmentDeliveryContractStatus.Active)
+        var deliveryContract = ActiveDeliveryContract;
+        if (deliveryContract is null || deliveryContract.Status != GovernmentDeliveryContractStatus.Active)
         {
             return new GovernmentDeliveryProgressReport(false, 0, 0, 0, false, false, 0d, "No active government delivery contract.");
         }
 
-        if (IsOnOrAfter(currentDate, ActiveDeliveryContract.EndsOn) && ActiveDeliveryContract.RemainingUnits > 0)
-        {
-            ActiveDeliveryContract.MarkEnded(currentDate);
-            _closedDeliveryContracts.Add(ActiveDeliveryContract);
-            var endedContractId = ActiveDeliveryContract.DeliveryId;
-            ActiveDeliveryContract = null;
-            return new GovernmentDeliveryProgressReport(false, 0, 0, 0, false, true, 0d, $"Delivery contract '{endedContractId}' ended with incomplete delivery.");
-        }
-
-        var designId = ActiveDeliveryContract.AircraftDesignId;
-        var availableUnits = inventory.GetAvailableUnits(designId);
-        if (availableUnits <= 0)
+        var availableUnits = inventory.GetAvailableUnits(deliveryContract.AircraftDesignId);
+        var unitsToDeliver = System.Math.Min(availableUnits, deliveryContract.RemainingUnits);
+        if (unitsToDeliver <= 0)
         {
             return new GovernmentDeliveryProgressReport(
                 true,
                 0,
-                ActiveDeliveryContract.DeliveredUnits,
-                ActiveDeliveryContract.RemainingUnits,
+                deliveryContract.DeliveredUnits,
+                deliveryContract.RemainingUnits,
                 false,
                 false,
                 0d,
                 "No aircraft available in warehouse for automatic government delivery.");
         }
 
-        var unitsToConsume = System.Math.Min(availableUnits, ActiveDeliveryContract.RemainingUnits);
+        return DeliverFromInventory(currentDate, deliveryContract.DeliveryId, inventory, unitsToDeliver);
+    }
+
+    public bool TryGetActiveDeliveryContract(string deliveryId, out GovernmentDeliveryContract? contract)
+    {
+        contract = null;
+        if (string.IsNullOrWhiteSpace(deliveryId))
+        {
+            return false;
+        }
+
+        for (var index = 0; index < _activeDeliveryContracts.Count; index++)
+        {
+            var candidate = _activeDeliveryContracts[index];
+            if (!string.Equals(candidate.DeliveryId, deliveryId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            contract = candidate;
+            return true;
+        }
+
+        return false;
+    }
+
+    public GovernmentDeliveryProgressReport DeliverFromInventory(
+        SimulationDate currentDate,
+        string deliveryId,
+        IGovernmentContractInventoryGateway inventory,
+        int requestedUnits)
+    {
+        if (inventory is null)
+        {
+            throw new ArgumentNullException(nameof(inventory));
+        }
+
+        if (string.IsNullOrWhiteSpace(deliveryId))
+        {
+            return new GovernmentDeliveryProgressReport(false, 0, 0, 0, false, false, 0d, "Delivery id is required.");
+        }
+
+        if (!TryGetActiveDeliveryContract(deliveryId, out var activeDelivery) || activeDelivery is null)
+        {
+            return new GovernmentDeliveryProgressReport(false, 0, 0, 0, false, false, 0d, $"Delivery contract '{deliveryId}' was not found.");
+        }
+
+        if (activeDelivery.Status != GovernmentDeliveryContractStatus.Active)
+        {
+            return new GovernmentDeliveryProgressReport(false, 0, 0, 0, false, false, 0d, $"Delivery contract '{deliveryId}' is not active.");
+        }
+
+        if (IsOnOrAfter(currentDate, activeDelivery.EndsOn) && activeDelivery.RemainingUnits > 0)
+        {
+            activeDelivery.MarkEnded(currentDate);
+            _closedDeliveryContracts.Add(activeDelivery);
+            _activeDeliveryContracts.Remove(activeDelivery);
+            return new GovernmentDeliveryProgressReport(false, 0, 0, 0, false, true, 0d, $"Delivery contract '{deliveryId}' ended with incomplete delivery.");
+        }
+
+        if (requestedUnits <= 0)
+        {
+            return new GovernmentDeliveryProgressReport(
+                true,
+                0,
+                activeDelivery.DeliveredUnits,
+                activeDelivery.RemainingUnits,
+                false,
+                false,
+                0d,
+                "Requested delivery units must be greater than zero.");
+        }
+
+        var availableUnits = inventory.GetAvailableUnits(activeDelivery.AircraftDesignId);
+        if (availableUnits <= 0)
+        {
+            return new GovernmentDeliveryProgressReport(
+                true,
+                0,
+                activeDelivery.DeliveredUnits,
+                activeDelivery.RemainingUnits,
+                false,
+                false,
+                0d,
+                "No aircraft available in warehouse for delivery.");
+        }
+
+        var unitsToConsume = System.Math.Min(requestedUnits, System.Math.Min(availableUnits, activeDelivery.RemainingUnits));
         if (unitsToConsume <= 0)
         {
             return new GovernmentDeliveryProgressReport(
                 true,
                 0,
-                ActiveDeliveryContract.DeliveredUnits,
-                ActiveDeliveryContract.RemainingUnits,
+                activeDelivery.DeliveredUnits,
+                activeDelivery.RemainingUnits,
                 false,
                 false,
                 0d,
                 "Delivery contract is already satisfied.");
         }
 
-        if (!inventory.TryConsumeUnits(designId, unitsToConsume, out var consumeMessage))
+        if (!inventory.TryConsumeUnits(activeDelivery.AircraftDesignId, unitsToConsume, out var consumeMessage))
         {
             return new GovernmentDeliveryProgressReport(
                 true,
                 0,
-                ActiveDeliveryContract.DeliveredUnits,
-                ActiveDeliveryContract.RemainingUnits,
+                activeDelivery.DeliveredUnits,
+                activeDelivery.RemainingUnits,
                 false,
                 false,
                 0d,
                 $"Warehouse consumption failed: {consumeMessage}");
         }
 
-        var deliveredNow = ActiveDeliveryContract.RegisterDeliveredUnits(unitsToConsume, currentDate);
+        var deliveredNow = activeDelivery.RegisterDeliveredUnits(unitsToConsume, currentDate);
         var completionBonusGranted = 0d;
         var completedThisMonth = false;
-        if (ActiveDeliveryContract.Status == GovernmentDeliveryContractStatus.Completed)
+        if (activeDelivery.Status == GovernmentDeliveryContractStatus.Completed)
         {
             completedThisMonth = true;
-            if (!ActiveDeliveryContract.CompletionBonusGranted)
+            if (!activeDelivery.CompletionBonusGranted)
             {
                 completionBonusGranted = RoundCurrency(
-                    ActiveDeliveryContract.TotalContractValue * GovernmentContractBalance.DeliveryCompletionBonusShare);
-                ActiveDeliveryContract.MarkCompletionBonusGranted();
+                    activeDelivery.TotalContractValue * GovernmentContractBalance.DeliveryCompletionBonusShare);
+                activeDelivery.MarkCompletionBonusGranted();
             }
 
-            _closedDeliveryContracts.Add(ActiveDeliveryContract);
-            ActiveDeliveryContract = null;
+            _closedDeliveryContracts.Add(activeDelivery);
+            _activeDeliveryContracts.Remove(activeDelivery);
         }
 
-        var hasActiveAfterDelivery = ActiveDeliveryContract is not null && ActiveDeliveryContract.Status == GovernmentDeliveryContractStatus.Active;
-        var totalDelivered = hasActiveAfterDelivery
-            ? ActiveDeliveryContract!.DeliveredUnits
-            : 0;
-        var remainingUnits = hasActiveAfterDelivery
-            ? ActiveDeliveryContract!.RemainingUnits
-            : 0;
+        var hasActiveAfterDelivery = activeDelivery.Status == GovernmentDeliveryContractStatus.Active;
+        var totalDelivered = hasActiveAfterDelivery ? activeDelivery.DeliveredUnits : 0;
+        var remainingUnits = hasActiveAfterDelivery ? activeDelivery.RemainingUnits : 0;
 
         return new GovernmentDeliveryProgressReport(
             hasActiveAfterDelivery,
@@ -292,6 +385,86 @@ public sealed class GovernmentContractBoard
             false,
             completionBonusGranted,
             consumeMessage);
+    }
+
+    public GovernmentContractBoardSnapshot CreateSnapshot()
+    {
+        var snapshot = new GovernmentContractBoardSnapshot
+        {
+            ContractSequence = _contractSequence,
+            ActiveContract = ActiveContract is null ? null : CreateSnapshot(ActiveContract),
+        };
+
+        for (var index = 0; index < _expiredContracts.Count; index++)
+        {
+            snapshot.ExpiredContracts.Add(CreateSnapshot(_expiredContracts[index]));
+        }
+
+        for (var index = 0; index < _evaluatedContracts.Count; index++)
+        {
+            snapshot.EvaluatedContracts.Add(CreateSnapshot(_evaluatedContracts[index]));
+        }
+
+        for (var index = 0; index < _activeDeliveryContracts.Count; index++)
+        {
+            snapshot.ActiveDeliveryContracts.Add(CreateSnapshot(_activeDeliveryContracts[index]));
+        }
+
+        for (var index = 0; index < _closedDeliveryContracts.Count; index++)
+        {
+            snapshot.ClosedDeliveryContracts.Add(CreateSnapshot(_closedDeliveryContracts[index]));
+        }
+
+        return snapshot;
+    }
+
+    public void RestoreSnapshot(GovernmentContractBoardSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        _contractSequence = System.Math.Max(snapshot.ContractSequence, 0);
+        ActiveContract = snapshot.ActiveContract is null
+            ? null
+            : RestoreContract(snapshot.ActiveContract);
+
+        _expiredContracts.Clear();
+        if (snapshot.ExpiredContracts is not null)
+        {
+            for (var index = 0; index < snapshot.ExpiredContracts.Count; index++)
+            {
+                _expiredContracts.Add(RestoreContract(snapshot.ExpiredContracts[index]));
+            }
+        }
+
+        _evaluatedContracts.Clear();
+        if (snapshot.EvaluatedContracts is not null)
+        {
+            for (var index = 0; index < snapshot.EvaluatedContracts.Count; index++)
+            {
+                _evaluatedContracts.Add(RestoreContract(snapshot.EvaluatedContracts[index]));
+            }
+        }
+
+        _activeDeliveryContracts.Clear();
+        if (snapshot.ActiveDeliveryContracts is not null)
+        {
+            for (var index = 0; index < snapshot.ActiveDeliveryContracts.Count; index++)
+            {
+                _activeDeliveryContracts.Add(RestoreDeliveryContract(snapshot.ActiveDeliveryContracts[index]));
+            }
+        }
+
+        _closedDeliveryContracts.Clear();
+        if (snapshot.ClosedDeliveryContracts is not null)
+        {
+            for (var index = 0; index < snapshot.ClosedDeliveryContracts.Count; index++)
+            {
+                _closedDeliveryContracts.Add(RestoreDeliveryContract(snapshot.ClosedDeliveryContracts[index]));
+            }
+        }
     }
 
     private GovernmentContractEvaluationResult EvaluateAcceptedContract(
@@ -358,6 +531,363 @@ public sealed class GovernmentContractBoard
             totalUnits,
             quote.UnitPrice,
             quote.TotalContractValue);
+    }
+
+    private static GovernmentContractSnapshot CreateSnapshot(GovernmentContract contract)
+    {
+        var snapshot = new GovernmentContractSnapshot
+        {
+            ContractId = contract.ContractId,
+            GeneratedOnYear = contract.GeneratedOn.Year,
+            GeneratedOnMonth = contract.GeneratedOn.Month,
+            Status = contract.Status,
+            Requirements = CreateSnapshot(contract.Requirements),
+            UpfrontFundingGranted = contract.UpfrontFundingGranted,
+        };
+
+        if (contract.AcceptedOn.HasValue)
+        {
+            snapshot.AcceptedOnYear = contract.AcceptedOn.Value.Year;
+            snapshot.AcceptedOnMonth = contract.AcceptedOn.Value.Month;
+        }
+
+        if (contract.AcceptedSubmission is not null)
+        {
+            snapshot.AcceptedSubmission = CreateSnapshot(contract.AcceptedSubmission);
+        }
+
+        if (contract.EvaluationResult is not null)
+        {
+            snapshot.EvaluationResult = CreateSnapshot(contract.EvaluationResult);
+        }
+
+        return snapshot;
+    }
+
+    private static GovernmentContractRequirementsSnapshot CreateSnapshot(GovernmentContractRequirements requirements)
+    {
+        return new GovernmentContractRequirementsSnapshot
+        {
+            RequiredAircraftType = requirements.RequiredAircraftType,
+            SpeedAltitudeBand = requirements.SpeedAltitudeBand,
+            MinimumMaximumSpeedMetersPerSecond = requirements.MinimumMaximumSpeedMetersPerSecond,
+            MinimumRangeKilometers = requirements.MinimumRangeKilometers,
+            MinimumPayloadKilograms = requirements.MinimumPayloadKilograms,
+            MinimumReliability = requirements.MinimumReliability,
+            MinimumManeuverability = requirements.MinimumManeuverability,
+            MinimumCrewSize = requirements.MinimumCrewSize,
+            MaximumRequiredRunwayLengthMeters = requirements.MaximumRequiredRunwayLengthMeters,
+        };
+    }
+
+    private static GovernmentContractSubmissionCandidateSnapshot CreateSnapshot(GovernmentContractSubmissionCandidate submission)
+    {
+        return new GovernmentContractSubmissionCandidateSnapshot
+        {
+            DesignId = submission.DesignId,
+            DisplayName = submission.DisplayName,
+            LifecycleStage = submission.LifecycleStage,
+            Metrics = CreateSnapshot(submission.Metrics),
+            DevelopmentPriceBreakdown = CreateSnapshot(submission.DevelopmentPriceBreakdown),
+        };
+    }
+
+    private static GovernmentContractAircraftMetricsSnapshot CreateSnapshot(GovernmentContractAircraftMetrics metrics)
+    {
+        return new GovernmentContractAircraftMetricsSnapshot
+        {
+            AircraftType = metrics.AircraftType,
+            MaximumSpeedLowAltitudeMetersPerSecond = metrics.MaximumSpeedLowAltitudeMetersPerSecond,
+            MaximumSpeedMediumAltitudeMetersPerSecond = metrics.MaximumSpeedMediumAltitudeMetersPerSecond,
+            MaximumSpeedHighAltitudeMetersPerSecond = metrics.MaximumSpeedHighAltitudeMetersPerSecond,
+            RangeKilometers = metrics.RangeKilometers,
+            PayloadKilograms = metrics.PayloadKilograms,
+            Reliability = metrics.Reliability,
+            Maneuverability = metrics.Maneuverability,
+            CrewSize = metrics.CrewSize,
+            RequiredRunwayLengthMeters = metrics.RequiredRunwayLengthMeters,
+            DevelopmentCost = metrics.DevelopmentCost,
+        };
+    }
+
+    private static GovernmentContractDevelopmentPriceBreakdownSnapshot CreateSnapshot(
+        GovernmentContractDevelopmentPriceBreakdown breakdown)
+    {
+        return new GovernmentContractDevelopmentPriceBreakdownSnapshot
+        {
+            EnginePrice = breakdown.EnginePrice,
+            FamilyPrice = breakdown.FamilyPrice,
+            TypePrice = breakdown.TypePrice,
+        };
+    }
+
+    private static GovernmentContractEvaluationResultSnapshot CreateSnapshot(GovernmentContractEvaluationResult evaluationResult)
+    {
+        var snapshot = new GovernmentContractEvaluationResultSnapshot
+        {
+            EvaluatedOnYear = evaluationResult.EvaluatedOn.Year,
+            EvaluatedOnMonth = evaluationResult.EvaluatedOn.Month,
+            IsSuccess = evaluationResult.IsSuccess,
+            FinalProbability = evaluationResult.FinalProbability,
+            RandomRoll = evaluationResult.RandomRoll,
+        };
+
+        for (var index = 0; index < evaluationResult.ParameterBonuses.Count; index++)
+        {
+            var bonus = evaluationResult.ParameterBonuses[index];
+            snapshot.ParameterBonuses.Add(new GovernmentContractParameterBonusSnapshot
+            {
+                Parameter = bonus.Parameter,
+                RequiredValue = bonus.RequiredValue,
+                ActualValue = bonus.ActualValue,
+                ExcessRatio = bonus.ExcessRatio,
+                BonusValue = bonus.BonusValue,
+            });
+        }
+
+        return snapshot;
+    }
+
+    private static GovernmentDeliveryContractSnapshot CreateSnapshot(GovernmentDeliveryContract deliveryContract)
+    {
+        var snapshot = new GovernmentDeliveryContractSnapshot
+        {
+            DeliveryId = deliveryContract.DeliveryId,
+            GovernmentContractId = deliveryContract.GovernmentContractId,
+            AircraftDesignId = deliveryContract.AircraftDesignId,
+            StartedOnYear = deliveryContract.StartedOn.Year,
+            StartedOnMonth = deliveryContract.StartedOn.Month,
+            EndsOnYear = deliveryContract.EndsOn.Year,
+            EndsOnMonth = deliveryContract.EndsOn.Month,
+            TotalUnitsRequired = deliveryContract.TotalUnitsRequired,
+            DeliveredUnits = deliveryContract.DeliveredUnits,
+            UnitPrice = deliveryContract.UnitPrice,
+            TotalContractValue = deliveryContract.TotalContractValue,
+            Status = deliveryContract.Status,
+            CompletionBonusGranted = deliveryContract.CompletionBonusGranted,
+        };
+
+        if (deliveryContract.CompletedOn.HasValue)
+        {
+            snapshot.CompletedOnYear = deliveryContract.CompletedOn.Value.Year;
+            snapshot.CompletedOnMonth = deliveryContract.CompletedOn.Value.Month;
+        }
+
+        return snapshot;
+    }
+
+    private static GovernmentContract RestoreContract(GovernmentContractSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        var generatedOn = CreateDate(snapshot.GeneratedOnYear, snapshot.GeneratedOnMonth);
+        var requirements = RestoreRequirements(snapshot.Requirements);
+        var contract = new GovernmentContract(snapshot.ContractId, generatedOn, requirements);
+
+        if (snapshot.Status == GovernmentContractStatus.Expired)
+        {
+            contract.Expire();
+            return contract;
+        }
+
+        if (snapshot.Status is GovernmentContractStatus.Accepted or GovernmentContractStatus.Evaluated)
+        {
+            if (!snapshot.AcceptedOnYear.HasValue || !snapshot.AcceptedOnMonth.HasValue || snapshot.AcceptedSubmission is null)
+            {
+                throw new InvalidOperationException($"Snapshot for contract '{snapshot.ContractId}' is missing acceptance data.");
+            }
+
+            var acceptedOn = CreateDate(snapshot.AcceptedOnYear.Value, snapshot.AcceptedOnMonth.Value);
+            var acceptedSubmission = RestoreSubmission(snapshot.AcceptedSubmission);
+            contract.Accept(acceptedOn, acceptedSubmission, snapshot.UpfrontFundingGranted);
+        }
+
+        if (snapshot.Status == GovernmentContractStatus.Evaluated)
+        {
+            if (snapshot.EvaluationResult is null)
+            {
+                throw new InvalidOperationException($"Snapshot for contract '{snapshot.ContractId}' is missing evaluation result.");
+            }
+
+            var evaluationResult = RestoreEvaluationResult(snapshot.EvaluationResult);
+            contract.SetEvaluationResult(evaluationResult);
+        }
+
+        return contract;
+    }
+
+    private static GovernmentContractRequirements RestoreRequirements(GovernmentContractRequirementsSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        return new GovernmentContractRequirements
+        {
+            RequiredAircraftType = snapshot.RequiredAircraftType,
+            SpeedAltitudeBand = snapshot.SpeedAltitudeBand,
+            MinimumMaximumSpeedMetersPerSecond = snapshot.MinimumMaximumSpeedMetersPerSecond,
+            MinimumRangeKilometers = snapshot.MinimumRangeKilometers,
+            MinimumPayloadKilograms = snapshot.MinimumPayloadKilograms,
+            MinimumReliability = snapshot.MinimumReliability,
+            MinimumManeuverability = snapshot.MinimumManeuverability,
+            MinimumCrewSize = snapshot.MinimumCrewSize,
+            MaximumRequiredRunwayLengthMeters = snapshot.MaximumRequiredRunwayLengthMeters,
+        };
+    }
+
+    private static GovernmentContractSubmissionCandidate RestoreSubmission(GovernmentContractSubmissionCandidateSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        var metrics = RestoreMetrics(snapshot.Metrics);
+        var breakdown = RestoreBreakdown(snapshot.DevelopmentPriceBreakdown);
+        return new GovernmentContractSubmissionCandidate(
+            snapshot.DesignId,
+            snapshot.DisplayName,
+            snapshot.LifecycleStage,
+            metrics,
+            breakdown);
+    }
+
+    private static GovernmentContractAircraftMetrics RestoreMetrics(GovernmentContractAircraftMetricsSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        return new GovernmentContractAircraftMetrics(
+            snapshot.AircraftType,
+            snapshot.MaximumSpeedLowAltitudeMetersPerSecond,
+            snapshot.MaximumSpeedMediumAltitudeMetersPerSecond,
+            snapshot.MaximumSpeedHighAltitudeMetersPerSecond,
+            snapshot.RangeKilometers,
+            snapshot.PayloadKilograms,
+            snapshot.Reliability,
+            snapshot.Maneuverability,
+            snapshot.CrewSize,
+            snapshot.RequiredRunwayLengthMeters,
+            snapshot.DevelopmentCost);
+    }
+
+    private static GovernmentContractDevelopmentPriceBreakdown RestoreBreakdown(
+        GovernmentContractDevelopmentPriceBreakdownSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            return GovernmentContractDevelopmentPriceBreakdown.FromTotal(0d);
+        }
+
+        return new GovernmentContractDevelopmentPriceBreakdown(
+            snapshot.EnginePrice,
+            snapshot.FamilyPrice,
+            snapshot.TypePrice);
+    }
+
+    private static GovernmentContractEvaluationResult RestoreEvaluationResult(GovernmentContractEvaluationResultSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        var bonuses = new List<GovernmentContractParameterBonus>();
+        if (snapshot.ParameterBonuses is not null)
+        {
+            for (var index = 0; index < snapshot.ParameterBonuses.Count; index++)
+            {
+                var bonus = snapshot.ParameterBonuses[index];
+                if (bonus is null)
+                {
+                    continue;
+                }
+
+                bonuses.Add(new GovernmentContractParameterBonus(
+                    bonus.Parameter,
+                    bonus.RequiredValue,
+                    bonus.ActualValue,
+                    bonus.ExcessRatio,
+                    bonus.BonusValue));
+            }
+        }
+
+        var evaluatedOn = CreateDate(snapshot.EvaluatedOnYear, snapshot.EvaluatedOnMonth);
+        return new GovernmentContractEvaluationResult(
+            evaluatedOn,
+            snapshot.IsSuccess,
+            snapshot.FinalProbability,
+            snapshot.RandomRoll,
+            bonuses);
+    }
+
+    private static GovernmentDeliveryContract RestoreDeliveryContract(GovernmentDeliveryContractSnapshot snapshot)
+    {
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        var startedOn = CreateDate(snapshot.StartedOnYear, snapshot.StartedOnMonth);
+        var endsOn = CreateDate(snapshot.EndsOnYear, snapshot.EndsOnMonth);
+        var restored = new GovernmentDeliveryContract(
+            snapshot.DeliveryId,
+            snapshot.GovernmentContractId,
+            snapshot.AircraftDesignId,
+            startedOn,
+            endsOn,
+            snapshot.TotalUnitsRequired,
+            snapshot.UnitPrice,
+            snapshot.TotalContractValue);
+
+        var deliveredUnits = snapshot.DeliveredUnits;
+        if (deliveredUnits > 0)
+        {
+            var effectiveDate = snapshot.CompletedOnYear.HasValue && snapshot.CompletedOnMonth.HasValue
+                ? CreateDate(snapshot.CompletedOnYear.Value, snapshot.CompletedOnMonth.Value)
+                : startedOn;
+            restored.RegisterDeliveredUnits(deliveredUnits, effectiveDate);
+        }
+
+        if (snapshot.Status == GovernmentDeliveryContractStatus.Ended && restored.Status == GovernmentDeliveryContractStatus.Active)
+        {
+            var endedOn = snapshot.CompletedOnYear.HasValue && snapshot.CompletedOnMonth.HasValue
+                ? CreateDate(snapshot.CompletedOnYear.Value, snapshot.CompletedOnMonth.Value)
+                : endsOn;
+            restored.MarkEnded(endedOn);
+        }
+        else if (snapshot.Status == GovernmentDeliveryContractStatus.Completed && restored.Status != GovernmentDeliveryContractStatus.Completed)
+        {
+            var completedOn = snapshot.CompletedOnYear.HasValue && snapshot.CompletedOnMonth.HasValue
+                ? CreateDate(snapshot.CompletedOnYear.Value, snapshot.CompletedOnMonth.Value)
+                : endsOn;
+            restored.RegisterDeliveredUnits(restored.RemainingUnits, completedOn);
+        }
+
+        if (snapshot.CompletionBonusGranted && !restored.CompletionBonusGranted)
+        {
+            restored.MarkCompletionBonusGranted();
+        }
+
+        return restored;
+    }
+
+    private static SimulationDate CreateDate(int year, int month)
+    {
+        var normalizedYear = year <= 0 ? 1 : year;
+        var normalizedMonth = month < 1
+            ? 1
+            : month > 12
+                ? 12
+                : month;
+        return new SimulationDate(normalizedYear, normalizedMonth);
     }
 
     private static bool IsOnOrAfter(SimulationDate left, SimulationDate right)

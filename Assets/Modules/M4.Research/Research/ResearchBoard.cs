@@ -132,6 +132,24 @@ public sealed class ResearchBoard
         return _projects.TryGetValue(researchId, out var project) && project.IsCompleted;
     }
 
+    public bool TryGetResearchCost(ResearchSubjectType subjectType, string subjectId, out double researchCost)
+    {
+        researchCost = 0d;
+        if (string.IsNullOrWhiteSpace(subjectId))
+        {
+            return false;
+        }
+
+        var researchId = BuildResearchId(subjectType, NormalizeSubjectId(subjectId));
+        if (!_projects.TryGetValue(researchId, out var project))
+        {
+            return false;
+        }
+
+        researchCost = project.ResearchCost;
+        return true;
+    }
+
     public double GetBookedResearchExpenseForMonth(int monthIndex)
     {
         if (monthIndex < 0)

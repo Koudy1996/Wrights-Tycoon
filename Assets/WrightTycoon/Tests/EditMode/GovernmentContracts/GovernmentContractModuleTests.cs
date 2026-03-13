@@ -200,6 +200,32 @@ public sealed class GovernmentContractModuleTests
     }
 
     [Test]
+    public void Board_UsesEngineFamilyTypeDevelopmentPriceForUpfrontFunding()
+    {
+        var random = new DeterministicRandomProvider();
+        var board = new GovernmentContractBoard(new StubGovernmentContractGenerator(CreateRequirements()), random);
+        var january2000 = new SimulationDate(2000, 1);
+        board.ProcessMonth(january2000);
+
+        var baseCandidate = CreateSubmissionCandidate(AircraftLifecycleStage.InDevelopment, multiplier: 1.4d);
+        var pricedCandidate = new GovernmentContractSubmissionCandidate(
+            baseCandidate.DesignId,
+            baseCandidate.DisplayName,
+            baseCandidate.LifecycleStage,
+            baseCandidate.Metrics,
+            new GovernmentContractDevelopmentPriceBreakdown(
+                EnginePrice: 120000d,
+                FamilyPrice: 80000d,
+                TypePrice: 60000d));
+
+        var acceptance = board.TryAcceptActiveContract(january2000, pricedCandidate);
+        Assert.That(acceptance.IsAccepted, Is.True);
+        Assert.That(
+            acceptance.UpfrontFundingGranted,
+            Is.EqualTo((120000d + 80000d + 60000d) * GovernmentContractBalance.UpfrontFundingShare).Within(1e-9d));
+    }
+
+    [Test]
     public void Delivery_ConsumesWarehouseUnits_AndGrantsCompletionBonus()
     {
         var random = new DeterministicRandomProvider();
@@ -234,6 +260,51 @@ public sealed class GovernmentContractModuleTests
         Assert.That(inventory.GetAvailableUnits(baselineSubmission.DesignId), Is.EqualTo(200));
         Assert.That(board.ActiveDeliveryContract, Is.Null);
         Assert.That(board.ClosedDeliveryContracts.Count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void Delivery_CanBeProcessedManuallyByRequestedUnits_AndBoardStateCanRestore()
+    {
+        var random = new DeterministicRandomProvider();
+        random.EnqueueDoubles(0d); // evaluation success
+        random.EnqueueInts(300); // base units
+
+        var board = new GovernmentContractBoard(new StubGovernmentContractGenerator(CreateRequirements()), random);
+        var january2000 = new SimulationDate(2000, 1);
+        board.ProcessMonth(january2000);
+
+        var submission = CreateSubmissionCandidate(AircraftLifecycleStage.Completed, multiplier: 1.2d);
+        var acceptance = board.TryAcceptActiveContract(january2000, submission);
+        Assert.That(acceptance.IsAccepted, Is.True);
+
+        for (var offset = 1; offset <= 6; offset++)
+        {
+            board.ProcessMonth(january2000.AddMonths(offset));
+        }
+
+        Assert.That(board.ActiveDeliveryContract, Is.Not.Null);
+        var deliveryId = board.ActiveDeliveryContract!.DeliveryId;
+        var totalUnitsRequired = board.ActiveDeliveryContract.TotalUnitsRequired;
+
+        var inventory = new FakeInventoryGateway();
+        inventory.SetUnits(submission.DesignId, 500);
+
+        var manual = board.DeliverFromInventory(january2000.AddMonths(6), deliveryId, inventory, requestedUnits: 120);
+        Assert.That(manual.DeliveredUnitsThisMonth, Is.EqualTo(120));
+        Assert.That(manual.TotalDeliveredUnits, Is.EqualTo(120));
+        Assert.That(manual.RemainingUnits, Is.EqualTo(totalUnitsRequired - 120));
+        Assert.That(board.ActiveDeliveryContracts.Count, Is.EqualTo(1));
+
+        var snapshot = board.CreateSnapshot();
+        var restored = new GovernmentContractBoard(new StubGovernmentContractGenerator(CreateRequirements()), new DeterministicRandomProvider());
+        restored.RestoreSnapshot(snapshot);
+
+        Assert.That(restored.ActiveContract, Is.Null);
+        Assert.That(restored.EvaluatedContracts.Count, Is.EqualTo(1));
+        Assert.That(restored.ActiveDeliveryContracts.Count, Is.EqualTo(1));
+        Assert.That(restored.ActiveDeliveryContracts[0].DeliveryId, Is.EqualTo(deliveryId));
+        Assert.That(restored.ActiveDeliveryContracts[0].DeliveredUnits, Is.EqualTo(120));
+        Assert.That(restored.ActiveDeliveryContracts[0].RemainingUnits, Is.EqualTo(totalUnitsRequired - 120));
     }
 
     private static GovernmentContractRequirements CreateRequirements()

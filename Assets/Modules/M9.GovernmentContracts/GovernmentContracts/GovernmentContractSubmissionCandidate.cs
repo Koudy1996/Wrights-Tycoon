@@ -8,7 +8,8 @@ public sealed class GovernmentContractSubmissionCandidate
         string designId,
         string displayName,
         AircraftLifecycleStage lifecycleStage,
-        GovernmentContractAircraftMetrics metrics)
+        GovernmentContractAircraftMetrics metrics,
+        GovernmentContractDevelopmentPriceBreakdown? developmentPriceBreakdown = null)
     {
         DesignId = string.IsNullOrWhiteSpace(designId)
             ? throw new ArgumentException("Design id cannot be empty.", nameof(designId))
@@ -18,6 +19,8 @@ public sealed class GovernmentContractSubmissionCandidate
             : displayName.Trim();
         LifecycleStage = lifecycleStage;
         Metrics = metrics;
+        DevelopmentPriceBreakdown = developmentPriceBreakdown
+            ?? GovernmentContractDevelopmentPriceBreakdown.FromTotal(metrics.DevelopmentCost);
 
         Validate();
     }
@@ -30,5 +33,11 @@ public sealed class GovernmentContractSubmissionCandidate
 
     public GovernmentContractAircraftMetrics Metrics { get; }
 
-    public void Validate() => Metrics.Validate();
+    public GovernmentContractDevelopmentPriceBreakdown DevelopmentPriceBreakdown { get; }
+
+    public void Validate()
+    {
+        Metrics.Validate();
+        DevelopmentPriceBreakdown.Validate();
+    }
 }

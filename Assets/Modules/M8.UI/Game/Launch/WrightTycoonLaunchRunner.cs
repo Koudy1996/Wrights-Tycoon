@@ -62,6 +62,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly List<Contract> _lastGeneratedContracts = new();
     private readonly Dictionary<string, string> _selectedWarehouseDesignByContractId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _deliveredContractProfitById = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _governmentDeliveryQuantityInputById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TypeResearchModifierPoints> _researchModifiersByResearchId = new(StringComparer.Ordinal);
     private readonly HistoricalCampaignState _historicalCampaignState = new();
     private readonly List<HistoricalCampaignArchiveEntry> _historicalCampaignArchive = new();
@@ -177,7 +178,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const string SaveFileName = "saves.json";
     private const int AutosaveIntervalMonths = 6;
     private const int AutosaveRetentionCount = 4;
-    private const int SavePayloadVersion = 1;
+    private const int SavePayloadVersion = 2;
 
     private readonly JsonSerializerSettings _saveJsonSettings = CreateSaveJsonSettings();
     private static readonly ResolutionOption[] CommonResolutionOptions =
@@ -546,6 +547,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _researchModifiersByResearchId.Clear();
         _selectedWarehouseDesignByContractId.Clear();
         _deliveredContractProfitById.Clear();
+        _governmentDeliveryQuantityInputById.Clear();
         _selectedSavedEngineIndex = -1;
         _selectedSavedFamilyIndex = -1;
         _selectedSavedAircraftDesignIndex = -1;
@@ -1323,6 +1325,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             payload.ContractBoardSnapshot = _contractBoard.CreateSnapshot();
         }
 
+        if (_governmentContractBoard is not null)
+        {
+            payload.GovernmentContractBoardSnapshot = _governmentContractBoard.CreateSnapshot();
+        }
+
         if (_researchBoard is not null)
         {
             payload.ResearchBoardSnapshot = _researchBoard.CreateSnapshot();
@@ -1583,6 +1590,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         _deliveredContractProfitById.Clear();
+        _governmentDeliveryQuantityInputById.Clear();
         if (data.DeliveredContractProfitById is not null)
         {
             for (var index = 0; index < data.DeliveredContractProfitById.Count; index++)
@@ -1600,6 +1608,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (data.ContractBoardSnapshot is not null && _contractBoard is not null)
         {
             _contractBoard.RestoreSnapshot(data.ContractBoardSnapshot);
+        }
+
+        if (data.GovernmentContractBoardSnapshot is not null && _governmentContractBoard is not null)
+        {
+            _governmentContractBoard.RestoreSnapshot(data.GovernmentContractBoardSnapshot);
         }
 
         if (data.ResearchBoardSnapshot is not null && _researchBoard is not null)
@@ -1643,6 +1656,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (_contractBoard is not null)
         {
             PruneContractDeliverySelections(_contractBoard.OpenContracts);
+        }
+
+        if (_governmentContractBoard is not null)
+        {
+            PruneGovernmentDeliveryQuantityInputs(_governmentContractBoard.ActiveDeliveryContracts);
         }
 
         ApplyGovernmentContractNotebookState();
@@ -3733,12 +3751,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.Label("A single government contract is generated each January.");
         GUILayout.Label("Accepting grants immediate upfront funding.");
-        GUILayout.Label("Delivery contracts auto-ship monthly from warehouse stock.");
+        GUILayout.Label("Delivery contracts are fulfilled manually from warehouse stock.");
 
         var activeContract = _governmentContractBoard.ActiveContract;
-        var activeDelivery = _governmentContractBoard.ActiveDeliveryContract;
+        var activeDeliveryContracts = _governmentContractBoard.ActiveDeliveryContracts;
+        var activeDelivery = activeDeliveryContracts.Count == 0
+            ? null
+            : activeDeliveryContracts[0];
         GUILayout.Label($"Active Contract: {(activeContract is null ? "None" : $"{activeContract.ContractId} ({activeContract.Status})")}");
-        GUILayout.Label($"Active Delivery: {(activeDelivery is null ? "None" : activeDelivery.DeliveryId)}");
+        GUILayout.Label(
+            $"Active Deliveries: {FormatUiInteger(activeDeliveryContracts.Count)}" +
+            (activeDelivery is null ? string.Empty : $" | Latest: {activeDelivery.DeliveryId}"));
         GUILayout.Label($"Available Designs: {FormatUiInteger(_savedAircraftDesigns.Count)}");
         GUILayout.Label($"Warehouse Units: {FormatUiInteger(_productionFactory.WarehouseUnitsByDesign.Values.Sum())}");
         GUILayout.Label(
@@ -3851,6 +3874,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         DrawMetric("Range (km)", candidate.Metrics.RangeKilometers, "0.0");
                         DrawMetric("Payload (kg)", candidate.Metrics.PayloadKilograms, "0.0");
                         DrawMetric("Runway Length (m)", candidate.Metrics.RequiredRunwayLengthMeters, "0.0");
+                        DrawMetric("Development Price - Engine", candidate.DevelopmentPriceBreakdown.EnginePrice, "0.00");
+                        DrawMetric("Development Price - Family", candidate.DevelopmentPriceBreakdown.FamilyPrice, "0.00");
+                        DrawMetric("Development Price - Type", candidate.DevelopmentPriceBreakdown.TypePrice, "0.00");
+                        DrawMetric("Eligible Development Price (Total)", candidate.DevelopmentPriceBreakdown.TotalPrice, "0.00");
+                        DrawMetric(
+                            "Upfront Funding (75%)",
+                            candidate.DevelopmentPriceBreakdown.TotalPrice * GovernmentContractBalance.UpfrontFundingShare,
+                            "0.00");
 
                         GUI.enabled = compliance.IsSelectableInUi;
                         if (GUILayout.Button("Accept Government Contract", GUILayout.Height(26f)))
@@ -3939,23 +3970,61 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         DrawSection("Delivery Contracts");
-        var activeDelivery = _governmentContractBoard.ActiveDeliveryContract;
-        if (activeDelivery is null)
+        var activeDeliveries = _governmentContractBoard.ActiveDeliveryContracts;
+        if (activeDeliveries.Count == 0)
         {
             GUILayout.Label("No active government delivery contract.");
         }
         else
         {
-            GUILayout.BeginVertical(GUI.skin.box);
-            GUILayout.Label($"{activeDelivery.DeliveryId} | Source: {ResolveAircraftDesignName(activeDelivery.AircraftDesignId)}");
-            GUILayout.Label($"Status: {activeDelivery.Status}");
-            GUILayout.Label($"Active Window: {FormatSimulationDate(activeDelivery.StartedOn)} -> {FormatSimulationDate(activeDelivery.EndsOn)}");
-            DrawMetric("Required Units", activeDelivery.TotalUnitsRequired, "0");
-            DrawMetric("Delivered Units", activeDelivery.DeliveredUnits, "0");
-            DrawMetric("Remaining Units", activeDelivery.RemainingUnits, "0");
-            DrawMetric("Unit Price", activeDelivery.UnitPrice, "0.00");
-            DrawMetric("Total Contract Value", activeDelivery.TotalContractValue, "0.00");
-            GUILayout.EndVertical();
+            for (var index = 0; index < activeDeliveries.Count; index++)
+            {
+                var activeDelivery = activeDeliveries[index];
+                GUILayout.BeginVertical(GUI.skin.box);
+                GUILayout.Label($"{activeDelivery.DeliveryId} | Source: {ResolveAircraftDesignName(activeDelivery.AircraftDesignId)}");
+                GUILayout.Label($"Status: {activeDelivery.Status}");
+                GUILayout.Label($"Active Window: {FormatSimulationDate(activeDelivery.StartedOn)} -> {FormatSimulationDate(activeDelivery.EndsOn)}");
+                DrawMetric("Required Units", activeDelivery.TotalUnitsRequired, "0");
+                DrawMetric("Delivered Units", activeDelivery.DeliveredUnits, "0");
+                DrawMetric("Remaining Units", activeDelivery.RemainingUnits, "0");
+                DrawMetric("Unit Price", activeDelivery.UnitPrice, "0.00");
+                DrawMetric("Completion Bonus", activeDelivery.TotalContractValue * GovernmentContractBalance.DeliveryCompletionBonusShare, "0.00");
+                DrawMetric("Total Contract Value", activeDelivery.TotalContractValue, "0.00");
+
+                var availableInWarehouse = _productionFactory.GetWarehouseUnits(activeDelivery.AircraftDesignId);
+                DrawMetric("Warehouse Units (Selected Type)", availableInWarehouse, "0");
+
+                if (!_governmentDeliveryQuantityInputById.TryGetValue(activeDelivery.DeliveryId, out var quantityInput)
+                    || string.IsNullOrWhiteSpace(quantityInput))
+                {
+                    quantityInput = "1";
+                }
+
+                quantityInput = DrawText("Deliver Units", quantityInput);
+                _governmentDeliveryQuantityInputById[activeDelivery.DeliveryId] = quantityInput;
+                var parsedQuantity = TryParsePositiveInt(quantityInput, out var requestedUnits)
+                    ? requestedUnits
+                    : 0;
+
+                GUILayout.BeginHorizontal();
+                var canDeliverManually = availableInWarehouse > 0 && activeDelivery.RemainingUnits > 0;
+                GUI.enabled = canDeliverManually && parsedQuantity > 0;
+                if (GUILayout.Button("Deliver Aircraft", GUILayout.Height(24f)))
+                {
+                    ProcessGovernmentDelivery(activeDelivery.DeliveryId, parsedQuantity);
+                }
+
+                GUI.enabled = canDeliverManually;
+                if (GUILayout.Button("Deliver All In Warehouse", GUILayout.Height(24f)))
+                {
+                    var allUnits = System.Math.Min(availableInWarehouse, activeDelivery.RemainingUnits);
+                    ProcessGovernmentDelivery(activeDelivery.DeliveryId, allUnits);
+                }
+
+                GUI.enabled = true;
+                GUILayout.EndHorizontal();
+                GUILayout.EndVertical();
+            }
         }
 
         if (_governmentContractBoard.ClosedDeliveryContracts.Count > 0)
@@ -3971,6 +4040,107 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 GUILayout.EndHorizontal();
             }
         }
+    }
+
+    private void ProcessGovernmentDelivery(string deliveryId, int requestedUnits)
+    {
+        if (_governmentContractBoard is null || _governmentInventoryGateway is null || _productionFactory is null)
+        {
+            _governmentDeliveryActionMessage = "Government delivery system is not initialized.";
+            return;
+        }
+
+        if (requestedUnits <= 0)
+        {
+            _governmentDeliveryActionMessage = "Delivery quantity must be greater than zero.";
+            return;
+        }
+
+        if (!_governmentContractBoard.TryGetActiveDeliveryContract(deliveryId, out var deliveryContractBefore)
+            || deliveryContractBefore is null)
+        {
+            _governmentDeliveryActionMessage = $"Delivery contract '{deliveryId}' is no longer active.";
+            _governmentDeliveryQuantityInputById.Remove(deliveryId);
+            return;
+        }
+
+        var deliveryUpdate = _governmentContractBoard.DeliverFromInventory(
+            _currentDate,
+            deliveryId,
+            _governmentInventoryGateway,
+            requestedUnits);
+
+        var deliveryIncome = 0d;
+        if (deliveryUpdate.DeliveredUnitsThisMonth > 0)
+        {
+            deliveryIncome = deliveryUpdate.DeliveredUnitsThisMonth * deliveryContractBefore.UnitPrice;
+        }
+
+        var completionBonusIncome = deliveryUpdate.CompletionBonusGranted > 0d
+            ? deliveryUpdate.CompletionBonusGranted
+            : 0d;
+        var bookedIncome = deliveryIncome + completionBonusIncome;
+
+        if (_accountingSystem is not null && bookedIncome > 0d)
+        {
+            var fullCatalog = BuildProductionCatalog(includeOnlyResearched: false);
+            var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
+                _productionFactory.WarehouseUnitsByDesign,
+                fullCatalog);
+
+            if (deliveryIncome > 0d)
+            {
+                _accountingSystem.RegisterContractIncome(
+                    _elapsedMonths,
+                    _currentDate,
+                    deliveryIncome,
+                    inventoryByDesign,
+                    $"Government delivery income: {deliveryContractBefore.DeliveryId}");
+            }
+
+            if (completionBonusIncome > 0d)
+            {
+                _accountingSystem.RegisterContractIncome(
+                    _elapsedMonths,
+                    _currentDate,
+                    completionBonusIncome,
+                    inventoryByDesign,
+                    $"Government completion bonus: {deliveryContractBefore.DeliveryId}");
+            }
+
+            _governmentDeliveryActionMessage = $"{deliveryUpdate.Message} Revenue booked: {FormatCurrency(bookedIncome)}.";
+        }
+        else
+        {
+            _governmentDeliveryActionMessage = deliveryUpdate.Message;
+        }
+
+        if (!_governmentContractBoard.TryGetActiveDeliveryContract(deliveryId, out _))
+        {
+            _governmentDeliveryQuantityInputById.Remove(deliveryId);
+        }
+    }
+
+    private static bool TryParsePositiveInt(string rawValue, out int value)
+    {
+        value = 0;
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return false;
+        }
+
+        if (!int.TryParse(rawValue.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return false;
+        }
+
+        if (parsed <= 0)
+        {
+            return false;
+        }
+
+        value = parsed;
+        return true;
     }
 
     private IReadOnlyList<GovernmentContractSubmissionAssessment> BuildGovernmentSubmissionAssessments()
@@ -3990,9 +4160,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
             try
             {
-                var submission = GovernmentContractSubmissionCandidateFactory.FromFactoryCatalogItem(
-                    savedDesign.CatalogItem,
-                    lifecycleStage);
+                var submission = BuildGovernmentSubmissionCandidate(savedDesign, lifecycleStage);
                 submissions.Add(submission);
             }
             catch (Exception ex)
@@ -4003,6 +4171,56 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         return _governmentContractBoard.GetSubmissionAssessments(submissions);
+    }
+
+    private GovernmentContractSubmissionCandidate BuildGovernmentSubmissionCandidate(
+        SavedAircraftDesign savedDesign,
+        WrightTycoon.Core.GovernmentContracts.AircraftLifecycleStage lifecycleStage)
+    {
+        if (savedDesign is null)
+        {
+            throw new ArgumentNullException(nameof(savedDesign));
+        }
+
+        var breakdown = BuildGovernmentDevelopmentPriceBreakdown(savedDesign);
+        return GovernmentContractSubmissionCandidateFactory.FromAircraft(
+            savedDesign.CatalogItem.DesignId,
+            savedDesign.CatalogItem.DisplayName,
+            lifecycleStage,
+            savedDesign.CatalogItem.Aircraft,
+            breakdown);
+    }
+
+    private GovernmentContractDevelopmentPriceBreakdown BuildGovernmentDevelopmentPriceBreakdown(SavedAircraftDesign savedDesign)
+    {
+        if (savedDesign is null)
+        {
+            return GovernmentContractDevelopmentPriceBreakdown.FromTotal(0d);
+        }
+
+        var enginePrice = ResolveGovernmentResearchPrice(ResearchSubjectType.Engine, savedDesign.EngineResearchId);
+        var familyPrice = ResolveGovernmentResearchPrice(ResearchSubjectType.AircraftFamily, savedDesign.FamilyResearchId);
+        var typePrice = ResolveGovernmentResearchPrice(ResearchSubjectType.AircraftType, savedDesign.TypeResearchId);
+        var breakdown = new GovernmentContractDevelopmentPriceBreakdown(enginePrice, familyPrice, typePrice);
+        if (breakdown.TotalPrice <= 0d)
+        {
+            breakdown = GovernmentContractDevelopmentPriceBreakdown.FromTotal(
+                System.Math.Max(savedDesign.CatalogItem.Aircraft.Development.DevelopmentCost, 0d));
+        }
+
+        return breakdown;
+    }
+
+    private double ResolveGovernmentResearchPrice(ResearchSubjectType subjectType, string subjectId)
+    {
+        if (_researchBoard is null || string.IsNullOrWhiteSpace(subjectId))
+        {
+            return 0d;
+        }
+
+        return _researchBoard.TryGetResearchCost(subjectType, subjectId, out var price)
+            ? System.Math.Max(0d, price)
+            : 0d;
     }
 
     private void DrawGovernmentRequirements(GovernmentContractRequirements requirements)
@@ -6701,6 +6919,23 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
     }
 
+    private void PruneGovernmentDeliveryQuantityInputs(IReadOnlyList<GovernmentDeliveryContract> activeDeliveries)
+    {
+        var activeDeliveryIds = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < activeDeliveries.Count; index++)
+        {
+            activeDeliveryIds.Add(activeDeliveries[index].DeliveryId);
+        }
+
+        var staleKeys = _governmentDeliveryQuantityInputById.Keys
+            .Where(deliveryId => !activeDeliveryIds.Contains(deliveryId))
+            .ToArray();
+        for (var index = 0; index < staleKeys.Length; index++)
+        {
+            _governmentDeliveryQuantityInputById.Remove(staleKeys[index]);
+        }
+    }
+
     private ContractAvailabilitySnapshot BuildContractAvailabilitySnapshot(
         Contract contract,
         ContractBoard contractBoard,
@@ -6890,55 +7125,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     inventoryByDesign);
             }
 
-            if (_governmentContractBoard is not null && _governmentInventoryGateway is not null)
+            if (_governmentContractBoard is not null)
             {
-                var deliveryContractBefore = _governmentContractBoard.ActiveDeliveryContract;
-                var deliveryUpdate = _governmentContractBoard.ProcessDeliveryFromInventory(_currentDate, _governmentInventoryGateway);
-
-                var deliveryIncome = 0d;
-                if (deliveryContractBefore is not null && deliveryUpdate.DeliveredUnitsThisMonth > 0)
-                {
-                    deliveryIncome = deliveryUpdate.DeliveredUnitsThisMonth * deliveryContractBefore.UnitPrice;
-                }
-
-                var completionBonusIncome = deliveryUpdate.CompletionBonusGranted > 0d
-                    ? deliveryUpdate.CompletionBonusGranted
-                    : 0d;
-                var bookedIncome = deliveryIncome + completionBonusIncome;
-
-                if (_accountingSystem is not null && bookedIncome > 0d)
-                {
-                    var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
-                        _productionFactory.WarehouseUnitsByDesign,
-                        fullCatalog);
-                    if (deliveryIncome > 0d)
-                    {
-                        _accountingSystem.RegisterContractIncome(
-                            _elapsedMonths,
-                            _currentDate,
-                            deliveryIncome,
-                            inventoryByDesign,
-                            $"Government delivery income: {deliveryContractBefore?.DeliveryId ?? "delivery"}");
-                    }
-
-                    if (completionBonusIncome > 0d)
-                    {
-                        _accountingSystem.RegisterContractIncome(
-                            _elapsedMonths,
-                            _currentDate,
-                            completionBonusIncome,
-                            inventoryByDesign,
-                            $"Government completion bonus: {deliveryContractBefore?.DeliveryId ?? "delivery"}");
-                    }
-
-                    _governmentDeliveryActionMessage = $"{deliveryUpdate.Message} Revenue booked: {FormatCurrency(bookedIncome)}.";
-                }
-                else if (deliveryContractBefore is not null
-                    || deliveryUpdate.CompletedThisMonth
-                    || deliveryUpdate.EndedThisMonth)
-                {
-                    _governmentDeliveryActionMessage = deliveryUpdate.Message;
-                }
+                PruneGovernmentDeliveryQuantityInputs(_governmentContractBoard.ActiveDeliveryContracts);
             }
         }
 
@@ -9973,6 +10162,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public List<HistoricalCampaignArchiveEntry> HistoricalCampaignArchiveEntries { get; set; } = new();
 
         public ContractBoardSnapshot? ContractBoardSnapshot { get; set; }
+
+        public GovernmentContractBoardSnapshot? GovernmentContractBoardSnapshot { get; set; }
 
         public ResearchBoardSnapshot? ResearchBoardSnapshot { get; set; }
 

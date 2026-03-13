@@ -10,7 +10,8 @@ public static class GovernmentContractSubmissionCandidateFactory
 {
     public static GovernmentContractSubmissionCandidate FromFactoryCatalogItem(
         FactoryAircraftTypeCatalogItem catalogItem,
-        AircraftLifecycleStage lifecycleStage)
+        AircraftLifecycleStage lifecycleStage,
+        GovernmentContractDevelopmentPriceBreakdown? developmentPriceBreakdown = null)
     {
         if (catalogItem is null)
         {
@@ -23,14 +24,16 @@ public static class GovernmentContractSubmissionCandidateFactory
             catalogItem.DesignId,
             catalogItem.DisplayName,
             lifecycleStage,
-            metrics);
+            metrics,
+            developmentPriceBreakdown);
     }
 
     public static GovernmentContractSubmissionCandidate FromAircraft(
         string designId,
         string displayName,
         AircraftLifecycleStage lifecycleStage,
-        WrightTycoon.Core.Aircraft.Aircraft aircraft)
+        WrightTycoon.Core.Aircraft.Aircraft aircraft,
+        GovernmentContractDevelopmentPriceBreakdown? developmentPriceBreakdown = null)
     {
         if (aircraft is null)
         {
@@ -42,7 +45,8 @@ public static class GovernmentContractSubmissionCandidateFactory
             designId,
             displayName,
             lifecycleStage,
-            metrics);
+            metrics,
+            developmentPriceBreakdown);
     }
 
     private static GovernmentContractAircraftMetrics BuildMetrics(WrightTycoon.Core.Aircraft.Aircraft aircraft)
