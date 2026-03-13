@@ -1244,6 +1244,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 DevelopmentStartedYear = saved.DevelopmentStartedYear,
                 VariantDevelopmentStartedYear = saved.VariantDevelopmentStartedYear,
                 ApprovedYear = saved.ApprovedYear,
+                FrozenYear = saved.FrozenYear,
+                FrozenMonth = saved.FrozenMonth,
                 VersionDevelopmentBaselineYear = saved.IsVersionDevelopment
                     ? saved.DevelopmentStartedYear
                     : null,
@@ -1284,6 +1286,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 DevelopmentStartedYear = saved.DevelopmentStartedYear,
                 VariantDevelopmentStartedYear = saved.VariantDevelopmentStartedYear,
                 ApprovedYear = saved.ApprovedYear,
+                FrozenYear = saved.FrozenYear,
+                FrozenMonth = saved.FrozenMonth,
                 TypeVersionDevelopmentBaselineYear = saved.IsTypeVersionDevelopment
                     ? saved.DevelopmentStartedYear
                     : null,
@@ -1459,7 +1463,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         _savedEngines.Clear();
-        if (data.SavedEngines is not null && _engineBuilder is not null)
+        if (data.SavedEngines is not null)
         {
             for (var index = 0; index < data.SavedEngines.Count; index++)
             {
@@ -1478,7 +1482,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 try
                 {
                     var parameters = state.Parameters?.Clone() ?? CreateDefaultEngineParameters(definition);
-                    var built = _engineBuilder.Build(definition, parameters);
                     var legacyBaselineYear = NormalizeOptionalBaselineYear(state.VersionDevelopmentBaselineYear);
                     var developmentStartedYear = NormalizeRequiredYear(
                         state.DevelopmentStartedYear,
@@ -1489,12 +1492,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     _savedEngines.Add(new SavedEngineDesign(
                         string.IsNullOrWhiteSpace(state.Name) ? "Loaded Engine" : state.Name,
                         string.IsNullOrWhiteSpace(state.ResearchId) ? CreateUniqueEngineResearchId(state.Name) : state.ResearchId,
-                        built,
+                        definition,
+                        parameters,
                         developmentStartedYear,
                         variantDevelopmentStartedYear,
                         legacyBaselineYear,
                         state.SourceResearchId ?? string.Empty,
-                        state.ApprovedYear));
+                        state.ApprovedYear,
+                        state.FrozenYear,
+                        state.FrozenMonth));
                 }
                 catch (Exception ex)
                 {
@@ -1538,7 +1544,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
                 try
                 {
-                    var aircraft = _aircraftFactory.CreateAircraft(state.FamilyDefinition, state.TypeDefinition);
+                    var hasFrozenDate = TryCreateSimulationDate(state.FrozenYear, state.FrozenMonth, out var frozenDate);
+                    var aircraft = hasFrozenDate
+                        ? BuildAircraftForDate(state.FamilyDefinition, state.TypeDefinition, frozenDate)
+                        : _aircraftFactory.CreateAircraft(state.FamilyDefinition, state.TypeDefinition);
                     var designId = string.IsNullOrWhiteSpace(state.DesignId) ? state.TypeDefinition.Id : state.DesignId;
                     var displayName = string.IsNullOrWhiteSpace(state.DisplayName) ? state.Name : state.DisplayName;
                     var catalogItem = new FactoryAircraftTypeCatalogItem(
@@ -1565,7 +1574,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         variantDevelopmentStartedYear,
                         legacyBaselineYear,
                         state.SourceTypeResearchId ?? string.Empty,
-                        state.ApprovedYear));
+                        state.ApprovedYear,
+                        state.FrozenYear,
+                        state.FrozenMonth));
                 }
                 catch (Exception ex)
                 {
@@ -2621,17 +2632,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         referenceEngine = _enginePreview!;
         referenceLabel = string.Empty;
-        if (_engineBuilder is null)
-        {
-            return false;
-        }
-
         if (_engineCompareReferenceIndex >= 0 && _engineCompareReferenceIndex < _savedEngines.Count)
         {
             var savedReference = _savedEngines[_engineCompareReferenceIndex];
             try
             {
-                referenceEngine = _engineBuilder.Build(savedReference.Definition, savedReference.Parameters.Clone());
+                referenceEngine = BuildSavedEngineAtReferenceDate(savedReference);
                 referenceLabel = BuildEngineDisplayName(
                     savedReference.Name,
                     savedReference.Definition.EngineType,
@@ -2687,14 +2693,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _enginePreview.Definition.EngineType,
             _enginePreview.Parameters);
 
-        if (_engineBuilder is null)
-        {
-            return;
-        }
-
         try
         {
-            var referenceEngine = _engineBuilder.Build(reference.Definition, reference.Parameters.Clone());
+            var referenceEngine = BuildSavedEngineAtReferenceDate(reference);
             DrawEnginePerformanceComparisonRows(referenceEngine, _enginePreview);
         }
         catch
@@ -4494,7 +4495,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             out _,
             out var message))
         {
-            ApplyApprovedYearForApprovedProject(project, bookedDate.Year);
+            ApplyApprovedYearForApprovedProject(project, bookedDate);
             _researchActionMessage = $"{message} Expense booked in {FormatSimulationDate(bookedDate)}.";
             return;
         }
@@ -4517,7 +4518,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return $"Research time = {FormatUiInteger(normalizedBaseMonths)} - {FormatUiInteger(bonusMonths)} = {FormatUiInteger(adjustedMonths)}";
     }
 
-    private void ApplyApprovedYearForApprovedProject(ResearchProject project, int approvedYear)
+    private void ApplyApprovedYearForApprovedProject(ResearchProject project, SimulationDate approvedDate)
     {
         if (project is null)
         {
@@ -4535,7 +4536,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     continue;
                 }
 
-                savedEngine.SetApprovedYear(approvedYear);
+                savedEngine.SetApprovedYear(approvedDate.Year);
+                savedEngine.SetFrozenDate(approvedDate);
             }
         }
         else if (project.SubjectType == ResearchSubjectType.AircraftType)
@@ -4549,7 +4551,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     continue;
                 }
 
-                savedDesign.SetApprovedYear(approvedYear);
+                savedDesign.SetApprovedYear(approvedDate.Year);
+                savedDesign.SetFrozenDate(approvedDate);
+                if (!TryRebuildSavedAircraftCatalogItemAtDate(index, approvedDate, out var rebuildError))
+                {
+                    _researchActionMessage = $"Failed to freeze type '{savedDesign.Name}': {rebuildError}";
+                }
             }
         }
 
@@ -4561,28 +4568,49 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         for (var index = 0; index < _savedEngines.Count; index++)
         {
             var savedEngine = _savedEngines[index];
-            if (savedEngine.IsVersionDevelopment || savedEngine.ApprovedYear.HasValue)
+            if (savedEngine.IsVersionDevelopment)
             {
                 continue;
             }
 
-            if (TryResolveApprovedYearFromResearchBoard(ResearchSubjectType.Engine, savedEngine.ResearchId, out var approvedYear))
+            if (TryResolveApprovedDateFromResearchBoard(ResearchSubjectType.Engine, savedEngine.ResearchId, out var approvedDate))
             {
-                savedEngine.SetApprovedYear(approvedYear);
+                if (!savedEngine.ApprovedYear.HasValue)
+                {
+                    savedEngine.SetApprovedYear(approvedDate.Year);
+                }
+
+                if (!savedEngine.HasFrozenDate)
+                {
+                    savedEngine.SetFrozenDate(approvedDate);
+                }
             }
         }
 
         for (var index = 0; index < _savedAircraftDesigns.Count; index++)
         {
             var savedDesign = _savedAircraftDesigns[index];
-            if (savedDesign.IsTypeVersionDevelopment || savedDesign.ApprovedYear.HasValue)
+            if (savedDesign.IsTypeVersionDevelopment)
             {
                 continue;
             }
 
-            if (TryResolveApprovedYearFromResearchBoard(ResearchSubjectType.AircraftType, savedDesign.TypeResearchId, out var approvedYear))
+            if (TryResolveApprovedDateFromResearchBoard(ResearchSubjectType.AircraftType, savedDesign.TypeResearchId, out var approvedDate))
             {
-                savedDesign.SetApprovedYear(approvedYear);
+                if (!savedDesign.ApprovedYear.HasValue)
+                {
+                    savedDesign.SetApprovedYear(approvedDate.Year);
+                }
+
+                if (!savedDesign.HasFrozenDate)
+                {
+                    savedDesign.SetFrozenDate(approvedDate);
+                }
+
+                if (savedDesign.TryGetFrozenDate(out var frozenDate))
+                {
+                    TryRebuildSavedAircraftCatalogItemAtDate(index, frozenDate, out _);
+                }
             }
         }
 
@@ -4592,6 +4620,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private bool TryResolveApprovedYearFromResearchBoard(ResearchSubjectType subjectType, string subjectId, out int approvedYear)
     {
         approvedYear = 0;
+        if (!TryResolveApprovedDateFromResearchBoard(subjectType, subjectId, out var approvedDate))
+        {
+            return false;
+        }
+
+        approvedYear = approvedDate.Year;
+        return approvedYear >= 1;
+    }
+
+    private bool TryResolveApprovedDateFromResearchBoard(ResearchSubjectType subjectType, string subjectId, out SimulationDate approvedDate)
+    {
+        approvedDate = default;
         if (_researchBoard is null || string.IsNullOrWhiteSpace(subjectId))
         {
             return false;
@@ -4612,8 +4652,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
 
             var campaignStart = ResolveCampaignStartDate();
-            approvedYear = campaignStart.AddMonths(project.StartedMonthIndex.Value).Year;
-            return approvedYear >= 1;
+            approvedDate = campaignStart.AddMonths(project.StartedMonthIndex.Value);
+            return approvedDate.Year >= 1;
         }
 
         return false;
@@ -4667,13 +4707,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     continue;
                 }
 
-                var inheritedYear = _savedEngines[sourceIndex].ApprovedYear;
-                if (savedEngine.ApprovedYear == inheritedYear)
+                var sourceEngine = _savedEngines[sourceIndex];
+                var inheritedYear = sourceEngine.ApprovedYear;
+                var inheritedFrozenYear = sourceEngine.FrozenYear;
+                var inheritedFrozenMonth = sourceEngine.FrozenMonth;
+                if (savedEngine.ApprovedYear == inheritedYear
+                    && savedEngine.FrozenYear == inheritedFrozenYear
+                    && savedEngine.FrozenMonth == inheritedFrozenMonth)
                 {
                     continue;
                 }
 
                 savedEngine.SetApprovedYear(inheritedYear);
+                savedEngine.SetFrozenDate(inheritedFrozenYear, inheritedFrozenMonth);
                 changed = true;
             }
 
@@ -4691,13 +4737,24 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     continue;
                 }
 
-                var inheritedYear = _savedAircraftDesigns[sourceIndex].ApprovedYear;
-                if (savedDesign.ApprovedYear == inheritedYear)
+                var sourceDesign = _savedAircraftDesigns[sourceIndex];
+                var inheritedYear = sourceDesign.ApprovedYear;
+                var inheritedFrozenYear = sourceDesign.FrozenYear;
+                var inheritedFrozenMonth = sourceDesign.FrozenMonth;
+                if (savedDesign.ApprovedYear == inheritedYear
+                    && savedDesign.FrozenYear == inheritedFrozenYear
+                    && savedDesign.FrozenMonth == inheritedFrozenMonth)
                 {
                     continue;
                 }
 
                 savedDesign.SetApprovedYear(inheritedYear);
+                savedDesign.SetFrozenDate(inheritedFrozenYear, inheritedFrozenMonth);
+                if (savedDesign.TryGetFrozenDate(out var inheritedFrozenDate))
+                {
+                    TryRebuildSavedAircraftCatalogItemAtDate(index, inheritedFrozenDate, out _);
+                }
+
                 changed = true;
             }
 
@@ -4966,11 +5023,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private bool TryBuildSavedEngineSnapshot(string researchId, out Engine engine)
     {
         engine = null!;
-        if (_engineBuilder is null)
-        {
-            return false;
-        }
-
         for (var index = 0; index < _savedEngines.Count; index++)
         {
             var savedEngine = _savedEngines[index];
@@ -4981,7 +5033,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
             try
             {
-                engine = _engineBuilder.Build(savedEngine.Definition, savedEngine.Parameters.Clone());
+                engine = BuildSavedEngineAtReferenceDate(savedEngine);
                 return true;
             }
             catch
@@ -4991,6 +5043,113 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         return false;
+    }
+
+    private Engine BuildSavedEngineAtReferenceDate(SavedEngineDesign savedEngine)
+    {
+        if (savedEngine is null)
+        {
+            throw new ArgumentNullException(nameof(savedEngine));
+        }
+
+        if (savedEngine.TryGetFrozenDate(out var frozenDate))
+        {
+            return BuildEngineForDate(savedEngine.Definition, savedEngine.Parameters.Clone(), frozenDate);
+        }
+
+        if (_engineBuilder is null)
+        {
+            throw new InvalidOperationException("Engine builder is not initialized.");
+        }
+
+        return _engineBuilder.Build(savedEngine.Definition, savedEngine.Parameters.Clone());
+    }
+
+    private Engine BuildEngineForDate(EngineDefinition definition, EngineParameters parameters, SimulationDate date)
+    {
+        var technologyModifierSource = new HistoricalCampaignRuntimeTechnologyModifierSource(
+            _historicalCampaignTechnologyProgression,
+            () => date);
+        var datedEngineBuilder = new EngineBuilder(
+            new EngineCalculator(),
+            _atmosphereModel,
+            technologyModifierSource);
+        return datedEngineBuilder.Build(definition, parameters);
+    }
+
+    private Aircraft BuildAircraftForDate(
+        AircraftFamilyDefinition familyDefinition,
+        AircraftTypeDefinition typeDefinition,
+        SimulationDate date)
+    {
+        if (_engineRepo is null || _airframeRepo is null)
+        {
+            throw new InvalidOperationException("Repositories are not initialized.");
+        }
+
+        var technologyModifierSource = new HistoricalCampaignRuntimeTechnologyModifierSource(
+            _historicalCampaignTechnologyProgression,
+            () => date);
+        var datedEngineBuilder = new EngineBuilder(
+            new EngineCalculator(),
+            _atmosphereModel,
+            technologyModifierSource);
+        var datedAirframeBuilder = new AirframeBuilder(
+            new AirframeCalculator(_aerodynamicsCalculator, _atmosphereModel),
+            technologyModifierSource);
+        var datedAircraftFactory = new AircraftFactory(
+            datedEngineBuilder,
+            datedAirframeBuilder,
+            new AircraftPerformanceCalculator(_atmosphereModel, _aerodynamicsCalculator),
+            new DevelopmentCostCalculator(),
+            _engineRepo,
+            _airframeRepo);
+        return datedAircraftFactory.CreateAircraft(familyDefinition, typeDefinition);
+    }
+
+    private bool TryRebuildSavedAircraftCatalogItemAtDate(int savedDesignIndex, SimulationDate date, out string errorMessage)
+    {
+        errorMessage = string.Empty;
+        if (savedDesignIndex < 0 || savedDesignIndex >= _savedAircraftDesigns.Count)
+        {
+            errorMessage = "Saved aircraft design index is out of range.";
+            return false;
+        }
+
+        var savedDesign = _savedAircraftDesigns[savedDesignIndex];
+        try
+        {
+            var rebuiltAircraft = BuildAircraftForDate(
+                savedDesign.CatalogItem.Aircraft.FamilyDefinition,
+                savedDesign.CatalogItem.Aircraft.TypeDefinition,
+                date);
+            var rebuiltCatalogItem = new FactoryAircraftTypeCatalogItem(
+                savedDesign.CatalogItem.DesignId,
+                savedDesign.CatalogItem.DisplayName,
+                rebuiltAircraft,
+                savedDesign.CatalogItem.RequiredFactoryToolLevel,
+                1);
+
+            _savedAircraftDesigns[savedDesignIndex] = new SavedAircraftDesign(
+                savedDesign.Name,
+                rebuiltCatalogItem,
+                savedDesign.EngineResearchId,
+                savedDesign.FamilyResearchId,
+                savedDesign.TypeResearchId,
+                savedDesign.DevelopmentStartedYear,
+                savedDesign.VariantDevelopmentStartedYear,
+                savedDesign.TypeVersionDevelopmentBaselineYear,
+                savedDesign.SourceTypeResearchId,
+                savedDesign.ApprovedYear,
+                savedDesign.FrozenYear,
+                savedDesign.FrozenMonth);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            return false;
+        }
     }
 
     private bool TryGetSavedAircraftDesignByFamilyResearchId(string familyResearchId, out SavedAircraftDesign savedDesign)
@@ -5053,7 +5212,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         try
         {
-            aircraft = _aircraftFactory.CreateAircraft(savedDesign.CatalogItem.Aircraft.FamilyDefinition, baselineType);
+            if (savedDesign.TryGetFrozenDate(out var frozenDate))
+            {
+                aircraft = BuildAircraftForDate(savedDesign.CatalogItem.Aircraft.FamilyDefinition, baselineType, frozenDate);
+            }
+            else
+            {
+                aircraft = _aircraftFactory.CreateAircraft(savedDesign.CatalogItem.Aircraft.FamilyDefinition, baselineType);
+            }
+
             return true;
         }
         catch
@@ -5133,11 +5300,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (project.SubjectType == ResearchSubjectType.Engine)
         {
-            if (_engineBuilder is null)
-            {
-                return false;
-            }
-
             for (var index = 0; index < _savedEngines.Count; index++)
             {
                 var savedEngine = _savedEngines[index];
@@ -5148,7 +5310,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
                 try
                 {
-                    var engineSnapshot = _engineBuilder.Build(savedEngine.Definition, savedEngine.Parameters.Clone());
+                    var engineSnapshot = BuildSavedEngineAtReferenceDate(savedEngine);
                     displayName = savedEngine.Name;
                     quote = _researchCalculator.CalculateEngineQuote(engineSnapshot, modifierPoints);
                     quote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.Engine, project.SubjectId, quote);
@@ -5301,6 +5463,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 continue;
             }
 
+            if (savedDesign.HasFrozenDate || savedDesign.ApprovedYear.HasValue)
+            {
+                continue;
+            }
+
             var aircraft = savedDesign.CatalogItem.Aircraft;
             var existingType = aircraft.TypeDefinition;
             var updatedType = new AircraftTypeDefinition
@@ -5334,7 +5501,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     savedDesign.VariantDevelopmentStartedYear,
                     savedDesign.TypeVersionDevelopmentBaselineYear,
                     savedDesign.SourceTypeResearchId,
-                    savedDesign.ApprovedYear);
+                    savedDesign.ApprovedYear,
+                    savedDesign.FrozenYear,
+                    savedDesign.FrozenMonth);
             }
             catch (Exception ex)
             {
@@ -5612,21 +5781,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label(BuildEngineDisplayName(savedEngine.Name, savedEngine.Definition.EngineType, savedEngine.Parameters));
             GUILayout.Label($"Research: {ResolveResearchStatusLabel(ResearchSubjectType.Engine, savedEngine.ResearchId)}");
             GUILayout.Label($"Approved Year: {FormatApprovedYear(savedEngine.ApprovedYear)}");
-            if (_engineBuilder is not null)
+            try
             {
-                try
-                {
-                    var built = _engineBuilder.Build(savedEngine.Definition, savedEngine.Parameters.Clone());
-                    var outputAtSeaLevel = ResolveEngineOutputAtSeaLevel(built);
-                    var outputLabel = built.Performance.OutputKind == EngineOutputKind.PowerKilowatts
-                        ? "Engine Power @0m (kW)"
-                        : "Engine Thrust @0m (N)";
-                    GUILayout.Label($"{outputLabel}: {FormatUiNumber(outputAtSeaLevel, "0.0")}");
-                }
-                catch
-                {
-                    GUILayout.Label("Engine output @0m: N/A");
-                }
+                var built = BuildSavedEngineAtReferenceDate(savedEngine);
+                var outputAtSeaLevel = ResolveEngineOutputAtSeaLevel(built);
+                var outputLabel = built.Performance.OutputKind == EngineOutputKind.PowerKilowatts
+                    ? "Engine Power @0m (kW)"
+                    : "Engine Thrust @0m (N)";
+                GUILayout.Label($"{outputLabel}: {FormatUiNumber(outputAtSeaLevel, "0.0")}");
+            }
+            catch
+            {
+                GUILayout.Label("Engine output @0m: N/A");
             }
 
             GUILayout.BeginHorizontal();
@@ -5774,14 +5940,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawParameterValueRow("Maximum Speed (RPM)", FormatUiNumber(selected.Parameters.MaximumSpeed, "0"));
         DrawParameterValueRow("Cooling Efficiency", FormatUiNumber(selected.Parameters.CoolingEfficiency, "0.00"));
 
-        if (_engineBuilder is null)
-        {
-            return;
-        }
-
         try
         {
-            var built = _engineBuilder.Build(selected.Definition, selected.Parameters.Clone());
+            var built = BuildSavedEngineAtReferenceDate(selected);
             var outputAtSeaLevel = ResolveEngineOutputAtSeaLevel(built);
             if (built.Performance.OutputKind == EngineOutputKind.PowerKilowatts)
             {
@@ -6598,12 +6759,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             1);
 
         int? approvedYear = null;
+        int? frozenYear = null;
+        int? frozenMonth = null;
         if (isTypeVersionDevelopment && !string.IsNullOrWhiteSpace(activeTypeVersionDevelopment!.SourceTypeResearchId))
         {
             var sourceTypeIndex = FindSavedAircraftDesignIndexByTypeResearchId(activeTypeVersionDevelopment.SourceTypeResearchId);
             if (sourceTypeIndex >= 0 && sourceTypeIndex < _savedAircraftDesigns.Count)
             {
                 approvedYear = _savedAircraftDesigns[sourceTypeIndex].ApprovedYear;
+                frozenYear = _savedAircraftDesigns[sourceTypeIndex].FrozenYear;
+                frozenMonth = _savedAircraftDesigns[sourceTypeIndex].FrozenMonth;
             }
         }
 
@@ -6617,7 +6782,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             activeTypeVersionDevelopment?.VariantDevelopmentStartedYear ?? _currentDate.Year,
             activeTypeVersionDevelopment?.SourceDevelopmentStartedYear,
             activeTypeVersionDevelopment?.SourceTypeResearchId ?? string.Empty,
-            approvedYear);
+            approvedYear,
+            frozenYear,
+            frozenMonth);
         _savedAircraftDesigns.Add(savedDesign);
         _selectedSavedAircraftDesignIndex = _savedAircraftDesigns.Count - 1;
 
@@ -7232,12 +7399,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var researchId = CreateUniqueEngineResearchId(name);
 
         int? approvedYear = null;
+        int? frozenYear = null;
+        int? frozenMonth = null;
         if (activeVersionDevelopment is not null && !string.IsNullOrWhiteSpace(activeVersionDevelopment.SourceResearchId))
         {
             var sourceEngineIndex = FindSavedEngineIndexByResearchId(activeVersionDevelopment.SourceResearchId);
             if (sourceEngineIndex >= 0 && sourceEngineIndex < _savedEngines.Count)
             {
                 approvedYear = _savedEngines[sourceEngineIndex].ApprovedYear;
+                frozenYear = _savedEngines[sourceEngineIndex].FrozenYear;
+                frozenMonth = _savedEngines[sourceEngineIndex].FrozenMonth;
             }
         }
 
@@ -7249,7 +7420,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             activeVersionDevelopment?.VariantDevelopmentStartedYear ?? _currentDate.Year,
             activeVersionDevelopment?.SourceDevelopmentStartedYear,
             activeVersionDevelopment?.SourceResearchId ?? string.Empty,
-            approvedYear);
+            approvedYear,
+            frozenYear,
+            frozenMonth);
         _savedEngines.Add(savedDesign);
         _selectedSavedEngineIndex = _savedEngines.Count - 1;
 
@@ -9601,6 +9774,30 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             : SimulationDate.WrightTycoonStart.Year;
     }
 
+    private static int? NormalizeOptionalMonth(int? value)
+    {
+        if (!value.HasValue || value.Value < 1 || value.Value > 12)
+        {
+            return null;
+        }
+
+        return value.Value;
+    }
+
+    private static bool TryCreateSimulationDate(int? year, int? month, out SimulationDate date)
+    {
+        date = default;
+        var normalizedYear = NormalizeOptionalBaselineYear(year);
+        var normalizedMonth = NormalizeOptionalMonth(month);
+        if (!normalizedYear.HasValue || !normalizedMonth.HasValue)
+        {
+            return false;
+        }
+
+        date = new SimulationDate(normalizedYear.Value, normalizedMonth.Value);
+        return true;
+    }
+
     private string BuildFamilyId() => BuildNamedId("fam", _familyName, "player");
 
     private string BuildTypeId() => BuildNamedId("type", _selectedAircraftCategory.ToString(), "player");
@@ -9860,12 +10057,41 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             int variantDevelopmentStartedYear,
             int? versionDevelopmentBaselineYear = null,
             string sourceResearchId = "",
-            int? approvedYear = null)
+            int? approvedYear = null,
+            int? frozenYear = null,
+            int? frozenMonth = null)
+            : this(
+                name,
+                researchId,
+                engine.Definition,
+                engine.Parameters,
+                developmentStartedYear,
+                variantDevelopmentStartedYear,
+                versionDevelopmentBaselineYear,
+                sourceResearchId,
+                approvedYear,
+                frozenYear,
+                frozenMonth)
+        {
+        }
+
+        public SavedEngineDesign(
+            string name,
+            string researchId,
+            EngineDefinition definition,
+            EngineParameters parameters,
+            int developmentStartedYear,
+            int variantDevelopmentStartedYear,
+            int? versionDevelopmentBaselineYear = null,
+            string sourceResearchId = "",
+            int? approvedYear = null,
+            int? frozenYear = null,
+            int? frozenMonth = null)
         {
             Name = name;
             ResearchId = researchId;
-            Definition = engine.Definition;
-            Parameters = engine.Parameters.Clone();
+            Definition = definition ?? throw new ArgumentNullException(nameof(definition));
+            Parameters = parameters?.Clone() ?? throw new ArgumentNullException(nameof(parameters));
             DevelopmentStartedYear = NormalizeRequiredYear(
                 developmentStartedYear,
                 NormalizeOptionalBaselineYear(versionDevelopmentBaselineYear) ?? SimulationDate.WrightTycoonStart.Year);
@@ -9873,6 +10099,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             VersionDevelopmentBaselineYear = NormalizeOptionalBaselineYear(versionDevelopmentBaselineYear) ?? DevelopmentStartedYear;
             SourceResearchId = sourceResearchId ?? string.Empty;
             ApprovedYear = NormalizeOptionalBaselineYear(approvedYear);
+            SetFrozenDate(frozenYear, frozenMonth);
         }
 
         public string Name { get; }
@@ -9893,9 +10120,42 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public int? ApprovedYear { get; private set; }
 
+        public int? FrozenYear { get; private set; }
+
+        public int? FrozenMonth { get; private set; }
+
+        public bool HasFrozenDate => FrozenYear.HasValue && FrozenMonth.HasValue;
+
         public bool IsVersionDevelopment => !string.IsNullOrWhiteSpace(SourceResearchId);
 
         public void SetApprovedYear(int? approvedYear) => ApprovedYear = NormalizeOptionalBaselineYear(approvedYear);
+
+        public void SetFrozenDate(SimulationDate? date)
+        {
+            if (!date.HasValue)
+            {
+                FrozenYear = null;
+                FrozenMonth = null;
+                return;
+            }
+
+            FrozenYear = NormalizeOptionalBaselineYear(date.Value.Year);
+            FrozenMonth = NormalizeOptionalMonth(date.Value.Month);
+        }
+
+        public void SetFrozenDate(int? year, int? month)
+        {
+            if (TryCreateSimulationDate(year, month, out var date))
+            {
+                SetFrozenDate(date);
+                return;
+            }
+
+            FrozenYear = null;
+            FrozenMonth = null;
+        }
+
+        public bool TryGetFrozenDate(out SimulationDate date) => TryCreateSimulationDate(FrozenYear, FrozenMonth, out date);
     }
 
     private sealed class SavedFamilyDesign
@@ -9945,7 +10205,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             int variantDevelopmentStartedYear,
             int? typeVersionDevelopmentBaselineYear = null,
             string sourceTypeResearchId = "",
-            int? approvedYear = null)
+            int? approvedYear = null,
+            int? frozenYear = null,
+            int? frozenMonth = null)
         {
             Name = name;
             CatalogItem = catalogItem;
@@ -9959,6 +10221,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             TypeVersionDevelopmentBaselineYear = NormalizeOptionalBaselineYear(typeVersionDevelopmentBaselineYear) ?? DevelopmentStartedYear;
             SourceTypeResearchId = sourceTypeResearchId ?? string.Empty;
             ApprovedYear = NormalizeOptionalBaselineYear(approvedYear);
+            SetFrozenDate(frozenYear, frozenMonth);
         }
 
         public string Name { get; }
@@ -9981,9 +10244,42 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public int? ApprovedYear { get; private set; }
 
+        public int? FrozenYear { get; private set; }
+
+        public int? FrozenMonth { get; private set; }
+
+        public bool HasFrozenDate => FrozenYear.HasValue && FrozenMonth.HasValue;
+
         public bool IsTypeVersionDevelopment => !string.IsNullOrWhiteSpace(SourceTypeResearchId);
 
         public void SetApprovedYear(int? approvedYear) => ApprovedYear = NormalizeOptionalBaselineYear(approvedYear);
+
+        public void SetFrozenDate(SimulationDate? date)
+        {
+            if (!date.HasValue)
+            {
+                FrozenYear = null;
+                FrozenMonth = null;
+                return;
+            }
+
+            FrozenYear = NormalizeOptionalBaselineYear(date.Value.Year);
+            FrozenMonth = NormalizeOptionalMonth(date.Value.Month);
+        }
+
+        public void SetFrozenDate(int? year, int? month)
+        {
+            if (TryCreateSimulationDate(year, month, out var date))
+            {
+                SetFrozenDate(date);
+                return;
+            }
+
+            FrozenYear = null;
+            FrozenMonth = null;
+        }
+
+        public bool TryGetFrozenDate(out SimulationDate date) => TryCreateSimulationDate(FrozenYear, FrozenMonth, out date);
     }
 
     private readonly struct HistoricalCampaignBonusBatchRequest
@@ -10218,6 +10514,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public int? ApprovedYear { get; set; }
 
+        public int? FrozenYear { get; set; }
+
+        public int? FrozenMonth { get; set; }
+
         // Legacy field kept for backward compatibility with older saves.
         public int? VersionDevelopmentBaselineYear { get; set; }
 
@@ -10268,6 +10568,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public int VariantDevelopmentStartedYear { get; set; }
 
         public int? ApprovedYear { get; set; }
+
+        public int? FrozenYear { get; set; }
+
+        public int? FrozenMonth { get; set; }
 
         // Legacy field kept for backward compatibility with older saves.
         public int? TypeVersionDevelopmentBaselineYear { get; set; }
