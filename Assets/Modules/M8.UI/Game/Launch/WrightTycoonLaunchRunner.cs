@@ -5387,8 +5387,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        var ratings = BuildEnginePerformanceRatingsByResearchId();
-
         for (var index = 0; index < _savedEngines.Count; index++)
         {
             var savedEngine = _savedEngines[index];
@@ -5396,14 +5394,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label(BuildEngineDisplayName(savedEngine.Name, savedEngine.Definition.EngineType, savedEngine.Parameters));
             GUILayout.Label($"Research: {ResolveResearchStatusLabel(ResearchSubjectType.Engine, savedEngine.ResearchId)}");
             GUILayout.Label($"Approved Year: {FormatApprovedYear(savedEngine.ApprovedYear)}");
-            if (ratings.TryGetValue(savedEngine.ResearchId, out var rating))
-            {
-                GUILayout.Label($"Performance Rating: {rating.Grade} ({FormatUiInteger(rating.OverallScore)}/100)");
-            }
-            else
-            {
-                GUILayout.Label("Performance Rating: N/A");
-            }
 
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Select", GUILayout.Width(90f), GUILayout.Height(24f)))
@@ -5528,16 +5518,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawParameterValueRow("Research Time (months)", FormatUiInteger(engineResearchTimeMonths));
         }
 
-        var ratings = BuildEnginePerformanceRatingsByResearchId();
-        if (ratings.TryGetValue(selected.ResearchId, out var rating))
-        {
-            DrawParameterValueRow("Performance Rating", $"{rating.Grade} ({FormatUiInteger(rating.OverallScore)}/100)");
-            DrawParameterValueRow(
-                "Performance Breakdown",
-                $"Output {FormatUiInteger(rating.OutputScore)} | Reliability {FormatUiInteger(rating.ReliabilityScore)} | " +
-                $"Efficiency {FormatUiInteger(rating.EfficiencyScore)} | Cost {FormatUiInteger(rating.CostScore)} | MD {FormatUiInteger(rating.ProductionScore)}");
-        }
-
         DrawParameterValueRow("Definition", $"{selected.Definition.DisplayName} ({selected.Definition.EngineType})");
         DrawParameterValueRow("Engine Type", selected.Definition.EngineType.ToString());
         if (IsJetFamily(selected.Definition.EngineType))
@@ -5579,126 +5559,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             DrawError("Selected engine parameters could not be evaluated.");
         }
-    }
-
-    private IReadOnlyDictionary<string, EnginePerformanceRating> BuildEnginePerformanceRatingsByResearchId()
-    {
-        var ratings = new Dictionary<string, EnginePerformanceRating>(StringComparer.Ordinal);
-        if (_engineBuilder is null || _savedEngines.Count == 0)
-        {
-            return ratings;
-        }
-
-        var snapshots = new List<EnginePerformanceRatingSnapshot>(_savedEngines.Count);
-        for (var index = 0; index < _savedEngines.Count; index++)
-        {
-            var saved = _savedEngines[index];
-            try
-            {
-                var built = _engineBuilder.Build(saved.Definition, saved.Parameters.Clone());
-                var seaLevelOutput = ResolveEngineOutputAtSeaLevel(built);
-                var isJet = built.Performance.OutputKind == EngineOutputKind.ThrustNewtons;
-                var hasSeaLevelFuel = TryGetEngineAltitudePerformanceValues(built, 0d, out var outputAtSeaLevel, out var fuelBurnAtSeaLevel);
-                var fuelPerOutput = hasSeaLevelFuel
-                    ? CalculateFuelPerOutputMetric(outputAtSeaLevel, fuelBurnAtSeaLevel, isJet)
-                    : double.NaN;
-
-                snapshots.Add(new EnginePerformanceRatingSnapshot(
-                    saved.ResearchId,
-                    seaLevelOutput,
-                    built.Performance.Reliability,
-                    fuelPerOutput,
-                    built.Performance.Cost,
-                    built.Performance.ProductionManDays));
-            }
-            catch
-            {
-                // Ignore invalid snapshots so one broken engine does not block ratings for the rest.
-            }
-        }
-
-        if (snapshots.Count == 0)
-        {
-            return ratings;
-        }
-
-        var minOutput = snapshots.Min(snapshot => snapshot.SeaLevelOutput);
-        var maxOutput = snapshots.Max(snapshot => snapshot.SeaLevelOutput);
-        var minReliability = snapshots.Min(snapshot => snapshot.Reliability);
-        var maxReliability = snapshots.Max(snapshot => snapshot.Reliability);
-        var minCost = snapshots.Min(snapshot => snapshot.Cost);
-        var maxCost = snapshots.Max(snapshot => snapshot.Cost);
-        var minProduction = snapshots.Min(snapshot => snapshot.ProductionManDays);
-        var maxProduction = snapshots.Max(snapshot => snapshot.ProductionManDays);
-
-        var fuelMetrics = snapshots
-            .Where(snapshot => !double.IsNaN(snapshot.FuelPerOutput))
-            .Select(snapshot => snapshot.FuelPerOutput)
-            .ToArray();
-        var hasFuelMetrics = fuelMetrics.Length > 0;
-        var minFuelPerOutput = hasFuelMetrics ? fuelMetrics.Min() : 0d;
-        var maxFuelPerOutput = hasFuelMetrics ? fuelMetrics.Max() : 0d;
-
-        for (var index = 0; index < snapshots.Count; index++)
-        {
-            var snapshot = snapshots[index];
-            var outputNormalized = NormalizeRatingHigherIsBetter(snapshot.SeaLevelOutput, minOutput, maxOutput);
-            var reliabilityNormalized = NormalizeRatingHigherIsBetter(snapshot.Reliability, minReliability, maxReliability);
-            var efficiencyNormalized = !double.IsNaN(snapshot.FuelPerOutput)
-                ? NormalizeRatingLowerIsBetter(snapshot.FuelPerOutput, minFuelPerOutput, maxFuelPerOutput)
-                : 0.5d;
-            var costNormalized = NormalizeRatingLowerIsBetter(snapshot.Cost, minCost, maxCost);
-            var productionNormalized = NormalizeRatingLowerIsBetter(snapshot.ProductionManDays, minProduction, maxProduction);
-
-            var overallNormalized =
-                (outputNormalized * 0.35d)
-                + (reliabilityNormalized * 0.30d)
-                + (efficiencyNormalized * 0.20d)
-                + (costNormalized * 0.10d)
-                + (productionNormalized * 0.05d);
-
-            var overallScore = ConvertToRatingScore(overallNormalized);
-            ratings[snapshot.ResearchId] = new EnginePerformanceRating(
-                overallScore,
-                ResolveRatingGrade(overallScore),
-                ConvertToRatingScore(outputNormalized),
-                ConvertToRatingScore(reliabilityNormalized),
-                ConvertToRatingScore(efficiencyNormalized),
-                ConvertToRatingScore(costNormalized),
-                ConvertToRatingScore(productionNormalized));
-        }
-
-        return ratings;
-    }
-
-    private static double NormalizeRatingHigherIsBetter(double value, double minValue, double maxValue)
-    {
-        var range = maxValue - minValue;
-        if (System.Math.Abs(range) <= 1e-9d)
-        {
-            return 1d;
-        }
-
-        return System.Math.Clamp((value - minValue) / range, 0d, 1d);
-    }
-
-    private static double NormalizeRatingLowerIsBetter(double value, double minValue, double maxValue) =>
-        1d - NormalizeRatingHigherIsBetter(value, minValue, maxValue);
-
-    private static int ConvertToRatingScore(double normalizedValue) =>
-        (int)System.Math.Round(System.Math.Clamp(normalizedValue, 0d, 1d) * 100d);
-
-    private static string ResolveRatingGrade(int score)
-    {
-        return score switch
-        {
-            >= 90 => "S",
-            >= 80 => "A",
-            >= 70 => "B",
-            >= 60 => "C",
-            >= 50 => "D",
-            _ => "E",
-        };
     }
 
     private void DrawMyMachinesSelectedTypeReport()
@@ -9773,72 +9633,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public int VariantDevelopmentStartedYear { get; }
 
         public int InitialResearchYear => SourceDevelopmentStartedYear;
-    }
-
-    private readonly struct EnginePerformanceRatingSnapshot
-    {
-        public EnginePerformanceRatingSnapshot(
-            string researchId,
-            double seaLevelOutput,
-            double reliability,
-            double fuelPerOutput,
-            double cost,
-            double productionManDays)
-        {
-            ResearchId = researchId ?? string.Empty;
-            SeaLevelOutput = seaLevelOutput;
-            Reliability = reliability;
-            FuelPerOutput = fuelPerOutput;
-            Cost = cost;
-            ProductionManDays = productionManDays;
-        }
-
-        public string ResearchId { get; }
-
-        public double SeaLevelOutput { get; }
-
-        public double Reliability { get; }
-
-        public double FuelPerOutput { get; }
-
-        public double Cost { get; }
-
-        public double ProductionManDays { get; }
-    }
-
-    private readonly struct EnginePerformanceRating
-    {
-        public EnginePerformanceRating(
-            int overallScore,
-            string grade,
-            int outputScore,
-            int reliabilityScore,
-            int efficiencyScore,
-            int costScore,
-            int productionScore)
-        {
-            OverallScore = overallScore;
-            Grade = grade ?? string.Empty;
-            OutputScore = outputScore;
-            ReliabilityScore = reliabilityScore;
-            EfficiencyScore = efficiencyScore;
-            CostScore = costScore;
-            ProductionScore = productionScore;
-        }
-
-        public int OverallScore { get; }
-
-        public string Grade { get; }
-
-        public int OutputScore { get; }
-
-        public int ReliabilityScore { get; }
-
-        public int EfficiencyScore { get; }
-
-        public int CostScore { get; }
-
-        public int ProductionScore { get; }
     }
 
     private sealed class SavedEngineDesign
