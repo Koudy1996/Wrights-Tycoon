@@ -49,7 +49,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     [SerializeField] private double _baseDevelopmentManDays = 240d;
 
     private readonly int[] _engineCountOptions = { 1, 2, 3, 4, 5, 6 };
-    private readonly string[] _tabs = { "Engine Designer", "Airframe + Type Designer", "My machines", "Research", "Demand", "Factory", "Contracts", "Government Contracts", "Finance" };
+    private readonly string[] _tabs = { "Engine Designer", "Airframe + Type Designer", "My machines", "Research", "Demand", "Factory", "Contracts", "Government Contracts", "Finance", "Historical Archive" };
     private readonly string[] _financeSubTabs = { "Income / Expense", "Last Month Details", "Transactions" };
     private readonly string[] _researchSubTabs = { "Current Research", "For Approval" };
     private readonly string[] _myMachinesSubTabs = { "Engines", "Families + Types" };
@@ -61,6 +61,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly List<SavedAircraftDesign> _savedAircraftDesigns = new();
     private readonly List<Contract> _lastGeneratedContracts = new();
     private readonly Dictionary<string, string> _selectedWarehouseDesignByContractId = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> _excludedWarehouseDesignByContractId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _deliveredContractProfitById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _governmentDeliveryQuantityInputById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TypeResearchModifierPoints> _researchModifiersByResearchId = new(StringComparer.Ordinal);
@@ -82,7 +83,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private HistoricalCampaignRuntimeContractModifierSource? _historicalCampaignContractModifierSource;
     private HistoricalCampaignRuntimeTechnologyModifierSource? _historicalCampaignTechnologyModifierSource;
     private ContractBoard? _contractBoard;
-    private ContractWarehouseDeliveryService? _contractWarehouseDeliveryService;
     private GovernmentContractBoard? _governmentContractBoard;
     private IGovernmentContractInventoryGateway? _governmentInventoryGateway;
     private AircraftProductionFactory? _productionFactory;
@@ -293,6 +293,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             AdvanceToNextMonth();
         }
+        if (GUILayout.Button("Historical Archive", GUILayout.Width(170f), GUILayout.Height(26f)))
+        {
+            _tab = _tabs.Length - 1;
+        }
 
         GUILayout.FlexibleSpace();
         if (GUILayout.Button("Save and Exit", GUILayout.Width(160f), GUILayout.Height(26f)))
@@ -311,8 +315,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label(historicalCampaignStatus);
             GUILayout.EndHorizontal();
         }
-
-        DrawHistoricalCampaignArchivePanel();
 
         if (!string.IsNullOrWhiteSpace(_saveActionMessage))
         {
@@ -360,9 +362,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             DrawGovernmentContractsTab();
         }
-        else
+        else if (_tab == 8)
         {
             DrawFinanceTab();
+        }
+        else
+        {
+            DrawHistoricalArchiveTab();
         }
 
         GUILayout.EndScrollView();
@@ -402,9 +408,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             DrawGovernmentContractsReport();
         }
-        else
+        else if (_tab == 8)
         {
             DrawFinanceReport();
+        }
+        else
+        {
+            DrawHistoricalArchiveReport();
         }
 
         GUILayout.EndScrollView();
@@ -529,7 +539,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 currentDateProvider: () => _currentDate),
             new ContractEvaluator());
         _productionFactory = new AircraftProductionFactory();
-        _contractWarehouseDeliveryService = new ContractWarehouseDeliveryService(_contractBoard, _productionFactory);
         var governmentRandom = new SystemGovernmentContractRandomProvider();
         var governmentGenerator = new GovernmentContractGenerator(
             governmentRandom,
@@ -545,6 +554,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _savedAircraftDesigns.Clear();
         _researchModifiersByResearchId.Clear();
         _selectedWarehouseDesignByContractId.Clear();
+        _excludedWarehouseDesignByContractId.Clear();
         _deliveredContractProfitById.Clear();
         _governmentDeliveryQuantityInputById.Clear();
         _selectedSavedEngineIndex = -1;
@@ -1314,6 +1324,24 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             });
         }
 
+        foreach (var entry in _excludedWarehouseDesignByContractId.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            if (string.IsNullOrWhiteSpace(entry.Key) || entry.Value.Count == 0)
+            {
+                continue;
+            }
+
+            payload.ExcludedWarehouseDesignByContractId.Add(new ContractExcludedWarehouseDesignStateEntry
+            {
+                ContractId = entry.Key,
+                DesignIds = entry.Value
+                    .Where(designId => !string.IsNullOrWhiteSpace(designId))
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(designId => designId, StringComparer.Ordinal)
+                    .ToList(),
+            });
+        }
+
         foreach (var entry in _deliveredContractProfitById)
         {
             payload.DeliveredContractProfitById.Add(new StringDoubleStateEntry
@@ -1599,6 +1627,36 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
+        _excludedWarehouseDesignByContractId.Clear();
+        if (data.ExcludedWarehouseDesignByContractId is not null)
+        {
+            for (var index = 0; index < data.ExcludedWarehouseDesignByContractId.Count; index++)
+            {
+                var entry = data.ExcludedWarehouseDesignByContractId[index];
+                if (entry is null || string.IsNullOrWhiteSpace(entry.ContractId) || entry.DesignIds is null || entry.DesignIds.Count == 0)
+                {
+                    continue;
+                }
+
+                var excludedSet = new HashSet<string>(StringComparer.Ordinal);
+                for (var designIndex = 0; designIndex < entry.DesignIds.Count; designIndex++)
+                {
+                    var designId = entry.DesignIds[designIndex];
+                    if (string.IsNullOrWhiteSpace(designId))
+                    {
+                        continue;
+                    }
+
+                    excludedSet.Add(designId);
+                }
+
+                if (excludedSet.Count > 0)
+                {
+                    _excludedWarehouseDesignByContractId[entry.ContractId] = excludedSet;
+                }
+            }
+        }
+
         _deliveredContractProfitById.Clear();
         _governmentDeliveryQuantityInputById.Clear();
         if (data.DeliveredContractProfitById is not null)
@@ -1665,7 +1723,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (_contractBoard is not null)
         {
-            PruneContractDeliverySelections(_contractBoard.OpenContracts);
+            PruneContractDeliverySelections(_contractBoard.OpenContracts, BuildProductionCatalog(includeOnlyResearched: false));
         }
 
         if (_governmentContractBoard is not null)
@@ -2482,6 +2540,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                             _selectedWarehouseDesignByContractId.Remove(contractsToClear[contractIndex]);
                         }
 
+                        var contractIds = _excludedWarehouseDesignByContractId.Keys.ToArray();
+                        for (var contractIndex = 0; contractIndex < contractIds.Length; contractIndex++)
+                        {
+                            var contractId = contractIds[contractIndex];
+                            if (!_excludedWarehouseDesignByContractId.TryGetValue(contractId, out var excludedDesignIds))
+                            {
+                                continue;
+                            }
+
+                            excludedDesignIds.Remove(designToDelete.CatalogItem.DesignId);
+                            if (excludedDesignIds.Count == 0)
+                            {
+                                _excludedWarehouseDesignByContractId.Remove(contractId);
+                            }
+                        }
+
                         if (_savedAircraftDesigns.Count == 0)
                         {
                             _selectedSavedAircraftDesignIndex = -1;
@@ -3241,7 +3315,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private void DrawContractsTab()
     {
         DrawSection("Contracts (M6)");
-        if (_contractBoard is null || _productionFactory is null || _contractWarehouseDeliveryService is null)
+        if (_contractBoard is null || _productionFactory is null)
         {
             DrawError("Contract or factory system is not initialized.");
             return;
@@ -3311,14 +3385,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private void DrawContractsReport()
     {
         DrawSection("Contract Board");
-        if (_contractBoard is null || _productionFactory is null || _contractWarehouseDeliveryService is null)
+        if (_contractBoard is null || _productionFactory is null)
         {
             DrawError("Contract or factory system is not initialized.");
             return;
         }
 
-        PruneContractDeliverySelections(_contractBoard.OpenContracts);
         var catalog = BuildProductionCatalog();
+        PruneContractDeliverySelections(_contractBoard.OpenContracts, catalog);
         var warehouseSnapshot = _productionFactory.WarehouseUnitsByDesign;
         var totalWarehouseUnits = warehouseSnapshot.Values.Sum();
 
@@ -3369,9 +3443,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         else
         {
             Contract? contractToDeliver = null;
-            string? designIdToDeliver = null;
+            IReadOnlyList<ContractDeliveryAllocation>? deliveryAllocationsToApply = null;
             double contractIncomeToBook = 0d;
             double contractProfitLossToBook = 0d;
+            string deliveryPlanSummaryToBook = string.Empty;
 
             for (var index = 0; index < filteredSnapshots.Count; index++)
             {
@@ -3384,20 +3459,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 GUILayout.Label($"Can deliver now: {(snapshot.CanBeDeliveredNow ? "Yes" : "No")} | Matching plane by specs: {(snapshot.HasMatchingPlaneBySpecification ? "Yes" : "No")}");
                 DrawContractRequirements(contract.Requirements);
 
-                var availableDesignIds = warehouseSnapshot
-                    .Where(entry =>
-                        entry.Value > 0
-                        && catalog.ContainsKey(entry.Key)
-                        && IsCatalogItemCategoryCompatibleWithContract(contract, catalog[entry.Key]))
-                    .Select(entry => entry.Key)
-                    .OrderBy(id => catalog[id].DisplayName, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(id => id, StringComparer.Ordinal)
-                    .ToArray();
+                var deliveryCandidates = BuildContractDeliveryCandidates(
+                    contract,
+                    _contractBoard,
+                    catalog,
+                    warehouseSnapshot);
 
-                if (availableDesignIds.Length == 0)
+                if (deliveryCandidates.Count == 0)
                 {
                     DrawError("Status: blocked");
-                    if (contract.Requirements.RequiredCategory.HasValue)
+                    var categoryCompatibleWarehouseUnits = warehouseSnapshot
+                        .Where(entry => entry.Value > 0 && catalog.TryGetValue(entry.Key, out var item) && IsCatalogItemCategoryCompatibleWithContract(contract, item))
+                        .Sum(entry => entry.Value);
+                    if (categoryCompatibleWarehouseUnits <= 0 && contract.Requirements.RequiredCategory.HasValue)
                     {
                         var requiredCategoryName =
                             AircraftCategoryCatalog.GetProfile(contract.Requirements.RequiredCategory.Value).DisplayName;
@@ -3412,73 +3486,116 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     {
                         GUILayout.Label("- Save at least one aircraft design in Airframe + Type tab.");
                     }
+
+                    if (categoryCompatibleWarehouseUnits > 0)
+                    {
+                        GUILayout.Label("- Available aircraft in matching category do not meet one or more contract requirements.");
+                    }
                 }
                 else
                 {
-                    if (!_selectedWarehouseDesignByContractId.TryGetValue(contract.Id, out var selectedDesignId)
-                        || Array.IndexOf(availableDesignIds, selectedDesignId) < 0)
+                    if (_excludedWarehouseDesignByContractId.TryGetValue(contract.Id, out var excludedDesignIds))
                     {
-                        selectedDesignId = availableDesignIds[0];
-                        _selectedWarehouseDesignByContractId[contract.Id] = selectedDesignId;
-                    }
-
-                    var selectedDesignIndex = Array.IndexOf(availableDesignIds, selectedDesignId);
-                    var designOptions = new string[availableDesignIds.Length];
-                    for (var designIndex = 0; designIndex < availableDesignIds.Length; designIndex++)
-                    {
-                        var designId = availableDesignIds[designIndex];
-                        var design = catalog[designId];
-                        var stock = warehouseSnapshot[designId];
-                        designOptions[designIndex] = $"{design.DisplayName} | stock {FormatUiInteger(stock)}";
-                    }
-
-                    selectedDesignIndex = DrawListSelector($"Delivery Source ({contract.Id})", selectedDesignIndex, designOptions);
-                    selectedDesignIndex = Mathf.Clamp(selectedDesignIndex, 0, availableDesignIds.Length - 1);
-                    selectedDesignId = availableDesignIds[selectedDesignIndex];
-                    _selectedWarehouseDesignByContractId[contract.Id] = selectedDesignId;
-
-                    var selectedAircraftDesign = catalog[selectedDesignId];
-                    var selectedStock = warehouseSnapshot[selectedDesignId];
-                    var hasRequiredStock = selectedStock >= contract.QuantityUnits;
-                    var evaluation = _contractBoard.Evaluate(contract, selectedAircraftDesign.Aircraft);
-
-                    DrawMetric("Stock For Selected Source", selectedStock, "0");
-                    GUILayout.Label($"Source Category: {AircraftCategoryCatalog.GetProfile(selectedAircraftDesign.Category).DisplayName}");
-                    DrawMetric("Source Reliability", selectedAircraftDesign.Aircraft.Performance.OverallReliability, "0.000");
-                    DrawMetric("Source Weight (kg)", selectedAircraftDesign.Aircraft.Performance.TotalWeight.Kilograms, "0.0");
-                    DrawMetric("Source Range (km)", selectedAircraftDesign.Aircraft.Performance.RangeKilometers, "0.0");
-                    DrawMetric("Source Payload (kg)", selectedAircraftDesign.Aircraft.Performance.PayloadCapacity.Kilograms, "0.0");
-                    DrawMetric("Source Cruise Fuel Burn (kg/h)", selectedAircraftDesign.Aircraft.Performance.AverageCruiseFuelBurnKilogramsPerHour, "0.0");
-
-                    var contractUnitPrice = GetContractUnitPrice(contract);
-                    var contractTotalPrice = GetContractTotalPrice(contract);
-                    var expectedProfitLoss = CalculateContractProfitLoss(contract, selectedAircraftDesign);
-                    DrawMetric("Contract Unit Price", contractUnitPrice, "0.00");
-                    DrawMetric("Contract Total Price", contractTotalPrice, "0.00");
-                    DrawSignedCurrencyMetric("Expected Profit/Loss", expectedProfitLoss);
-
-                    if (evaluation.CanDeliver && hasRequiredStock)
-                    {
-                        GUILayout.Label("Status: deliverable");
-                        if (GUILayout.Button($"Deliver {FormatUiInteger(contract.QuantityUnits)} Units", GUILayout.Height(26f)))
+                        var validDesignIds = new HashSet<string>(deliveryCandidates.Select(candidate => candidate.DesignId), StringComparer.Ordinal);
+                        excludedDesignIds.IntersectWith(validDesignIds);
+                        if (excludedDesignIds.Count == 0)
                         {
-                            contractToDeliver = contract;
-                            designIdToDeliver = selectedDesignId;
-                            contractIncomeToBook = contractTotalPrice;
-                            contractProfitLossToBook = expectedProfitLoss;
+                            _excludedWarehouseDesignByContractId.Remove(contract.Id);
+                            excludedDesignIds = null;
+                        }
+                    }
+
+                    GUILayout.Label("Included delivery sources (uncheck to exclude for this contract):");
+                    var includedCandidates = new List<ContractDeliveryCandidate>(deliveryCandidates.Count);
+                    for (var candidateIndex = 0; candidateIndex < deliveryCandidates.Count; candidateIndex++)
+                    {
+                        var candidate = deliveryCandidates[candidateIndex];
+                        var isIncluded = excludedDesignIds is null || !excludedDesignIds.Contains(candidate.DesignId);
+                        GUILayout.BeginHorizontal(GUI.skin.box);
+                        var nextIncluded = GUILayout.Toggle(isIncluded, string.Empty, GUILayout.Width(22f));
+                        GUILayout.Label(candidate.CatalogItem.DisplayName, GUILayout.Width(260f));
+                        GUILayout.Label($"stock {FormatUiInteger(candidate.StockUnits)}", GUILayout.Width(110f));
+                        GUILayout.Label($"unit cost {FormatCurrency(candidate.UnitFulfillmentCost)}");
+                        GUILayout.EndHorizontal();
+
+                        if (nextIncluded != isIncluded)
+                        {
+                            if (!nextIncluded)
+                            {
+                                excludedDesignIds ??= new HashSet<string>(StringComparer.Ordinal);
+                                excludedDesignIds.Add(candidate.DesignId);
+                                _excludedWarehouseDesignByContractId[contract.Id] = excludedDesignIds;
+                            }
+                            else if (excludedDesignIds is not null)
+                            {
+                                excludedDesignIds.Remove(candidate.DesignId);
+                                if (excludedDesignIds.Count == 0)
+                                {
+                                    _excludedWarehouseDesignByContractId.Remove(contract.Id);
+                                    excludedDesignIds = null;
+                                }
+                            }
+                        }
+
+                        if (nextIncluded)
+                        {
+                            includedCandidates.Add(candidate);
+                        }
+                    }
+
+                    var includedStock = includedCandidates.Sum(candidate => candidate.StockUnits);
+                    DrawMetric("Stock In Selected Sources", includedStock, "0");
+
+                    var deliveryPlan = BuildCheapestContractDeliveryPlan(contract.QuantityUnits, includedCandidates);
+                    if (deliveryPlan.Count == 0)
+                    {
+                        DrawError("Status: blocked");
+                        if (includedCandidates.Count == 0)
+                        {
+                            GUILayout.Label("- All matching aircraft were excluded. Re-enable at least one source.");
+                        }
+                        else
+                        {
+                            GUILayout.Label(
+                                $"- Selected sources provide {FormatUiInteger(includedStock)} units, " +
+                                $"needs {FormatUiInteger(contract.QuantityUnits)}.");
                         }
                     }
                     else
                     {
-                        DrawError("Status: blocked");
-                        if (!hasRequiredStock)
+                        var mainSourceAircraft = deliveryPlan[0].Candidate.CatalogItem.Aircraft;
+                        var mainSourceCategory = deliveryPlan[0].Candidate.CatalogItem.Category;
+                        DrawMetric("Source Reliability", mainSourceAircraft.Performance.OverallReliability, "0.000");
+                        DrawMetric("Source Weight (kg)", mainSourceAircraft.Performance.TotalWeight.Kilograms, "0.0");
+                        DrawMetric("Source Range (km)", mainSourceAircraft.Performance.RangeKilometers, "0.0");
+                        DrawMetric("Source Payload (kg)", mainSourceAircraft.Performance.PayloadCapacity.Kilograms, "0.0");
+                        DrawMetric("Source Cruise Fuel Burn (kg/h)", mainSourceAircraft.Performance.AverageCruiseFuelBurnKilogramsPerHour, "0.0");
+                        GUILayout.Label($"Main Source Category: {AircraftCategoryCatalog.GetProfile(mainSourceCategory).DisplayName}");
+
+                        GUILayout.Label("Delivery plan (cheapest first):");
+                        for (var allocationIndex = 0; allocationIndex < deliveryPlan.Count; allocationIndex++)
                         {
-                            GUILayout.Label($"- Warehouse has {FormatUiInteger(selectedStock)}, needs {FormatUiInteger(contract.QuantityUnits)}.");
+                            var allocation = deliveryPlan[allocationIndex];
+                            GUILayout.Label(
+                                $"- {FormatUiInteger(allocation.UnitsToDeliver)}x {allocation.Candidate.CatalogItem.DisplayName} " +
+                                $"@ {FormatCurrency(allocation.Candidate.UnitFulfillmentCost)} / unit");
                         }
 
-                        for (var unmetIndex = 0; unmetIndex < evaluation.UnmetRequirements.Count; unmetIndex++)
+                        var contractUnitPrice = GetContractUnitPrice(contract);
+                        var contractTotalPrice = GetContractTotalPrice(contract);
+                        var fulfillmentCost = deliveryPlan.Sum(allocation => allocation.Candidate.UnitFulfillmentCost * allocation.UnitsToDeliver);
+                        var expectedProfitLoss = contractTotalPrice - fulfillmentCost;
+                        DrawMetric("Contract Unit Price", contractUnitPrice, "0.00");
+                        DrawMetric("Contract Total Price", contractTotalPrice, "0.00");
+                        DrawSignedCurrencyMetric("Expected Profit/Loss", expectedProfitLoss);
+                        GUILayout.Label("Status: deliverable");
+                        if (GUILayout.Button($"Deliver {FormatUiInteger(contract.QuantityUnits)} Units", GUILayout.Height(26f)))
                         {
-                            GUILayout.Label($"- {evaluation.UnmetRequirements[unmetIndex]}");
+                            contractToDeliver = contract;
+                            deliveryAllocationsToApply = deliveryPlan;
+                            contractIncomeToBook = contractTotalPrice;
+                            contractProfitLossToBook = expectedProfitLoss;
+                            deliveryPlanSummaryToBook = BuildContractDeliveryPlanSummary(deliveryPlan);
                         }
                     }
                 }
@@ -3487,27 +3604,70 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
 
             if (contractToDeliver is not null
-                && !string.IsNullOrWhiteSpace(designIdToDeliver))
+                && deliveryAllocationsToApply is not null
+                && deliveryAllocationsToApply.Count > 0)
             {
-                var result = _contractWarehouseDeliveryService.TryDeliverFromWarehouse(contractToDeliver.Id, designIdToDeliver, catalog);
-                _contractActionMessage = result.Message;
-                if (result.IsSuccess)
+                var withdrawnAllocations = new List<ContractDeliveryAllocation>(deliveryAllocationsToApply.Count);
+                string? withdrawalFailureMessage = null;
+                for (var allocationIndex = 0; allocationIndex < deliveryAllocationsToApply.Count; allocationIndex++)
                 {
-                    _selectedWarehouseDesignByContractId.Remove(contractToDeliver.Id);
-                    _contractActionMessage = $"{result.Message} Revenue booked: {FormatCurrency(contractIncomeToBook)}.";
-                    _deliveredContractProfitById[contractToDeliver.Id] = contractProfitLossToBook;
-
-                    if (_accountingSystem is not null && _productionFactory is not null)
+                    var allocation = deliveryAllocationsToApply[allocationIndex];
+                    if (!_productionFactory.TryWithdrawFromWarehouse(
+                            allocation.Candidate.DesignId,
+                            allocation.UnitsToDeliver,
+                            out var withdrawalMessage))
                     {
-                        var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
-                            _productionFactory.WarehouseUnitsByDesign,
-                            catalog);
-                        _accountingSystem.RegisterContractIncome(
-                            _elapsedMonths,
-                            _currentDate,
-                            contractIncomeToBook,
-                            inventoryByDesign,
-                            $"Contract delivery income: {contractToDeliver.Id}");
+                        withdrawalFailureMessage = withdrawalMessage;
+                        break;
+                    }
+
+                    withdrawnAllocations.Add(allocation);
+                }
+
+                if (!string.IsNullOrWhiteSpace(withdrawalFailureMessage))
+                {
+                    for (var rollbackIndex = 0; rollbackIndex < withdrawnAllocations.Count; rollbackIndex++)
+                    {
+                        var allocation = withdrawnAllocations[rollbackIndex];
+                        _productionFactory.AddWarehouseUnits(allocation.Candidate.DesignId, allocation.UnitsToDeliver);
+                    }
+
+                    _contractActionMessage = $"Delivery failed. {withdrawalFailureMessage} Warehouse stock rollback applied.";
+                }
+                else
+                {
+                    var leadAircraft = deliveryAllocationsToApply[0].Candidate.CatalogItem.Aircraft;
+                    var result = _contractBoard.TryDeliver(contractToDeliver.Id, leadAircraft);
+                    if (!result.IsSuccess)
+                    {
+                        for (var rollbackIndex = 0; rollbackIndex < deliveryAllocationsToApply.Count; rollbackIndex++)
+                        {
+                            var allocation = deliveryAllocationsToApply[rollbackIndex];
+                            _productionFactory.AddWarehouseUnits(allocation.Candidate.DesignId, allocation.UnitsToDeliver);
+                        }
+
+                        _contractActionMessage = $"{result.Message} Warehouse stock rollback applied.";
+                    }
+                    else
+                    {
+                        _selectedWarehouseDesignByContractId.Remove(contractToDeliver.Id);
+                        _excludedWarehouseDesignByContractId.Remove(contractToDeliver.Id);
+                        _contractActionMessage =
+                            $"{result.Message} Delivered from: {deliveryPlanSummaryToBook}. Revenue booked: {FormatCurrency(contractIncomeToBook)}.";
+                        _deliveredContractProfitById[contractToDeliver.Id] = contractProfitLossToBook;
+
+                        if (_accountingSystem is not null && _productionFactory is not null)
+                        {
+                            var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
+                                _productionFactory.WarehouseUnitsByDesign,
+                                catalog);
+                            _accountingSystem.RegisterContractIncome(
+                                _elapsedMonths,
+                                _currentDate,
+                                contractIncomeToBook,
+                                inventoryByDesign,
+                                $"Contract delivery income: {contractToDeliver.Id}");
+                        }
                     }
                 }
             }
@@ -7068,7 +7228,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return "Unknown Category";
     }
 
-    private void PruneContractDeliverySelections(IReadOnlyList<Contract> openContracts)
+    private void PruneContractDeliverySelections(
+        IReadOnlyList<Contract> openContracts,
+        IReadOnlyDictionary<string, FactoryAircraftTypeCatalogItem>? catalog = null)
     {
         var openIds = new HashSet<string>(StringComparer.Ordinal);
         for (var index = 0; index < openContracts.Count; index++)
@@ -7082,6 +7244,42 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         for (var index = 0; index < staleKeys.Length; index++)
         {
             _selectedWarehouseDesignByContractId.Remove(staleKeys[index]);
+        }
+
+        var staleExclusionKeys = _excludedWarehouseDesignByContractId.Keys
+            .Where(contractId => !openIds.Contains(contractId))
+            .ToArray();
+        for (var index = 0; index < staleExclusionKeys.Length; index++)
+        {
+            _excludedWarehouseDesignByContractId.Remove(staleExclusionKeys[index]);
+        }
+
+        if (catalog is null)
+        {
+            return;
+        }
+
+        var validDesignIds = new HashSet<string>(catalog.Keys, StringComparer.Ordinal);
+        var openContractIds = openIds.ToArray();
+        for (var index = 0; index < openContractIds.Length; index++)
+        {
+            var contractId = openContractIds[index];
+            if (_selectedWarehouseDesignByContractId.TryGetValue(contractId, out var selectedDesignId)
+                && !validDesignIds.Contains(selectedDesignId))
+            {
+                _selectedWarehouseDesignByContractId.Remove(contractId);
+            }
+
+            if (!_excludedWarehouseDesignByContractId.TryGetValue(contractId, out var excludedDesignIds))
+            {
+                continue;
+            }
+
+            excludedDesignIds.IntersectWith(validDesignIds);
+            if (excludedDesignIds.Count == 0)
+            {
+                _excludedWarehouseDesignByContractId.Remove(contractId);
+            }
         }
     }
 
@@ -7109,7 +7307,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         IReadOnlyDictionary<string, int> warehouseSnapshot)
     {
         var hasMatchingPlaneBySpecification = false;
-        var canBeDeliveredNow = false;
+        var deliverableWarehouseUnits = 0;
 
         foreach (var catalogItem in catalog.Values)
         {
@@ -7126,14 +7324,93 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
             hasMatchingPlaneBySpecification = true;
             if (warehouseSnapshot.TryGetValue(catalogItem.DesignId, out var stockUnits)
-                && stockUnits >= contract.QuantityUnits)
+                && stockUnits > 0)
             {
-                canBeDeliveredNow = true;
-                break;
+                deliverableWarehouseUnits += stockUnits;
+                if (deliverableWarehouseUnits >= contract.QuantityUnits)
+                {
+                    break;
+                }
             }
         }
 
+        var canBeDeliveredNow = deliverableWarehouseUnits >= contract.QuantityUnits;
         return new ContractAvailabilitySnapshot(contract, canBeDeliveredNow, hasMatchingPlaneBySpecification);
+    }
+
+    private IReadOnlyList<ContractDeliveryCandidate> BuildContractDeliveryCandidates(
+        Contract contract,
+        ContractBoard contractBoard,
+        IReadOnlyDictionary<string, FactoryAircraftTypeCatalogItem> catalog,
+        IReadOnlyDictionary<string, int> warehouseSnapshot)
+    {
+        var candidates = new List<ContractDeliveryCandidate>();
+        foreach (var warehouseEntry in warehouseSnapshot)
+        {
+            if (warehouseEntry.Value <= 0 || !catalog.TryGetValue(warehouseEntry.Key, out var catalogItem))
+            {
+                continue;
+            }
+
+            if (!IsCatalogItemCategoryCompatibleWithContract(contract, catalogItem))
+            {
+                continue;
+            }
+
+            var evaluation = contractBoard.Evaluate(contract, catalogItem.Aircraft);
+            if (!evaluation.CanDeliver)
+            {
+                continue;
+            }
+
+            candidates.Add(new ContractDeliveryCandidate(
+                warehouseEntry.Key,
+                catalogItem,
+                warehouseEntry.Value,
+                CalculateAircraftUnitCostWithManDayLabor(catalogItem.Aircraft)));
+        }
+
+        return candidates
+            .OrderBy(candidate => candidate.UnitFulfillmentCost)
+            .ThenBy(candidate => candidate.CatalogItem.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(candidate => candidate.DesignId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<ContractDeliveryAllocation> BuildCheapestContractDeliveryPlan(
+        int requiredUnits,
+        IReadOnlyList<ContractDeliveryCandidate> candidates)
+    {
+        var deliveryPlan = new List<ContractDeliveryAllocation>();
+        var unitsRemaining = System.Math.Max(requiredUnits, 0);
+        for (var index = 0; index < candidates.Count && unitsRemaining > 0; index++)
+        {
+            var candidate = candidates[index];
+            var unitsFromCandidate = System.Math.Min(candidate.StockUnits, unitsRemaining);
+            if (unitsFromCandidate <= 0)
+            {
+                continue;
+            }
+
+            deliveryPlan.Add(new ContractDeliveryAllocation(candidate, unitsFromCandidate));
+            unitsRemaining -= unitsFromCandidate;
+        }
+
+        return unitsRemaining == 0
+            ? deliveryPlan
+            : Array.Empty<ContractDeliveryAllocation>();
+    }
+
+    private static string BuildContractDeliveryPlanSummary(IReadOnlyList<ContractDeliveryAllocation> deliveryPlan)
+    {
+        var parts = new string[deliveryPlan.Count];
+        for (var index = 0; index < deliveryPlan.Count; index++)
+        {
+            var allocation = deliveryPlan[index];
+            parts[index] = $"{FormatUiInteger(allocation.UnitsToDeliver)}x {allocation.Candidate.CatalogItem.DisplayName}";
+        }
+
+        return string.Join(", ", parts);
     }
 
     private static bool IsCatalogItemCategoryCompatibleWithContract(
@@ -7938,18 +8215,42 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return $"Historical campaign: next event '{nextEvent.Title}' in {FormatSimulationDate(nextEvent.GetDate())}.";
     }
 
-    private void DrawHistoricalCampaignArchivePanel()
+    private void DrawHistoricalArchiveTab()
     {
+        DrawSection("Historical Archive");
+        GUILayout.Label("Open this tab to review historical campaign events that already happened.");
+        DrawMetric("Archived Events", _historicalCampaignArchive.Count, "0");
+        if (_historicalCampaignArchive.Count > 0
+            && GUILayout.Button("Scroll To Latest", GUILayout.Height(26f)))
+        {
+            _historicalCampaignArchiveScroll = Vector2.zero;
+        }
+    }
+
+    private void DrawHistoricalArchiveReport()
+    {
+        DrawSection("Historical Archive");
+        DrawHistoricalCampaignArchivePanel(maxHeight: 600f, includeHeader: true);
+    }
+
+    private void DrawHistoricalCampaignArchivePanel(float maxHeight, bool includeHeader)
+    {
+        GUILayout.BeginVertical(GUI.skin.box);
+        if (includeHeader)
+        {
+            GUILayout.Label($"Historical archive ({_historicalCampaignArchive.Count})");
+        }
+
         if (_historicalCampaignArchive.Count == 0)
         {
+            GUILayout.Label("No archived events yet.");
+            GUILayout.EndVertical();
             return;
         }
 
-        GUILayout.BeginVertical(GUI.skin.box);
-        GUILayout.Label($"Historical archive ({_historicalCampaignArchive.Count})");
         _historicalCampaignArchiveScroll = GUILayout.BeginScrollView(
             _historicalCampaignArchiveScroll,
-            GUILayout.Height(92f));
+            GUILayout.Height(maxHeight));
 
         for (var index = _historicalCampaignArchive.Count - 1; index >= 0; index--)
         {
@@ -9968,6 +10269,42 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public bool HasMatchingPlaneBySpecification { get; }
     }
 
+    private readonly struct ContractDeliveryCandidate
+    {
+        public ContractDeliveryCandidate(
+            string designId,
+            FactoryAircraftTypeCatalogItem catalogItem,
+            int stockUnits,
+            double unitFulfillmentCost)
+        {
+            DesignId = designId ?? string.Empty;
+            CatalogItem = catalogItem;
+            StockUnits = stockUnits;
+            UnitFulfillmentCost = unitFulfillmentCost;
+        }
+
+        public string DesignId { get; }
+
+        public FactoryAircraftTypeCatalogItem CatalogItem { get; }
+
+        public int StockUnits { get; }
+
+        public double UnitFulfillmentCost { get; }
+    }
+
+    private readonly struct ContractDeliveryAllocation
+    {
+        public ContractDeliveryAllocation(ContractDeliveryCandidate candidate, int unitsToDeliver)
+        {
+            Candidate = candidate;
+            UnitsToDeliver = unitsToDeliver;
+        }
+
+        public ContractDeliveryCandidate Candidate { get; }
+
+        public int UnitsToDeliver { get; }
+    }
+
     private sealed class EngineVersionDevelopmentContext
     {
         public EngineVersionDevelopmentContext(
@@ -10450,6 +10787,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public List<StringStringStateEntry> SelectedWarehouseDesignByContractId { get; set; } = new();
 
+        public List<ContractExcludedWarehouseDesignStateEntry> ExcludedWarehouseDesignByContractId { get; set; } = new();
+
         public List<StringDoubleStateEntry> DeliveredContractProfitById { get; set; } = new();
 
         public List<string> FiredHistoricalCampaignEventIds { get; set; } = new();
@@ -10587,6 +10926,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public int ProductionOptimizationPoints { get; set; }
 
         public int FastDevelopmentPoints { get; set; }
+    }
+
+    private sealed class ContractExcludedWarehouseDesignStateEntry
+    {
+        public string ContractId { get; set; } = string.Empty;
+
+        public List<string> DesignIds { get; set; } = new();
     }
 
     private sealed class StringStringStateEntry
