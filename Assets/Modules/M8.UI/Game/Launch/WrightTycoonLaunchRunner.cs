@@ -49,7 +49,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     [SerializeField] private double _baseDevelopmentManDays = 240d;
 
     private readonly int[] _engineCountOptions = { 1, 2, 3, 4, 5, 6 };
-    private readonly string[] _tabs = { "Engine Designer", "Airframe + Type Designer", "My machines", "Research", "Demand", "Factory", "Contracts", "Government Contracts", "Finance", "Historical Archive" };
+    private readonly string[] _tabs = { "Engine Designer", "Airframe + Type Designer", "My machines", "Research", "Demand", "Factory", "Contracts", "Government Contracts", "Finance" };
     private readonly string[] _financeSubTabs = { "Income / Expense", "Last Month Details", "Transactions" };
     private readonly string[] _researchSubTabs = { "Current Research", "For Approval" };
     private readonly string[] _myMachinesSubTabs = { "Engines", "Families + Types" };
@@ -162,6 +162,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private TypeVersionDevelopmentContext? _typeVersionDevelopment;
 
     private bool _initialized;
+    private bool _showHistoricalArchive;
     private Vector2 _leftScroll;
     private Vector2 _rightScroll;
     private Vector2 _historicalCampaignArchiveScroll;
@@ -285,7 +286,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        _tab = GUILayout.Toolbar(_tab, _tabs, GUILayout.Height(34f));
+        var selectedTab = GUILayout.Toolbar(_tab, _tabs, GUILayout.Height(34f));
+        if (selectedTab != _tab)
+        {
+            _showHistoricalArchive = false;
+        }
+
+        _tab = selectedTab;
         GUILayout.BeginHorizontal(GUI.skin.box);
         GUILayout.Label($"Date: {FormatSimulationDate(_currentDate)}", GUILayout.Width(220f));
         GUILayout.Label($"Company: {_playerCompanyName}", GUILayout.Width(220f));
@@ -295,7 +302,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
         if (GUILayout.Button("Historical Archive", GUILayout.Width(170f), GUILayout.Height(26f)))
         {
-            _tab = _tabs.Length - 1;
+            _showHistoricalArchive = true;
         }
 
         GUILayout.FlexibleSpace();
@@ -330,7 +337,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var leftWidth = Mathf.Max(430f, root.width * 0.44f);
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(leftWidth), GUILayout.ExpandHeight(true));
         _leftScroll = GUILayout.BeginScrollView(_leftScroll);
-        if (_tab == 0)
+        if (_showHistoricalArchive)
+        {
+            DrawHistoricalArchiveTab();
+        }
+        else if (_tab == 0)
         {
             DrawEngineTab();
         }
@@ -362,13 +373,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             DrawGovernmentContractsTab();
         }
-        else if (_tab == 8)
-        {
-            DrawFinanceTab();
-        }
         else
         {
-            DrawHistoricalArchiveTab();
+            DrawFinanceTab();
         }
 
         GUILayout.EndScrollView();
@@ -376,7 +383,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.ExpandHeight(true), GUILayout.ExpandWidth(true));
         _rightScroll = GUILayout.BeginScrollView(_rightScroll);
-        if (_tab == 0)
+        if (_showHistoricalArchive)
+        {
+            DrawHistoricalArchiveReport();
+        }
+        else if (_tab == 0)
         {
             DrawEngineReport();
         }
@@ -408,13 +419,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             DrawGovernmentContractsReport();
         }
-        else if (_tab == 8)
-        {
-            DrawFinanceReport();
-        }
         else
         {
-            DrawHistoricalArchiveReport();
+            DrawFinanceReport();
         }
 
         GUILayout.EndScrollView();
@@ -565,6 +572,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _elapsedMonths = 0;
         _lastLoggedTechnologyModifierYear = int.MinValue;
         _tab = 0;
+        _showHistoricalArchive = false;
         _financeSubTab = 0;
         _researchSubTab = 0;
         _myMachinesSubTab = 0;
@@ -1396,6 +1404,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _elapsedMonths = System.Math.Max(data.ElapsedMonths, 0);
 
         _tab = Mathf.Clamp(data.Tab, 0, _tabs.Length - 1);
+        _showHistoricalArchive = false;
         _financeSubTab = Mathf.Clamp(data.FinanceSubTab, 0, _financeSubTabs.Length - 1);
         _researchSubTab = Mathf.Clamp(data.ResearchSubTab, 0, _researchSubTabs.Length - 1);
         _myMachinesSubTab = Mathf.Clamp(data.MyMachinesSubTab, 0, _myMachinesSubTabs.Length - 1);
