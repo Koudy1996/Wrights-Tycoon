@@ -176,6 +176,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly Dictionary<string, bool> _intSliderHadFocus = new(StringComparer.Ordinal);
 
     private const string IntroBackgroundResourcePath = "WT04/Menu/main_menu_background";
+    private const string IntroLogoResourcePath = "WT04/Menu/main_menu_logo";
     private const string SaveFileName = "saves.json";
     private const int AutosaveIntervalMonths = 6;
     private const int AutosaveRetentionCount = 4;
@@ -202,6 +203,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private GameSavePersistenceService? _savePersistence;
     private WrightTycoonBuildManifest _buildManifest = new();
     private Texture2D? _introBackgroundTexture;
+    private Texture2D? _introLogoTexture;
     private RuntimeScreen _runtimeScreen = RuntimeScreen.Intro;
     private Vector2 _loadMenuScroll;
     private string _saveActionMessage = string.Empty;
@@ -655,6 +657,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             Debug.LogWarning($"[Menu] Intro background not found in Resources at '{IntroBackgroundResourcePath}'.");
         }
+
+        _introLogoTexture = Resources.Load<Texture2D>(IntroLogoResourcePath);
+        if (_introLogoTexture is null)
+        {
+            Debug.LogWarning($"[Menu] Intro logo not found in Resources at '{IntroLogoResourcePath}'.");
+        }
     }
 
     private void LoadBuildManifest()
@@ -668,14 +676,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         var panelWidth = Mathf.Min(560f, virtualScreenSize.x - 40f);
         var panelHeight = Mathf.Min(548f, virtualScreenSize.y - 40f);
+        var panelY = Mathf.Clamp(
+            (virtualScreenSize.y - panelHeight) * 0.5f + 42f,
+            20f,
+            virtualScreenSize.y - panelHeight - 20f);
         var panelRect = new Rect(
             (virtualScreenSize.x - panelWidth) * 0.5f,
-            (virtualScreenSize.y - panelHeight) * 0.5f,
+            panelY,
             panelWidth,
             panelHeight);
 
         var hasContinueSave = _savePersistence is not null && _savePersistence.TryGetContinueEntry(out _);
 
+        DrawIntroLogo(virtualScreenSize, panelRect);
         DrawRect(panelRect, new Color(0.04f, 0.07f, 0.11f, 0.96f));
         GUILayout.BeginArea(panelRect, GUI.skin.box);
         GUILayout.Label("Wright Tycoon");
@@ -771,6 +784,40 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         GUILayout.Space(8f);
+    }
+
+    private void DrawIntroLogo(Vector2 virtualScreenSize, Rect panelRect)
+    {
+        if (_introLogoTexture is null)
+        {
+            return;
+        }
+
+        var textureWidth = System.Math.Max(_introLogoTexture.width, 1);
+        var textureHeight = System.Math.Max(_introLogoTexture.height, 1);
+        var aspect = textureWidth / (float)textureHeight;
+
+        var logoWidth = Mathf.Min(720f, virtualScreenSize.x - 80f);
+        var logoHeight = logoWidth / aspect;
+
+        var availableHeightAbovePanel = Mathf.Max(panelRect.y - 24f, 0f);
+        if (logoHeight > availableHeightAbovePanel)
+        {
+            logoHeight = availableHeightAbovePanel;
+            logoWidth = logoHeight * aspect;
+        }
+
+        if (logoWidth < 40f || logoHeight < 40f)
+        {
+            return;
+        }
+
+        var logoRect = new Rect(
+            (virtualScreenSize.x - logoWidth) * 0.5f,
+            panelRect.y - logoHeight - 12f,
+            logoWidth,
+            logoHeight);
+        GUI.DrawTexture(logoRect, _introLogoTexture, ScaleMode.ScaleToFit, true);
     }
 
     private void DrawLoadMenuScreen(Vector2 virtualScreenSize)
