@@ -4,7 +4,7 @@ namespace WrightTycoon.Core.Simulation;
 
 public readonly record struct SimulationDate
 {
-    public static SimulationDate WrightTycoonStart => new(1950, 1);
+    public static SimulationDate WrightTycoonStart => new(1946, 1);
 
     public SimulationDate(int year, int month)
     {

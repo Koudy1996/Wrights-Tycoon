@@ -313,7 +313,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         DrawHistoricalCampaignArchivePanel();
-        DrawHistoricalCampaignDebugPanel();
 
         if (!string.IsNullOrWhiteSpace(_saveActionMessage))
         {
