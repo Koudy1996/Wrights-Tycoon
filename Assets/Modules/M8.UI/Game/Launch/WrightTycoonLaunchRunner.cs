@@ -9742,6 +9742,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var anchorScreen = GUIUtility.GUIToScreenPoint(new Vector2(iconRect.xMax + 8f, iconRect.yMin - 4f));
         _modifierTooltipEntries[tooltip.Id] = new ModifierTooltipFrameEntry(tooltip, anchorScreen);
 
+        var currentEvent = Event.current;
+        if (currentEvent is null || currentEvent.type != EventType.Repaint)
+        {
+            return;
+        }
+
         if (!TryGetModifierTooltipHoverDistance(iconRect, out var distance))
         {
             return;
@@ -9770,6 +9776,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void DrawModifierTooltipOverlay(Vector2 virtualScreenSize)
     {
+        var currentEvent = Event.current;
+        if (currentEvent is null || currentEvent.type != EventType.Repaint)
+        {
+            return;
+        }
+
         if (_hasModifierTooltipHoverCandidate)
         {
             var now = Time.unscaledTime;
