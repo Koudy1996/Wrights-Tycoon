@@ -38,6 +38,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const double ExponentialSliderPower = 2d;
     private const double TypeWingAreaMinSquareMeters = 1d;
     private const double TypeWingAreaMaxSquareMeters = 1000d;
+    private const float ModifierTooltipHoverDelaySeconds = 0.5f;
+    private const float ModifierTooltipHoverRadiusPixels = 26f;
+    private const float ModifierTooltipIconSize = 18f;
 
     [Header("Default Definition IDs")]
     [SerializeField] private string _engineDefinitionId = "eng.piston.sport";
@@ -174,6 +177,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly Dictionary<string, string> _intSliderInputBuffer = new(StringComparer.Ordinal);
     private readonly Dictionary<string, bool> _doubleSliderHadFocus = new(StringComparer.Ordinal);
     private readonly Dictionary<string, bool> _intSliderHadFocus = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ModifierTooltipFrameEntry> _modifierTooltipEntries = new(StringComparer.Ordinal);
+    private bool _hasModifierTooltipHoverCandidate;
+    private string _modifierTooltipHoverCandidateId = string.Empty;
+    private float _modifierTooltipHoverCandidateDistance = float.MaxValue;
+    private string _modifierTooltipTrackedId = string.Empty;
+    private float _modifierTooltipTrackedSinceTime;
+    private string _modifierTooltipVisibleId = string.Empty;
+    private Texture2D? _modifierTooltipCircleTexture;
+    private GUIStyle? _modifierTooltipQuestionStyle;
+    private GUIStyle? _modifierTooltipTitleStyle;
+    private GUIStyle? _modifierTooltipBodyStyle;
 
     private const string IntroBackgroundResourcePath = "WT04/Menu/main_menu_background";
     private const string IntroLogoResourcePath = "WT04/Menu/main_menu_logo";
@@ -199,6 +213,176 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         new(3200, 1800),
         new(3840, 2160),
     };
+    private static readonly ModifierTooltipDefinition EngineFamilyPistonTooltip = new(
+        "modifier.engine.family",
+        "Engine Family: Propeller",
+        neutralLines: new[] { "No +/- notes are listed for engine family in the source sheet." });
+    private static readonly ModifierTooltipDefinition EngineFamilyJetTooltip = new(
+        "modifier.engine.family",
+        "Engine Family: Jet",
+        neutralLines: new[] { "No +/- notes are listed for engine family in the source sheet." });
+    private static readonly ModifierTooltipDefinition AllowedEngineFamilyPropellerTooltip = new(
+        "modifier.allowed.engine.family",
+        "Engine Family: Propeller",
+        neutralLines: new[] { "No +/- notes are listed for engine family in the source sheet." });
+    private static readonly ModifierTooltipDefinition AllowedEngineFamilyJetTooltip = new(
+        "modifier.allowed.engine.family",
+        "Engine Family: Jet",
+        neutralLines: new[] { "No +/- notes are listed for engine family in the source sheet." });
+    private static readonly ModifierTooltipDefinition BoostNoneTooltip = new(
+        "modifier.engine.boost",
+        "Boost: None",
+        positiveLines: new[] { "Simple, reliable" },
+        negativeLines: new[] { "Less power at altitude" });
+    private static readonly ModifierTooltipDefinition BoostSuperchargerTooltip = new(
+        "modifier.engine.boost",
+        "Boost: Supercharger",
+        positiveLines: new[] { "More power, good mid-altitude" },
+        negativeLines: new[] { "Higher weight, reliability penalty" });
+    private static readonly ModifierTooltipDefinition BoostTurboTooltip = new(
+        "modifier.engine.boost",
+        "Boost: Turbo",
+        positiveLines: new[] { "Strong all-altitude power" },
+        negativeLines: new[] { "Higher frontal area, weight, reliability penalty" });
+    private static readonly ModifierTooltipDefinition InjectionCarburetorTooltip = new(
+        "modifier.engine.injection",
+        "Injection: Carburetor",
+        positiveLines: new[] { "Cheap, short research" },
+        negativeLines: new[] { "Lower power" });
+    private static readonly ModifierTooltipDefinition InjectionDirectTooltip = new(
+        "modifier.engine.injection",
+        "Injection: Direct Injection",
+        positiveLines: new[] { "Better power output" },
+        negativeLines: new[] { "Higher cost and production time" });
+    private static readonly ModifierTooltipDefinition AfterburnerTooltip = new(
+        "modifier.engine.afterburner",
+        "Jet Afterburner",
+        positiveLines: new[] { "Much higher thrust" },
+        negativeLines: new[] { "More weight, cost, reliability penalty" });
+    private static readonly ModifierTooltipDefinition StructureTrussTooltip = new(
+        "modifier.family.structure",
+        "Structure: Truss",
+        positiveLines: new[] { "Cheap, early, simple, best for small planes" },
+        negativeLines: new[] { "Heavier, less advanced" });
+    private static readonly ModifierTooltipDefinition StructureMonocoqueTooltip = new(
+        "modifier.family.structure",
+        "Structure: Monocoque",
+        positiveLines: new[] { "Cleaner, stronger design" },
+        negativeLines: new[] { "Higher complexity" });
+    private static readonly ModifierTooltipDefinition MaterialWoodFabricTooltip = new(
+        "modifier.family.material",
+        "Material: Wood/Fabric",
+        positiveLines: new[] { "Cheap and light for early planes" },
+        negativeLines: new[] { "Weak for advanced, heavy designs" });
+    private static readonly ModifierTooltipDefinition MaterialAluminumTooltip = new(
+        "modifier.family.material",
+        "Material: Aluminum",
+        positiveLines: new[] { "Good all-round structure" });
+    private static readonly ModifierTooltipDefinition MaterialCompositeTooltip = new(
+        "modifier.family.material",
+        "Material: Composite",
+        positiveLines: new[] { "Advanced, light, efficient" },
+        negativeLines: new[] { "Late unlock, expensive, complex" });
+    private static readonly ModifierTooltipDefinition WingPositionLowTooltip = new(
+        "modifier.airframe.wing.position",
+        "Wing Position: Low",
+        positiveLines: new[] { "Lower drag, faster" },
+        negativeLines: new[] { "Less lift, maneuverability" });
+    private static readonly ModifierTooltipDefinition WingPositionHighTooltip = new(
+        "modifier.airframe.wing.position",
+        "Wing Position: High",
+        positiveLines: new[] { "Better lift, lighter" },
+        negativeLines: new[] { "More drag" });
+    private static readonly ModifierTooltipDefinition WingPositionBiplaneTooltip = new(
+        "modifier.airframe.wing.position",
+        "Wing Position: Biplane",
+        positiveLines: new[] { "Very high lift, light" },
+        negativeLines: new[] { "Slow, high drag" });
+    private static readonly ModifierTooltipDefinition WingShapeStraightTooltip = new(
+        "modifier.airframe.wing.shape",
+        "Wing Shape: Straight",
+        positiveLines: new[] { "Stable, simple" },
+        negativeLines: new[] { "Lower high-speed potential" });
+    private static readonly ModifierTooltipDefinition WingShapeSweptTooltip = new(
+        "modifier.airframe.wing.shape",
+        "Wing Shape: Swept",
+        positiveLines: new[] { "Better at higher speed, lower drag" },
+        negativeLines: new[] { "More complex, less low-speed performance" });
+    private static readonly ModifierTooltipDefinition WingShapeDeltaTooltip = new(
+        "modifier.airframe.wing.shape",
+        "Wing Shape: Delta",
+        positiveLines: new[] { "Strong high-speed layout" },
+        negativeLines: new[] { "Lower lift" });
+    private static readonly ModifierTooltipDefinition WingProfileLaminarTooltip = new(
+        "modifier.airframe.wing.profile",
+        "Wing Profile: Laminar 6-series",
+        positiveLines: new[] { "Good lift, low drag" },
+        negativeLines: new[] { "Best on big wings" });
+    private static readonly ModifierTooltipDefinition WingProfileNacaTooltip = new(
+        "modifier.airframe.wing.profile",
+        "Wing Profile: NACA 4-digit Light",
+        positiveLines: new[] { "Lighter, cheaper" },
+        negativeLines: new[] { "Drag rises at speed" });
+    private static readonly ModifierTooltipDefinition WingProfileSymmetricalTooltip = new(
+        "modifier.airframe.wing.profile",
+        "Wing Profile: Symmetrical Acrobatic",
+        positiveLines: new[] { "Better maneuverability" },
+        negativeLines: new[] { "Less lift, higher cost" });
+    private static readonly ModifierTooltipDefinition FlapNoneTooltip = new(
+        "modifier.airframe.flaps",
+        "Flaps: None",
+        positiveLines: new[] { "Light, simple" },
+        negativeLines: new[] { "Poor low-speed handling" });
+    private static readonly ModifierTooltipDefinition FlapPlainTooltip = new(
+        "modifier.airframe.flaps",
+        "Flaps: Plain",
+        positiveLines: new[] { "Better takeoff, landing" },
+        negativeLines: new[] { "Adds drag, complexity" });
+    private static readonly ModifierTooltipDefinition FlapFowlerTooltip = new(
+        "modifier.airframe.flaps",
+        "Flaps: Fowler",
+        positiveLines: new[] { "Strong lift improvement" },
+        negativeLines: new[] { "Heavier, more expensive" });
+    private static readonly ModifierTooltipDefinition LeadingEdgeFlapsTooltip = new(
+        "modifier.airframe.leading.edge.flaps",
+        "Leading Edge Flaps",
+        positiveLines: new[] { "Better lift and maneuverability" },
+        negativeLines: new[] { "More cost, weight, reliability penalty" });
+    private static readonly ModifierTooltipDefinition BackupSystemsTooltip = new(
+        "modifier.airframe.backup.systems",
+        "Backup Systems",
+        positiveLines: new[] { "Much better reliability" },
+        negativeLines: new[] { "More weight and drag" });
+    private static readonly ModifierTooltipDefinition GearFixedTooltip = new(
+        "modifier.airframe.gear",
+        "Gear: Fixed",
+        positiveLines: new[] { "Cheap, reliable" },
+        negativeLines: new[] { "High drag" });
+    private static readonly ModifierTooltipDefinition GearSemiRetractableTooltip = new(
+        "modifier.airframe.gear",
+        "Gear: Semi Retractable",
+        positiveLines: new[] { "Balanced drag, reliability" },
+        negativeLines: new[] { "More cost and complexity" });
+    private static readonly ModifierTooltipDefinition GearRetractableTooltip = new(
+        "modifier.airframe.gear",
+        "Gear: Retractable",
+        positiveLines: new[] { "Lowest drag, faster" },
+        negativeLines: new[] { "Costly, less reliable" });
+    private static readonly ModifierTooltipDefinition RunwayShortTooltip = new(
+        "modifier.airframe.runway",
+        "Runway: Short",
+        positiveLines: new[] { "More contract flexibility" },
+        negativeLines: new[] { "Lower performance" });
+    private static readonly ModifierTooltipDefinition RunwayMediumTooltip = new(
+        "modifier.airframe.runway",
+        "Runway: Medium",
+        positiveLines: new[] { "Balanced operations" },
+        negativeLines: new[] { "Less flexible than short" });
+    private static readonly ModifierTooltipDefinition RunwayLongTooltip = new(
+        "modifier.airframe.runway",
+        "Runway: Long",
+        positiveLines: new[] { "Good for heavy aircraft" },
+        negativeLines: new[] { "Needs longer runways" });
 
     private GameSavePersistenceService? _savePersistence;
     private WrightTycoonBuildManifest _buildManifest = new();
@@ -225,6 +409,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         _aircraftPreview3DRenderer.Dispose();
         _historicalCampaignImageLoader.Dispose();
+        if (_modifierTooltipCircleTexture is not null)
+        {
+            Destroy(_modifierTooltipCircleTexture);
+            _modifierTooltipCircleTexture = null;
+        }
     }
 
     private void Update()
@@ -244,21 +433,26 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (_runtimeScreen == RuntimeScreen.Intro)
         {
+            ClearModifierTooltipInteraction();
             DrawIntroScreen(virtualScreenSize);
             return;
         }
 
         if (_runtimeScreen == RuntimeScreen.LoadMenu)
         {
+            ClearModifierTooltipInteraction();
             DrawLoadMenuScreen(virtualScreenSize);
             return;
         }
 
         if (_runtimeScreen == RuntimeScreen.OptionsMenu)
         {
+            ClearModifierTooltipInteraction();
             DrawOptionsScreen(virtualScreenSize);
             return;
         }
+
+        BeginModifierTooltipFrame();
 
         var root = new Rect(10f, 10f, virtualScreenSize.x - 20f, virtualScreenSize.y - 20f);
         DrawRect(root, new Color(0.08f, 0.12f, 0.18f, 0.98f));
@@ -432,6 +626,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.EndHorizontal();
         GUILayout.EndArea();
 
+        DrawModifierTooltipOverlay(virtualScreenSize);
         _historicalCampaignPopupWindow.Draw(virtualScreenSize);
     }
 
@@ -1955,7 +2150,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 EngineDesignerBalance.Engine.JetSpeedMinRpm,
                 EngineDesignerBalance.Engine.JetSpeedMaxRpm,
                 "0");
-            _engineParameters.HasAfterburner = GUILayout.Toggle(_engineParameters.HasAfterburner, "Afterburner");
+            _engineParameters.HasAfterburner = DrawModifierToggleWithTooltip(
+                _engineParameters.HasAfterburner,
+                "Afterburner",
+                BuildAfterburnerTooltipDefinition());
             _engineParameters.BoostType = BoostType.None;
             _engineParameters.EfficiencyOptimizationsPercent = EngineDesignerBalance.Engine.EfficiencyOptimizationMinPercent;
         }
@@ -2318,7 +2516,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _familyName = DrawText("Family Name", _familyName);
             GUILayout.Label($"Family ID (auto): {BuildFamilyId()}");
             _lockedEngineCount = DrawIntSlider("Number Of Engines", _lockedEngineCount, 1, 6);
-            _lockedStructure = DrawEnum("Structure Type", _lockedStructure);
+            _lockedStructure = DrawEnum("Structure Type", _lockedStructure, BuildStructureTooltipDefinition(_lockedStructure));
             _lockedMaterial = DrawMaterialSelector("Material", _lockedMaterial, compositeMaterialUnlocked);
             if (!compositeMaterialUnlocked)
             {
@@ -2418,7 +2616,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             PlaneDesignerBalance.Airframe.CrewMin,
             PlaneDesignerBalance.Airframe.CrewMax);
         _typeTailType = DrawTailSelector("Tail Type", _typeTailType);
-        _typeWingShape = DrawEnum("Wing Shape", _typeWingShape);
+        _typeWingShape = DrawEnum("Wing Shape", _typeWingShape, BuildWingShapeTooltipDefinition(_typeWingShape));
         _typeWingProfile = DrawWingProfileSelector("Wing Profile", _typeWingProfile);
         GUILayout.Label(_typeWingProfile switch
         {
@@ -2477,8 +2675,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         _typeFlapType = DrawTrailingFlapSelector("Flaps", _typeFlapType);
-        _typeHasLeadingEdgeFlaps = GUILayout.Toggle(_typeHasLeadingEdgeFlaps, "Leading Edge Flaps");
-        _typeHasBackupSystems = GUILayout.Toggle(_typeHasBackupSystems, "Backup Systems (+0.2 reliability, +10% weight, +3% drag)");
+        _typeHasLeadingEdgeFlaps = DrawModifierToggleWithTooltip(
+            _typeHasLeadingEdgeFlaps,
+            "Leading Edge Flaps",
+            BuildLeadingEdgeFlapsTooltipDefinition());
+        _typeHasBackupSystems = DrawModifierToggleWithTooltip(
+            _typeHasBackupSystems,
+            "Backup Systems (+0.2 reliability, +10% weight, +3% drag)",
+            BuildBackupSystemsTooltipDefinition());
         _typeLandingGearType = DrawLandingGearSelector("Gear Type", _typeLandingGearType);
         _typeRunwayType = DrawRunwayTypeSelector("Runway Type", _typeRunwayType);
         _typeCowling = DrawSlider("Cowling", _typeCowling, 0.1d, 0.9d, "0.00");
@@ -9479,10 +9683,412 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             out value);
     }
 
-    private static TEnum DrawEnum<TEnum>(string label, TEnum current)
+    private void BeginModifierTooltipFrame()
+    {
+        _modifierTooltipEntries.Clear();
+        _hasModifierTooltipHoverCandidate = false;
+        _modifierTooltipHoverCandidateId = string.Empty;
+        _modifierTooltipHoverCandidateDistance = float.MaxValue;
+    }
+
+    private void ClearModifierTooltipInteraction()
+    {
+        _modifierTooltipEntries.Clear();
+        _hasModifierTooltipHoverCandidate = false;
+        _modifierTooltipHoverCandidateId = string.Empty;
+        _modifierTooltipHoverCandidateDistance = float.MaxValue;
+        _modifierTooltipTrackedId = string.Empty;
+        _modifierTooltipTrackedSinceTime = 0f;
+        _modifierTooltipVisibleId = string.Empty;
+    }
+
+    private void DrawModifierLabelWithTooltip(string label, ModifierTooltipDefinition tooltip)
+    {
+        GUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
+        GUILayout.Label(label, GUILayout.ExpandWidth(false));
+        GUILayout.FlexibleSpace();
+        DrawModifierTooltipIcon(tooltip);
+        GUILayout.EndHorizontal();
+    }
+
+    private bool DrawModifierToggleWithTooltip(bool currentValue, string label, ModifierTooltipDefinition tooltip)
+    {
+        GUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
+        var nextValue = GUILayout.Toggle(currentValue, label, GUILayout.ExpandWidth(false));
+        GUILayout.FlexibleSpace();
+        DrawModifierTooltipIcon(tooltip);
+        GUILayout.EndHorizontal();
+        return nextValue;
+    }
+
+    private void DrawModifierTooltipIcon(ModifierTooltipDefinition tooltip)
+    {
+        var iconRect = GUILayoutUtility.GetRect(
+            ModifierTooltipIconSize,
+            ModifierTooltipIconSize,
+            GUILayout.Width(ModifierTooltipIconSize),
+            GUILayout.Height(ModifierTooltipIconSize),
+            GUILayout.ExpandWidth(false));
+
+        if (Event.current is not null && Event.current.type == EventType.Repaint)
+        {
+            var previousColor = GUI.color;
+            GUI.color = new Color(0.2f, 0.25f, 0.33f, 0.95f);
+            GUI.DrawTexture(iconRect, GetModifierTooltipCircleTexture(), ScaleMode.StretchToFill, true);
+            GUI.color = previousColor;
+        }
+
+        GUI.Label(iconRect, "?", GetModifierTooltipQuestionStyle());
+        var anchorScreen = GUIUtility.GUIToScreenPoint(new Vector2(iconRect.xMax + 8f, iconRect.yMin - 4f));
+        _modifierTooltipEntries[tooltip.Id] = new ModifierTooltipFrameEntry(tooltip, anchorScreen);
+
+        if (!TryGetModifierTooltipHoverDistance(iconRect, out var distance))
+        {
+            return;
+        }
+
+        if (!_hasModifierTooltipHoverCandidate || distance < _modifierTooltipHoverCandidateDistance)
+        {
+            _hasModifierTooltipHoverCandidate = true;
+            _modifierTooltipHoverCandidateId = tooltip.Id;
+            _modifierTooltipHoverCandidateDistance = distance;
+        }
+    }
+
+    private static bool TryGetModifierTooltipHoverDistance(Rect iconRect, out float distance)
+    {
+        distance = float.MaxValue;
+        if (Event.current is null)
+        {
+            return false;
+        }
+
+        var mousePosition = Event.current.mousePosition;
+        distance = Vector2.Distance(mousePosition, iconRect.center);
+        return distance <= ModifierTooltipHoverRadiusPixels;
+    }
+
+    private void DrawModifierTooltipOverlay(Vector2 virtualScreenSize)
+    {
+        if (_hasModifierTooltipHoverCandidate)
+        {
+            var now = Time.unscaledTime;
+            if (!string.Equals(_modifierTooltipTrackedId, _modifierTooltipHoverCandidateId, StringComparison.Ordinal))
+            {
+                _modifierTooltipTrackedId = _modifierTooltipHoverCandidateId;
+                _modifierTooltipTrackedSinceTime = now;
+                _modifierTooltipVisibleId = string.Empty;
+            }
+
+            if (now - _modifierTooltipTrackedSinceTime >= ModifierTooltipHoverDelaySeconds)
+            {
+                _modifierTooltipVisibleId = _modifierTooltipHoverCandidateId;
+            }
+        }
+        else
+        {
+            _modifierTooltipTrackedId = string.Empty;
+            _modifierTooltipTrackedSinceTime = 0f;
+            _modifierTooltipVisibleId = string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(_modifierTooltipVisibleId)
+            || !_modifierTooltipEntries.TryGetValue(_modifierTooltipVisibleId, out var entry))
+        {
+            return;
+        }
+
+        DrawModifierTooltipPopup(entry, virtualScreenSize);
+    }
+
+    private void DrawModifierTooltipPopup(ModifierTooltipFrameEntry entry, Vector2 virtualScreenSize)
+    {
+        var titleStyle = GetModifierTooltipTitleStyle();
+        var bodyStyle = GetModifierTooltipBodyStyle();
+        var bodyText = BuildModifierTooltipBodyText(entry.Definition);
+
+        const float boxWidth = 360f;
+        const float padding = 10f;
+        const float spacing = 6f;
+        const float margin = 8f;
+        var contentWidth = boxWidth - (padding * 2f);
+
+        var titleHeight = titleStyle.CalcHeight(new GUIContent(entry.Definition.Title), contentWidth);
+        var bodyHeight = bodyStyle.CalcHeight(new GUIContent(bodyText), contentWidth);
+        var boxHeight = (padding * 2f) + titleHeight + spacing + bodyHeight;
+
+        var anchorGuiPoint = GUIUtility.ScreenToGUIPoint(entry.AnchorScreen);
+        var x = anchorGuiPoint.x;
+        var y = anchorGuiPoint.y;
+
+        if (x + boxWidth > virtualScreenSize.x - margin)
+        {
+            x = Mathf.Max(margin, x - boxWidth - 12f);
+        }
+
+        if (y + boxHeight > virtualScreenSize.y - margin)
+        {
+            y = Mathf.Max(margin, virtualScreenSize.y - boxHeight - margin);
+        }
+
+        var outerRect = new Rect(x, y, boxWidth, boxHeight);
+        var innerRect = new Rect(outerRect.x + 1f, outerRect.y + 1f, outerRect.width - 2f, outerRect.height - 2f);
+        DrawRect(outerRect, new Color(0.09f, 0.11f, 0.14f, 0.98f));
+        DrawRect(innerRect, new Color(0.13f, 0.16f, 0.2f, 0.98f));
+
+        var contentX = innerRect.x + padding;
+        var contentY = innerRect.y + padding;
+        GUI.Label(new Rect(contentX, contentY, contentWidth, titleHeight), entry.Definition.Title, titleStyle);
+        contentY += titleHeight + spacing;
+        GUI.Label(new Rect(contentX, contentY, contentWidth, bodyHeight), bodyText, bodyStyle);
+    }
+
+    private static string BuildModifierTooltipBodyText(ModifierTooltipDefinition tooltip)
+    {
+        var lines = new List<string>(
+            tooltip.PositiveLines.Count +
+            tooltip.NegativeLines.Count +
+            tooltip.NeutralLines.Count);
+
+        for (var index = 0; index < tooltip.PositiveLines.Count; index++)
+        {
+            var line = tooltip.PositiveLines[index];
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            lines.Add($"<color=#66D26E>+</color> {line}");
+        }
+
+        for (var index = 0; index < tooltip.NegativeLines.Count; index++)
+        {
+            var line = tooltip.NegativeLines[index];
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            lines.Add($"<color=#F06D6D>-</color> {line}");
+        }
+
+        for (var index = 0; index < tooltip.NeutralLines.Count; index++)
+        {
+            var line = tooltip.NeutralLines[index];
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            lines.Add($"<color=#D7DEE6>{line}</color>");
+        }
+
+        if (lines.Count == 0)
+        {
+            lines.Add("<color=#D7DEE6>No notes available.</color>");
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    private Texture2D GetModifierTooltipCircleTexture()
+    {
+        if (_modifierTooltipCircleTexture is not null)
+        {
+            return _modifierTooltipCircleTexture;
+        }
+
+        const int size = 64;
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            hideFlags = HideFlags.HideAndDontSave,
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp,
+        };
+        var pixels = new Color[size * size];
+        var radius = (size - 1) * 0.5f;
+        var center = new Vector2(radius, radius);
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                var pixelCenter = new Vector2(x, y);
+                var distance = Vector2.Distance(pixelCenter, center);
+                var alpha = Mathf.Clamp01(radius - distance);
+                pixels[(y * size) + x] = new Color(1f, 1f, 1f, alpha);
+            }
+        }
+
+        texture.SetPixels(pixels);
+        texture.Apply(updateMipmaps: false, makeNoLongerReadable: true);
+        _modifierTooltipCircleTexture = texture;
+        return _modifierTooltipCircleTexture;
+    }
+
+    private GUIStyle GetModifierTooltipQuestionStyle()
+    {
+        if (_modifierTooltipQuestionStyle is not null)
+        {
+            return _modifierTooltipQuestionStyle;
+        }
+
+        _modifierTooltipQuestionStyle = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontStyle = FontStyle.Bold,
+            wordWrap = false,
+            clipping = TextClipping.Clip,
+            fontSize = Mathf.Max(12, GUI.skin.label.fontSize),
+            margin = new RectOffset(0, 0, 0, 0),
+            padding = new RectOffset(0, 0, 0, 0),
+        };
+        _modifierTooltipQuestionStyle.normal.textColor = new Color(0.95f, 0.98f, 1f, 1f);
+        _modifierTooltipQuestionStyle.hover.textColor = new Color(1f, 1f, 1f, 1f);
+        _modifierTooltipQuestionStyle.active.textColor = new Color(1f, 1f, 1f, 1f);
+        return _modifierTooltipQuestionStyle;
+    }
+
+    private GUIStyle GetModifierTooltipTitleStyle()
+    {
+        if (_modifierTooltipTitleStyle is not null)
+        {
+            return _modifierTooltipTitleStyle;
+        }
+
+        _modifierTooltipTitleStyle = new GUIStyle(GUI.skin.label)
+        {
+            wordWrap = true,
+            richText = false,
+            fontStyle = FontStyle.Bold,
+            normal =
+            {
+                textColor = new Color(0.97f, 0.99f, 1f, 1f),
+            },
+        };
+        return _modifierTooltipTitleStyle;
+    }
+
+    private GUIStyle GetModifierTooltipBodyStyle()
+    {
+        if (_modifierTooltipBodyStyle is not null)
+        {
+            return _modifierTooltipBodyStyle;
+        }
+
+        _modifierTooltipBodyStyle = new GUIStyle(GUI.skin.label)
+        {
+            wordWrap = true,
+            richText = true,
+            normal =
+            {
+                textColor = new Color(0.9f, 0.92f, 0.96f, 1f),
+            },
+        };
+        return _modifierTooltipBodyStyle;
+    }
+
+    private static ModifierTooltipDefinition BuildEngineDesignerFamilyTooltipDefinition(EngineDesignerFamily family) =>
+        family == EngineDesignerFamily.Jet
+            ? EngineFamilyJetTooltip
+            : EngineFamilyPistonTooltip;
+
+    private static ModifierTooltipDefinition BuildAllowedEngineFamilyTooltipDefinition(AircraftAllowedEngineFamily family) =>
+        family == AircraftAllowedEngineFamily.Jet
+            ? AllowedEngineFamilyJetTooltip
+            : AllowedEngineFamilyPropellerTooltip;
+
+    private static ModifierTooltipDefinition BuildBoostTooltipDefinition(BoostType boostType) =>
+        boostType switch
+        {
+            BoostType.Supercharger => BoostSuperchargerTooltip,
+            BoostType.Turbo => BoostTurboTooltip,
+            _ => BoostNoneTooltip,
+        };
+
+    private static ModifierTooltipDefinition BuildInjectionTooltipDefinition(PistonInjectionType injectionType) =>
+        injectionType == PistonInjectionType.DirectInjection
+            ? InjectionDirectTooltip
+            : InjectionCarburetorTooltip;
+
+    private static ModifierTooltipDefinition BuildAfterburnerTooltipDefinition() => AfterburnerTooltip;
+
+    private static ModifierTooltipDefinition BuildStructureTooltipDefinition(StructureType structureType) =>
+        structureType == StructureType.Monocoque
+            ? StructureMonocoqueTooltip
+            : StructureTrussTooltip;
+
+    private static ModifierTooltipDefinition BuildMaterialTooltipDefinition(MaterialType materialType) =>
+        materialType switch
+        {
+            MaterialType.Aluminum => MaterialAluminumTooltip,
+            MaterialType.Composite => MaterialCompositeTooltip,
+            _ => MaterialWoodFabricTooltip,
+        };
+
+    private static ModifierTooltipDefinition BuildWingPositionTooltipDefinition(WingPosition wingPosition) =>
+        wingPosition switch
+        {
+            WingPosition.High => WingPositionHighTooltip,
+            WingPosition.Biplane => WingPositionBiplaneTooltip,
+            _ => WingPositionLowTooltip,
+        };
+
+    private static ModifierTooltipDefinition BuildWingShapeTooltipDefinition(WingShape wingShape) =>
+        wingShape switch
+        {
+            WingShape.Swept => WingShapeSweptTooltip,
+            WingShape.Delta => WingShapeDeltaTooltip,
+            _ => WingShapeStraightTooltip,
+        };
+
+    private static ModifierTooltipDefinition BuildWingProfileTooltipDefinition(WingProfileType wingProfileType) =>
+        wingProfileType switch
+        {
+            WingProfileType.Naca4DigitLight => WingProfileNacaTooltip,
+            WingProfileType.SymmetricalAcrobatic => WingProfileSymmetricalTooltip,
+            _ => WingProfileLaminarTooltip,
+        };
+
+    private static ModifierTooltipDefinition BuildFlapTooltipDefinition(FlapType flapType) =>
+        flapType switch
+        {
+            FlapType.Plain => FlapPlainTooltip,
+            FlapType.Fowler => FlapFowlerTooltip,
+            _ => FlapNoneTooltip,
+        };
+
+    private static ModifierTooltipDefinition BuildLeadingEdgeFlapsTooltipDefinition() => LeadingEdgeFlapsTooltip;
+
+    private static ModifierTooltipDefinition BuildBackupSystemsTooltipDefinition() => BackupSystemsTooltip;
+
+    private static ModifierTooltipDefinition BuildLandingGearTooltipDefinition(LandingGearType landingGearType) =>
+        landingGearType switch
+        {
+            LandingGearType.Fixed => GearFixedTooltip,
+            LandingGearType.Retractable => GearRetractableTooltip,
+            _ => GearSemiRetractableTooltip,
+        };
+
+    private static ModifierTooltipDefinition BuildRunwayTooltipDefinition(RunwayType runwayType) =>
+        runwayType switch
+        {
+            RunwayType.Short => RunwayShortTooltip,
+            RunwayType.Long => RunwayLongTooltip,
+            _ => RunwayMediumTooltip,
+        };
+
+    private TEnum DrawEnum<TEnum>(string label, TEnum current, ModifierTooltipDefinition? tooltip = null)
         where TEnum : struct, Enum
     {
-        GUILayout.Label(label);
+        if (tooltip.HasValue)
+        {
+            DrawModifierLabelWithTooltip(label, tooltip.Value);
+        }
+        else
+        {
+            GUILayout.Label(label);
+        }
+
         var values = (TEnum[])Enum.GetValues(typeof(TEnum));
         var labels = values.Select(v => v.ToString()).ToArray();
         var index = Array.IndexOf(values, current);
@@ -9496,7 +10102,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[next];
     }
 
-    private static void DrawOptionalEnum<TEnum>(string label, ref bool enabled, ref TEnum value)
+    private void DrawOptionalEnum<TEnum>(string label, ref bool enabled, ref TEnum value)
         where TEnum : struct, Enum
     {
         GUILayout.BeginVertical(GUI.skin.box);
@@ -9658,9 +10264,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return fuelLitersPerHour / System.Math.Max(output, 0.001d);
     }
 
-    private static MaterialType DrawMaterialSelector(string label, MaterialType currentMaterial, bool compositeUnlocked)
+    private MaterialType DrawMaterialSelector(string label, MaterialType currentMaterial, bool compositeUnlocked)
     {
-        GUILayout.Label(label);
+        DrawModifierLabelWithTooltip(label, BuildMaterialTooltipDefinition(currentMaterial));
         var values = compositeUnlocked
             ? new[] { MaterialType.WoodFabric, MaterialType.Aluminum, MaterialType.Composite }
             : new[] { MaterialType.WoodFabric, MaterialType.Aluminum };
@@ -9683,9 +10289,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[next];
     }
 
-    private static WingPosition DrawWingPositionSelector(string label, WingPosition wingPosition)
+    private WingPosition DrawWingPositionSelector(string label, WingPosition wingPosition)
     {
-        GUILayout.Label(label);
+        DrawModifierLabelWithTooltip(label, BuildWingPositionTooltipDefinition(wingPosition));
         var values = new[] { WingPosition.Low, WingPosition.High, WingPosition.Biplane };
         var labels = new[] { "Low", "High", "Biplane" };
         var index = Array.IndexOf(values, wingPosition);
@@ -9699,9 +10305,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[next];
     }
 
-    private static WingProfileType DrawWingProfileSelector(string label, WingProfileType wingProfile)
+    private WingProfileType DrawWingProfileSelector(string label, WingProfileType wingProfile)
     {
-        GUILayout.Label(label);
+        DrawModifierLabelWithTooltip(label, BuildWingProfileTooltipDefinition(wingProfile));
         var values = new[]
         {
             WingProfileType.Laminar6SeriesAerodynamic,
@@ -9741,9 +10347,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[next];
     }
 
-    private static FlapType DrawTrailingFlapSelector(string label, FlapType flapType)
+    private FlapType DrawTrailingFlapSelector(string label, FlapType flapType)
     {
-        GUILayout.Label(label);
+        DrawModifierLabelWithTooltip(label, BuildFlapTooltipDefinition(flapType));
         var values = new[] { FlapType.None, FlapType.Plain, FlapType.Fowler };
         var labels = new[] { "None", "Plain", "Fowler" };
         var index = Array.IndexOf(values, flapType);
@@ -9757,9 +10363,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[next];
     }
 
-    private static LandingGearType DrawLandingGearSelector(string label, LandingGearType gearType)
+    private LandingGearType DrawLandingGearSelector(string label, LandingGearType gearType)
     {
-        GUILayout.Label(label);
+        DrawModifierLabelWithTooltip(label, BuildLandingGearTooltipDefinition(gearType));
         var values = new[] { LandingGearType.Fixed, LandingGearType.SemiRetractable, LandingGearType.Retractable };
         var labels = new[] { "Fixed", "Semi Retractable", "Retractable" };
         var index = Array.IndexOf(values, gearType);
@@ -9773,9 +10379,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[next];
     }
 
-    private static RunwayType DrawRunwayTypeSelector(string label, RunwayType runwayType)
+    private RunwayType DrawRunwayTypeSelector(string label, RunwayType runwayType)
     {
-        GUILayout.Label(label);
+        DrawModifierLabelWithTooltip(label, BuildRunwayTooltipDefinition(runwayType));
         var values = new[] { RunwayType.Short, RunwayType.Medium, RunwayType.Long };
         var labels = new[] { "Short (500m)", "Medium (1000m)", "Long (2000m)" };
         var index = Array.IndexOf(values, runwayType);
@@ -9789,18 +10395,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[next];
     }
 
-    private static EngineDesignerFamily DrawEngineFamilySelector(string label, EngineDesignerFamily currentFamily)
+    private EngineDesignerFamily DrawEngineFamilySelector(string label, EngineDesignerFamily currentFamily)
     {
-        GUILayout.Label(label);
+        DrawModifierLabelWithTooltip(label, BuildEngineDesignerFamilyTooltipDefinition(currentFamily));
         var labels = new[] { "Piston", "Jet" };
         var index = currentFamily == EngineDesignerFamily.Jet ? 1 : 0;
         var nextIndex = GUILayout.SelectionGrid(index, labels, 2);
         return nextIndex == 1 ? EngineDesignerFamily.Jet : EngineDesignerFamily.Piston;
     }
 
-    private static AircraftAllowedEngineFamily DrawFamilyAllowedEngineSelector(string label, AircraftAllowedEngineFamily currentFamily)
+    private AircraftAllowedEngineFamily DrawFamilyAllowedEngineSelector(string label, AircraftAllowedEngineFamily currentFamily)
     {
-        GUILayout.Label(label);
+        DrawModifierLabelWithTooltip(label, BuildAllowedEngineFamilyTooltipDefinition(currentFamily));
         var labels = new[] { "Propeller", "Jet" };
         var index = currentFamily == AircraftAllowedEngineFamily.Jet ? 1 : 0;
         var nextIndex = GUILayout.SelectionGrid(index, labels, 2);
@@ -9872,9 +10478,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return Array.Empty<EngineType>();
     }
 
-    private static BoostType DrawPistonBoostSelector(string label, BoostType currentBoost)
+    private BoostType DrawPistonBoostSelector(string label, BoostType currentBoost)
     {
-        GUILayout.Label(label);
+        DrawModifierLabelWithTooltip(label, BuildBoostTooltipDefinition(currentBoost));
         var values = new[] { BoostType.None, BoostType.Supercharger, BoostType.Turbo };
         var labels = new[] { "Atmospheric", "Supercharger", "Turbocharger" };
         var index = Array.IndexOf(values, currentBoost);
@@ -9888,9 +10494,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[nextIndex];
     }
 
-    private static PistonInjectionType DrawPistonInjectionSelector(string label, PistonInjectionType currentInjectionType)
+    private PistonInjectionType DrawPistonInjectionSelector(string label, PistonInjectionType currentInjectionType)
     {
-        GUILayout.Label(label);
+        DrawModifierLabelWithTooltip(label, BuildInjectionTooltipDefinition(currentInjectionType));
         var values = new[] { PistonInjectionType.Carburetor, PistonInjectionType.DirectInjection };
         var labels = new[] { "Carburetor", "Direct Injection" };
         var index = Array.IndexOf(values, currentInjectionType);
@@ -10359,6 +10965,46 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public ContractDeliveryCandidate Candidate { get; }
 
         public int UnitsToDeliver { get; }
+    }
+
+    private readonly struct ModifierTooltipDefinition
+    {
+        public ModifierTooltipDefinition(
+            string id,
+            string title,
+            IReadOnlyList<string>? positiveLines = null,
+            IReadOnlyList<string>? negativeLines = null,
+            IReadOnlyList<string>? neutralLines = null)
+        {
+            Id = string.IsNullOrWhiteSpace(id) ? "modifier.unknown" : id.Trim();
+            Title = string.IsNullOrWhiteSpace(title) ? "Modifier" : title.Trim();
+            PositiveLines = positiveLines ?? Array.Empty<string>();
+            NegativeLines = negativeLines ?? Array.Empty<string>();
+            NeutralLines = neutralLines ?? Array.Empty<string>();
+        }
+
+        public string Id { get; }
+
+        public string Title { get; }
+
+        public IReadOnlyList<string> PositiveLines { get; }
+
+        public IReadOnlyList<string> NegativeLines { get; }
+
+        public IReadOnlyList<string> NeutralLines { get; }
+    }
+
+    private readonly struct ModifierTooltipFrameEntry
+    {
+        public ModifierTooltipFrameEntry(ModifierTooltipDefinition definition, Vector2 anchorScreen)
+        {
+            Definition = definition;
+            AnchorScreen = anchorScreen;
+        }
+
+        public ModifierTooltipDefinition Definition { get; }
+
+        public Vector2 AnchorScreen { get; }
     }
 
     private sealed class EngineVersionDevelopmentContext
