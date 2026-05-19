@@ -2113,7 +2113,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _engineParameters.EfficiencyOptimizationsPercent,
                 EngineDesignerBalance.Engine.EfficiencyOptimizationMinPercent,
                 EngineDesignerBalance.Engine.EfficiencyOptimizationMaxPercent,
-                "0.0");
+                "0.0",
+                useLinearScale: true);
             _engineParameters.HasAfterburner = false;
         }
         else
@@ -2162,7 +2163,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _engineParameters.EfficiencyOptimizationsPercent = EngineDesignerBalance.Engine.EfficiencyOptimizationMinPercent;
         }
 
-        _engineParameters.CoolingEfficiency = DrawSlider("Cooling Efficiency", _engineParameters.CoolingEfficiency, 0d, 1d, "0.00");
+        _engineParameters.CoolingEfficiency = DrawSlider(
+            "Cooling Efficiency",
+            _engineParameters.CoolingEfficiency,
+            0d,
+            1d,
+            "0.00",
+            useLinearScale: true);
 
         RebuildEnginePreview();
 
@@ -2519,7 +2526,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             _familyName = DrawText("Family Name", _familyName);
             GUILayout.Label($"Family ID (auto): {BuildFamilyId()}");
-            _lockedEngineCount = DrawIntSlider("Number Of Engines", _lockedEngineCount, 1, 6);
+            _lockedEngineCount = DrawIntSlider("Number Of Engines", _lockedEngineCount, 1, 6, useLinearScale: true);
             _lockedStructure = DrawEnum("Structure Type", _lockedStructure, BuildStructureTooltipDefinition(_lockedStructure));
             _lockedMaterial = DrawMaterialSelector("Material", _lockedMaterial, compositeMaterialUnlocked);
             if (!compositeMaterialUnlocked)
@@ -2689,13 +2696,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             BuildBackupSystemsTooltipDefinition());
         _typeLandingGearType = DrawLandingGearSelector("Gear Type", _typeLandingGearType);
         _typeRunwayType = DrawRunwayTypeSelector("Runway Type", _typeRunwayType);
-        _typeCowling = DrawSlider("Cowling", _typeCowling, 0.1d, 0.9d, "0.00");
+        _typeCowling = DrawSlider("Cowling", _typeCowling, 0.1d, 0.9d, "0.00", useLinearScale: true);
         _typeAerodynamicCleanlinessPercent = DrawSlider(
             "Aerodynamic Cleanliness (%)",
             _typeAerodynamicCleanlinessPercent,
             PlaneDesignerBalance.Airframe.AerodynamicCleanlinessMinPercent,
             PlaneDesignerBalance.Airframe.AerodynamicCleanlinessMaxPercent,
-            "0.0");
+            "0.0",
+            useLinearScale: true);
         _typeFuelLiters = DrawSlider(
             "Fuel (L)",
             _typeFuelLiters,
@@ -9324,10 +9332,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         double min,
         double max,
         string format,
-        ModifierTooltipDefinition? tooltip = null)
+        ModifierTooltipDefinition? tooltip = null,
+        bool useLinearScale = false)
     {
         var currentValue = Math.Clamp(value, min, max);
-        var key = BuildNumericFieldKey("double", label, min, max);
+        var keyFamily = useLinearScale ? "double.linear" : "double";
+        var key = BuildNumericFieldKey(keyFamily, label, min, max);
         var controlName = BuildControlName("double", key);
         _doubleSliderHadFocus.TryGetValue(key, out var hadFocus);
 
@@ -9348,7 +9358,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         GUILayout.BeginHorizontal();
-        var sliderPosition = ToExponentialSliderPosition(currentValue, min, max);
+        var sliderPosition = useLinearScale
+            ? ToLinearSliderPosition(currentValue, min, max)
+            : ToExponentialSliderPosition(currentValue, min, max);
         var nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
         GUI.SetNextControlName(controlName);
         var nextInput = GUILayout.TextField(currentInput, GUILayout.Width(120f));
@@ -9363,7 +9375,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter);
         var lostFocus = hadFocus && !hasFocus;
 
-        var sliderMappedValue = FromExponentialSliderPosition(nextSliderPosition, min, max);
+        var sliderMappedValue = useLinearScale
+            ? FromLinearSliderPosition(nextSliderPosition, min, max)
+            : FromExponentialSliderPosition(nextSliderPosition, min, max);
         var sliderRounded = Math.Clamp(Math.Round(sliderMappedValue, 4, MidpointRounding.AwayFromZero), min, max);
         var sliderChanged = Math.Abs(sliderRounded - currentValue) > 1e-6;
         if (sliderChanged)
@@ -9400,10 +9414,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return currentValue;
     }
 
-    private int DrawIntSlider(string label, int value, int min, int max)
+    private int DrawIntSlider(string label, int value, int min, int max, bool useLinearScale = false)
     {
         var currentValue = Math.Clamp(value, min, max);
-        var key = BuildNumericFieldKey("int", label, min, max);
+        var keyFamily = useLinearScale ? "int.linear" : "int";
+        var key = BuildNumericFieldKey(keyFamily, label, min, max);
         var controlName = BuildControlName("int", key);
         _intSliderHadFocus.TryGetValue(key, out var hadFocus);
 
@@ -9415,7 +9430,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.Label($"{label}: {FormatUiInteger(currentValue)}");
         GUILayout.BeginHorizontal();
-        var sliderPosition = ToExponentialSliderPosition(currentValue, min, max);
+        var sliderPosition = useLinearScale
+            ? ToLinearSliderPosition(currentValue, min, max)
+            : ToExponentialSliderPosition(currentValue, min, max);
         var nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
         GUI.SetNextControlName(controlName);
         var nextInput = GUILayout.TextField(currentInput, GUILayout.Width(120f));
@@ -9428,7 +9445,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter);
         var lostFocus = hadFocus && !hasFocus;
 
-        var sliderMappedValue = FromExponentialSliderPosition(nextSliderPosition, min, max);
+        var sliderMappedValue = useLinearScale
+            ? FromLinearSliderPosition(nextSliderPosition, min, max)
+            : FromExponentialSliderPosition(nextSliderPosition, min, max);
         var sliderRounded = Mathf.Clamp(Mathf.RoundToInt((float)sliderMappedValue), min, max);
         var sliderChanged = sliderRounded != currentValue;
         if (sliderChanged)
@@ -9659,6 +9678,30 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var normalized = Math.Clamp((double)sliderPosition, 0d, 1d);
         var curved = Math.Pow(normalized, ExponentialSliderPower);
         return min + (range * curved);
+    }
+
+    private static float ToLinearSliderPosition(double value, double min, double max)
+    {
+        var range = max - min;
+        if (range <= 1e-9d)
+        {
+            return 0f;
+        }
+
+        var normalized = Math.Clamp((value - min) / range, 0d, 1d);
+        return (float)normalized;
+    }
+
+    private static double FromLinearSliderPosition(float sliderPosition, double min, double max)
+    {
+        var range = max - min;
+        if (range <= 1e-9d)
+        {
+            return min;
+        }
+
+        var normalized = Math.Clamp((double)sliderPosition, 0d, 1d);
+        return min + (range * normalized);
     }
 
     private static string BuildNumericFieldKey(string family, string label, double min, double max) =>
