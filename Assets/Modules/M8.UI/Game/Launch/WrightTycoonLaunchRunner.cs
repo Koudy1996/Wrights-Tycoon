@@ -213,14 +213,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         new(3200, 1800),
         new(3840, 2160),
     };
-    private static readonly ModifierTooltipDefinition EngineFamilyPistonTooltip = new(
-        "modifier.engine.family",
-        "Engine Family: Propeller",
-        neutralLines: new[] { "No +/- notes are listed for engine family in the source sheet." });
-    private static readonly ModifierTooltipDefinition EngineFamilyJetTooltip = new(
-        "modifier.engine.family",
-        "Engine Family: Jet",
-        neutralLines: new[] { "No +/- notes are listed for engine family in the source sheet." });
     private static readonly ModifierTooltipDefinition AllowedEngineFamilyPropellerTooltip = new(
         "modifier.allowed.engine.family",
         "Engine Family: Propeller",
@@ -254,6 +246,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         "Injection: Direct Injection",
         positiveLines: new[] { "Better power output" },
         negativeLines: new[] { "Higher cost and production time" });
+    private static readonly ModifierTooltipDefinition PistonCompressionTooltip = new(
+        "modifier.engine.compression.piston",
+        "Compression (Piston Engine)",
+        positiveLines: new[] { "Higher power, better fuel economy" },
+        negativeLines: new[] { "Higher cost, higher weight, lower reliability" });
+    private static readonly ModifierTooltipDefinition JetCompressionTooltip = new(
+        "modifier.engine.compression.jet",
+        "Compression (Jet Engine)",
+        positiveLines: new[] { "Higher power, better fuel economy" },
+        negativeLines: new[] { "Higher cost, higher weight, lower reliability" });
     private static readonly ModifierTooltipDefinition AfterburnerTooltip = new(
         "modifier.engine.afterburner",
         "Jet Afterburner",
@@ -2089,7 +2091,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _engineParameters.CompressionRatio,
                 EngineDesignerBalance.Engine.PistonCompressionMin,
                 EngineDesignerBalance.Engine.PistonCompressionMax,
-                "0.00");
+                "0.00",
+                PistonCompressionTooltip);
             _engineParameters.OptimizationAltitudeMeters = DrawSlider(
                 "Running Optimization Height (m)",
                 _engineParameters.OptimizationAltitudeMeters,
@@ -2143,7 +2146,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _engineParameters.CompressionRatio,
                 EngineDesignerBalance.Engine.JetCompressionMin,
                 EngineDesignerBalance.Engine.JetCompressionMax,
-                "0.0");
+                "0.0",
+                JetCompressionTooltip);
             _engineParameters.MaximumSpeed = DrawSlider(
                 "Maximum Speed (RPM)",
                 _engineParameters.MaximumSpeed,
@@ -9314,7 +9318,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return currentValue;
     }
 
-    private double DrawSlider(string label, double value, double min, double max, string format)
+    private double DrawSlider(
+        string label,
+        double value,
+        double min,
+        double max,
+        string format,
+        ModifierTooltipDefinition? tooltip = null)
     {
         var currentValue = Math.Clamp(value, min, max);
         var key = BuildNumericFieldKey("double", label, min, max);
@@ -9327,7 +9337,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _doubleSliderInputBuffer[key] = currentInput;
         }
 
-        GUILayout.Label($"{label}: {FormatUiNumber(currentValue, format)}");
+        var labelText = $"{label}: {FormatUiNumber(currentValue, format)}";
+        if (tooltip.HasValue)
+        {
+            DrawModifierLabelWithTooltip(labelText, tooltip.Value);
+        }
+        else
+        {
+            GUILayout.Label(labelText);
+        }
+
         GUILayout.BeginHorizontal();
         var sliderPosition = ToExponentialSliderPosition(currentValue, min, max);
         var nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
@@ -9999,11 +10018,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return _modifierTooltipBodyStyle;
     }
 
-    private static ModifierTooltipDefinition BuildEngineDesignerFamilyTooltipDefinition(EngineDesignerFamily family) =>
-        family == EngineDesignerFamily.Jet
-            ? EngineFamilyJetTooltip
-            : EngineFamilyPistonTooltip;
-
     private static ModifierTooltipDefinition BuildAllowedEngineFamilyTooltipDefinition(AircraftAllowedEngineFamily family) =>
         family == AircraftAllowedEngineFamily.Jet
             ? AllowedEngineFamilyJetTooltip
@@ -10409,7 +10423,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private EngineDesignerFamily DrawEngineFamilySelector(string label, EngineDesignerFamily currentFamily)
     {
-        DrawModifierLabelWithTooltip(label, BuildEngineDesignerFamilyTooltipDefinition(currentFamily));
+        GUILayout.Label(label);
         var labels = new[] { "Piston", "Jet" };
         var index = currentFamily == EngineDesignerFamily.Jet ? 1 : 0;
         var nextIndex = GUILayout.SelectionGrid(index, labels, 2);
