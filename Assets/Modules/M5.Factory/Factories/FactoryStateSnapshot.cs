@@ -21,6 +21,10 @@ public sealed class FactoryLineSnapshot
 
     public int MonthlyProductionTargetUnits { get; set; }
 
+    public int TotalProductionTargetUnits { get; set; }
+
+    public int LifetimeProducedUnits { get; set; }
+
     public int Employees { get; set; }
 
     public double CarryOverManDays { get; set; }

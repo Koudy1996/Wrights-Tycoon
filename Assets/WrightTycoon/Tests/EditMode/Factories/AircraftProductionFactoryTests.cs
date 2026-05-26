@@ -102,6 +102,59 @@ public sealed class AircraftProductionFactoryTests
     }
 
     [Test]
+    public void Production_TotalTargetCapsOutputAndAutoRemovesLine()
+    {
+        var factory = new AircraftProductionFactory();
+        var lineId = factory.AddLine("line.total");
+        factory.SetMonthlyProductionTargetUnits(lineId, 5);
+        factory.SetTotalProductionTargetUnits(lineId, 8);
+        factory.AssignDesign(lineId, "design.total");
+
+        var catalog = new Dictionary<string, FactoryAircraftTypeCatalogItem>
+        {
+            ["design.total"] = CreateCatalogItem("design.total", "Total", productionManDaysPerAircraft: 20d, engineCount: 1, engineProductionManDays: 6d),
+        };
+
+        var month1 = factory.SimulateMonth(catalog, monthIndex: 0, SimulationDate.WrightTycoonStart);
+        var month2 = factory.SimulateMonth(catalog, monthIndex: 1, SimulationDate.WrightTycoonStart.NextMonth());
+
+        Assert.That(month1.TotalAircraftProduced, Is.EqualTo(5));
+        Assert.That(month1.LineReports[0].TotalProductionTargetUnits, Is.EqualTo(8));
+        Assert.That(month1.LineReports[0].LifetimeProducedUnits, Is.EqualTo(5));
+        Assert.That(month2.TotalAircraftProduced, Is.EqualTo(3));
+        Assert.That(month2.LineReports[0].LifetimeProducedUnits, Is.EqualTo(8));
+        Assert.That(month2.LineReports[0].StatusMessage, Does.Contain("Line removed"));
+        Assert.That(factory.Lines, Is.Empty);
+        Assert.That(factory.GetWarehouseUnits("design.total"), Is.EqualTo(8));
+    }
+
+    [Test]
+    public void Snapshot_RestoresTotalTargetAndLifetimeProductionProgress()
+    {
+        var factory = new AircraftProductionFactory();
+        var lineId = factory.AddLine("line.snapshot");
+        factory.SetMonthlyProductionTargetUnits(lineId, 4);
+        factory.SetTotalProductionTargetUnits(lineId, 12);
+        factory.AssignDesign(lineId, "design.snapshot");
+
+        var catalog = new Dictionary<string, FactoryAircraftTypeCatalogItem>
+        {
+            ["design.snapshot"] = CreateCatalogItem("design.snapshot", "Snapshot", productionManDaysPerAircraft: 20d, engineCount: 1, engineProductionManDays: 6d),
+        };
+
+        factory.SimulateMonth(catalog, monthIndex: 0, SimulationDate.WrightTycoonStart);
+        var snapshot = factory.CreateSnapshot();
+
+        var restored = new AircraftProductionFactory();
+        restored.RestoreSnapshot(snapshot);
+        var restoredLine = restored.Lines[0];
+
+        Assert.That(restoredLine.MonthlyProductionTargetUnits, Is.EqualTo(4));
+        Assert.That(restoredLine.TotalProductionTargetUnits, Is.EqualTo(12));
+        Assert.That(restoredLine.LifetimeProducedUnits, Is.EqualTo(4));
+    }
+
+    [Test]
     public void ProductionTarget_RejectsValuesAboveMaximum()
     {
         var factory = new AircraftProductionFactory();

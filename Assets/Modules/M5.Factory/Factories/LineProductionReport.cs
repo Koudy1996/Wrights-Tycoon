@@ -6,6 +6,8 @@ public sealed record LineProductionReport(
     string AssignedDesignName,
     int Employees,
     int TargetUnits,
+    int TotalProductionTargetUnits,
+    int LifetimeProducedUnits,
     int LineToolLevel,
     int ProducedUnits,
     double AvailableManDays,

@@ -53,9 +53,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     [SerializeField] private double _baseDevelopmentManDays = 240d;
 
     private readonly int[] _engineCountOptions = { 1, 2, 3, 4, 5, 6 };
-    private readonly string[] _tabs = { "Engine Designer", "Airframe + Type Designer", "My machines", "Research", "Demand", "Factory", "Contracts", "Government Contracts", "Finance" };
+    private readonly string[] _tabs = { "Engine Designer", "Airframe + Type Designer", "My machines", "Engineering", "Demand", "Factory", "Contracts", "Government Contracts", "Finance" };
     private readonly string[] _financeSubTabs = { "Income / Expense", "Last Month Details", "Transactions" };
-    private readonly string[] _researchSubTabs = { "Current Research", "For Approval" };
+    private readonly string[] _researchSubTabs = { "Current Engineering", "For Approval" };
     private readonly string[] _myMachinesSubTabs = { "Engines", "Families + Types" };
     private readonly IsaAtmosphereModel _atmosphereModel = new();
     private readonly AerodynamicsCalculator _aerodynamicsCalculator = new();
@@ -69,6 +69,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly Dictionary<string, double> _deliveredContractProfitById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _governmentDeliveryQuantityInputById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _factoryScrapQuantityInputByDesignId = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _factoryTotalTargetInputByLineId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TypeResearchModifierPoints> _researchModifiersByResearchId = new(StringComparer.Ordinal);
     private readonly HistoricalCampaignState _historicalCampaignState = new();
     private readonly List<HistoricalCampaignArchiveEntry> _historicalCampaignArchive = new();
@@ -2330,32 +2331,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 originalIsJet
                     ? FormatUiNumber(originalEngine.Parameters.TurbineDiameterMeters * 100d, "0")
                     : "N/A");
-            DrawInlineComparisonRow(
-                "Bypass Ratio",
-                _enginePreview.Definition.EngineType == EngineType.Turbofan
-                    ? FormatUiNumber(_enginePreview.Parameters.BypassRatio, "0.00")
-                    : "0.00 (Turbojet fixed)",
-                hasInlineComparison,
-                originalIsJet
-                    ? FormatUiNumber(originalEngine.Parameters.BypassRatio, "0.00")
-                    : "N/A");
-            DrawInlineComparisonRow(
-                "Compression Ratio",
-                FormatUiNumber(_enginePreview.Parameters.CompressionRatio, "0.0"),
-                hasInlineComparison,
-                FormatUiNumber(originalEngine.Parameters.CompressionRatio, "0.0"));
-            DrawInlineComparisonRow(
-                "Maximum Speed (RPM)",
-                FormatUiNumber(_enginePreview.Parameters.MaximumSpeed, "0"),
-                hasInlineComparison,
-                FormatUiNumber(originalEngine.Parameters.MaximumSpeed, "0"));
-            DrawInlineComparisonRow(
-                "Afterburner",
-                _enginePreview.Parameters.HasAfterburner ? "Enabled" : "Disabled",
-                hasInlineComparison,
-                originalIsJet
-                    ? (originalEngine.Parameters.HasAfterburner ? "Enabled" : "Disabled")
-                    : "N/A");
         }
         else
         {
@@ -2367,43 +2342,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     ? "N/A"
                     : FormatUiInteger(originalEngine.Parameters.CylinderCount));
             DrawInlineComparisonRow(
-                "Compression Ratio",
-                FormatUiNumber(_enginePreview.Parameters.CompressionRatio, "0.00"),
-                hasInlineComparison,
-                FormatUiNumber(originalEngine.Parameters.CompressionRatio, "0.00"));
-            DrawInlineComparisonRow(
                 "Optimization Height (m)",
                 FormatUiNumber(_enginePreview.Parameters.OptimizationAltitudeMeters, "0"),
                 hasInlineComparison,
                 originalIsJet
                     ? "N/A"
                     : FormatUiNumber(originalEngine.Parameters.OptimizationAltitudeMeters, "0"));
-            DrawInlineComparisonRow(
-                "Efficiency Optimizations (%)",
-                FormatUiNumber(_enginePreview.Parameters.EfficiencyOptimizationsPercent, "0.0"),
-                hasInlineComparison,
-                originalIsJet
-                    ? "N/A"
-                    : FormatUiNumber(originalEngine.Parameters.EfficiencyOptimizationsPercent, "0.0"));
-            DrawInlineComparisonRow(
-                "Boost",
-                _enginePreview.Parameters.BoostType.ToString(),
-                hasInlineComparison,
-                originalIsJet
-                    ? "N/A"
-                    : originalEngine.Parameters.BoostType.ToString());
-            DrawInlineComparisonRow(
-                "Injection",
-                _enginePreview.Parameters.PistonInjectionType.ToString(),
-                hasInlineComparison,
-                originalIsJet
-                    ? "N/A"
-                    : originalEngine.Parameters.PistonInjectionType.ToString());
-            DrawInlineComparisonRow(
-                "Maximum Speed (RPM)",
-                FormatUiNumber(_enginePreview.Parameters.MaximumSpeed, "0"),
-                hasInlineComparison,
-                FormatUiNumber(originalEngine.Parameters.MaximumSpeed, "0"));
         }
 
         foreach (var p in report.AltitudePerformance)
@@ -2447,16 +2391,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             hasInlineComparison,
             FormatUiNumber(originalReport.Weight.Kilograms, "0.0"));
         DrawInlineComparisonRow(
-            "Engine Length (m)",
-            FormatUiNumber(report.EngineLengthMeters, "0.00"),
-            hasInlineComparison,
-            FormatUiNumber(originalReport.EngineLengthMeters, "0.00"));
-        DrawInlineComparisonRow(
-            "Engine Frontal Area (m2)",
-            FormatUiNumber(report.EngineFrontalAreaSquareMeters, "0.000"),
-            hasInlineComparison,
-            FormatUiNumber(originalReport.EngineFrontalAreaSquareMeters, "0.000"));
-        DrawInlineComparisonRow(
             "Cost",
             FormatUiNumber(report.Cost, "0"),
             hasInlineComparison,
@@ -2473,7 +2407,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             ? ResolveEngineResearchTimeMonthsForDesignerPreview(originalEngine)
             : currentEngineResearchTimeMonths;
         DrawInlineComparisonRow(
-            "Research Time (months)",
+            "Engineering Time (months)",
             FormatUiInteger(currentEngineResearchTimeMonths),
             hasInlineComparison,
             FormatUiInteger(originalEngineResearchTimeMonths));
@@ -3126,41 +3060,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             IsJetFamily(originalEngineType) ? FormatUiNumber(originalParameters.TurbineDiameterMeters * 100d, "0") : "N/A",
             IsJetFamily(newEngineType) ? FormatUiNumber(newParameters.TurbineDiameterMeters * 100d, "0") : "N/A");
         DrawVersionComparisonRow(
-            "Bypass Ratio",
-            IsJetFamily(originalEngineType) ? FormatUiNumber(originalParameters.BypassRatio, "0.00") : "N/A",
-            IsJetFamily(newEngineType) ? FormatUiNumber(newParameters.BypassRatio, "0.00") : "N/A");
-        DrawVersionComparisonRow(
             "Displacement (L)",
             IsJetFamily(originalEngineType) ? "N/A" : FormatUiNumber(originalParameters.DisplacementLiters, "0.0"),
             IsJetFamily(newEngineType) ? "N/A" : FormatUiNumber(newParameters.DisplacementLiters, "0.0"));
         DrawVersionComparisonRow(
-            "Compression Ratio",
-            FormatUiNumber(originalParameters.CompressionRatio, "0.00"),
-            FormatUiNumber(newParameters.CompressionRatio, "0.00"));
-        DrawVersionComparisonRow(
             "Optimization Height (m)",
             IsJetFamily(originalEngineType) ? "N/A" : FormatUiNumber(originalParameters.OptimizationAltitudeMeters, "0"),
             IsJetFamily(newEngineType) ? "N/A" : FormatUiNumber(newParameters.OptimizationAltitudeMeters, "0"));
-        DrawVersionComparisonRow(
-            "Boost",
-            IsJetFamily(originalEngineType) ? "N/A" : originalParameters.BoostType.ToString(),
-            IsJetFamily(newEngineType) ? "N/A" : newParameters.BoostType.ToString());
-        DrawVersionComparisonRow(
-            "Injection",
-            IsJetFamily(originalEngineType) ? "N/A" : originalParameters.PistonInjectionType.ToString(),
-            IsJetFamily(newEngineType) ? "N/A" : newParameters.PistonInjectionType.ToString());
-        DrawVersionComparisonRow(
-            "Afterburner",
-            IsJetFamily(originalEngineType) ? (originalParameters.HasAfterburner ? "Enabled" : "Disabled") : "N/A",
-            IsJetFamily(newEngineType) ? (newParameters.HasAfterburner ? "Enabled" : "Disabled") : "N/A");
-        DrawVersionComparisonRow(
-            "Maximum Speed (RPM)",
-            FormatUiNumber(originalParameters.MaximumSpeed, "0"),
-            FormatUiNumber(newParameters.MaximumSpeed, "0"));
-        DrawVersionComparisonRow(
-            "Efficiency Optimizations (%)",
-            IsJetFamily(originalEngineType) ? "N/A" : FormatUiNumber(originalParameters.EfficiencyOptimizationsPercent, "0.0"),
-            IsJetFamily(newEngineType) ? "N/A" : FormatUiNumber(newParameters.EfficiencyOptimizationsPercent, "0.0"));
         DrawVersionComparisonRow(
             "Cooling Efficiency",
             FormatUiNumber(originalParameters.CoolingEfficiency, "0.00"),
@@ -3212,14 +3118,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "Weight (kg)",
             FormatUiNumber(originalEngine.Performance.Weight.Kilograms, "0.0"),
             FormatUiNumber(newEngine.Performance.Weight.Kilograms, "0.0"));
-        DrawVersionComparisonRow(
-            "Engine Length (m)",
-            FormatUiNumber(originalEngine.Performance.EngineLengthMeters, "0.00"),
-            FormatUiNumber(newEngine.Performance.EngineLengthMeters, "0.00"));
-        DrawVersionComparisonRow(
-            "Engine Frontal Area (m2)",
-            FormatUiNumber(originalEngine.Performance.EngineFrontalAreaSquareMeters, "0.000"),
-            FormatUiNumber(newEngine.Performance.EngineFrontalAreaSquareMeters, "0.000"));
         DrawVersionComparisonRow(
             "Cost",
             FormatUiNumber(originalEngine.Performance.Cost, "0"),
@@ -3291,31 +3189,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "Wing Area (m2)",
             FormatUiNumber(originalAirframe.WingAreaSquareMeters, "0.0"),
             FormatUiNumber(newAirframe.WingAreaSquareMeters, "0.0"));
-        DrawVersionComparisonRow("Wing Shape", originalAirframe.WingShape.ToString(), newAirframe.WingShape.ToString());
-        DrawVersionComparisonRow("Wing Profile", originalAirframe.WingProfile.ToString(), newAirframe.WingProfile.ToString());
-        DrawVersionComparisonRow("Tail Type", originalAirframe.TailType.ToString(), newAirframe.TailType.ToString());
-        DrawVersionComparisonRow("Flaps", originalAirframe.FlapType.ToString(), newAirframe.FlapType.ToString());
-        DrawVersionComparisonRow(
-            "Leading Edge Flaps",
-            originalAirframe.HasLeadingEdgeFlaps ? "Enabled" : "Disabled",
-            newAirframe.HasLeadingEdgeFlaps ? "Enabled" : "Disabled");
-        DrawVersionComparisonRow(
-            "Backup Systems",
-            originalAirframe.HasBackupSystems ? "Enabled" : "Disabled",
-            newAirframe.HasBackupSystems ? "Enabled" : "Disabled");
         DrawVersionComparisonRow(
             "Landing Gear",
             originalAirframe.LandingGearType.ToString(),
             newAirframe.LandingGearType.ToString());
-        DrawVersionComparisonRow("Runway Type", originalAirframe.RunwayType.ToString(), newAirframe.RunwayType.ToString());
         DrawVersionComparisonRow(
             "Cowling",
             FormatUiNumber(originalAirframe.EngineCowling, "0.00"),
             FormatUiNumber(newAirframe.EngineCowling, "0.00"));
-        DrawVersionComparisonRow(
-            "Aerodynamic Cleanliness (%)",
-            FormatUiNumber(originalAirframe.AerodynamicCleanlinessPercent, "0.0"),
-            FormatUiNumber(newAirframe.AerodynamicCleanlinessPercent, "0.0"));
         DrawVersionComparisonRow(
             "Fuel (L)",
             FormatUiNumber(originalAirframe.FuelAmountLiters, "0"),
@@ -3375,21 +3256,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             FormatUiNumber(originalAircraft.Performance.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0"),
             FormatUiNumber(newAircraft.Performance.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0"));
         DrawVersionComparisonRow(
-            "Optimal Cruise Altitude (m)",
-            FormatUiNumber(originalAircraft.Performance.OptimalCruiseAltitudeMeters, "0"),
-            FormatUiNumber(newAircraft.Performance.OptimalCruiseAltitudeMeters, "0"));
-        DrawVersionComparisonRow(
             "Cruise Fuel Burn Avg (kg/h)",
             FormatUiNumber(originalAircraft.Performance.AverageCruiseFuelBurnKilogramsPerHour, "0.0"),
             FormatUiNumber(newAircraft.Performance.AverageCruiseFuelBurnKilogramsPerHour, "0.0"));
-        DrawVersionComparisonRow(
-            "Cruise Fuel Burn Full (kg/h)",
-            FormatUiNumber(originalAircraft.Performance.FullFuelCruiseBurnKilogramsPerHour, "0.0"),
-            FormatUiNumber(newAircraft.Performance.FullFuelCruiseBurnKilogramsPerHour, "0.0"));
-        DrawVersionComparisonRow(
-            "Cruise Fuel Burn Empty (kg/h)",
-            FormatUiNumber(originalAircraft.Performance.EmptyFuelCruiseBurnKilogramsPerHour, "0.0"),
-            FormatUiNumber(newAircraft.Performance.EmptyFuelCruiseBurnKilogramsPerHour, "0.0"));
         DrawVersionComparisonRow(
             "Useful Weight (kg)",
             FormatUiNumber(originalAircraft.Performance.PayloadCapacity.Kilograms, "0.0"),
@@ -3498,12 +3367,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawMetric("Engine Thrust @0m (N)", engineOutputAtSeaLevel, "0.0");
             DrawMetric("Total Thrust @0m (N)", totalEngineOutputAtSeaLevel, "0.0");
         }
-        GUILayout.Label($"Wing/Tail/Profile: {_aircraftPreview.Airframe.Parameters.WingPosition} {_aircraftPreview.Airframe.Parameters.WingShape}, {_aircraftPreview.Airframe.Parameters.TailType}, {_aircraftPreview.Airframe.Parameters.WingProfile}");
-        GUILayout.Label($"Flaps: {_aircraftPreview.Airframe.Parameters.FlapType}, Leading Edge: {_aircraftPreview.Airframe.Parameters.HasLeadingEdgeFlaps}");
-        GUILayout.Label($"Backup Systems: {_aircraftPreview.Airframe.Parameters.HasBackupSystems}");
-        GUILayout.Label("Research modifiers are configured per proposal in the Research tab.");
-        GUILayout.Label(
-            $"Runway: {_aircraftPreview.Airframe.Parameters.RunwayType} ({FormatUiNumber(GetRunwayLengthMeters(_aircraftPreview.Airframe.Parameters.RunwayType), "0")} m)");
 
         DrawSection("Aircraft Visual");
         var aircraftVisualRect = GUILayoutUtility.GetRect(140f, 290f, GUILayout.ExpandWidth(true));
@@ -3531,10 +3394,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         DrawMetric("Range (km)", perf.RangeKilometers, "0.0");
         DrawMetric("Optimal Cruise Speed (km/h)", perf.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0");
-        DrawMetric("Optimal Cruise Altitude (m)", perf.OptimalCruiseAltitudeMeters, "0");
         DrawMetric("Cruise Fuel Burn Avg (kg/h)", perf.AverageCruiseFuelBurnKilogramsPerHour, "0.0");
-        DrawMetric("Cruise Fuel Burn Full Tank (kg/h)", perf.FullFuelCruiseBurnKilogramsPerHour, "0.0");
-        DrawMetric("Cruise Fuel Burn Empty Tank (kg/h)", perf.EmptyFuelCruiseBurnKilogramsPerHour, "0.0");
         DrawMetric("Useful Weight (kg)", perf.PayloadCapacity.Kilograms, "0.0");
         DrawMetric("Maximum Takeoff Weight (kg)", perf.MaximumTakeoffWeightKilograms, "0.0");
         DrawMetric("Aircraft Weight With Fuel (kg)", perf.AircraftWeightWithFuelKilograms, "0.0");
@@ -3544,21 +3404,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawMetric($"Passengers (Payload/{FormatUiNumber(PlaneDesignerBalance.Categories.PayloadKilogramsPerPassenger, "0")}kg)", perf.PassengerCapacity, "0");
         }
 
-        DrawMetric("Total Weight (kg)", perf.TotalWeight.Kilograms, "0.0");
         DrawMetric("Overall Reliability", perf.OverallReliability, "0.000");
 
         DrawMetric("Drag Coefficient (Cd)", airframePerf.DragCoefficient, "0.000");
-        DrawMetric("Lift Coefficient (Cl)", airframePerf.LiftCoefficient, "0.000");
-        DrawMetric("Aerodynamic Cleanliness (%)", airframePerf.AerodynamicCleanlinessPercent, "0.0");
-        DrawMetric("Aircraft Length (m)", perf.AircraftLengthMeters, "0.00");
-        DrawMetric("Aircraft Frontal Area (m2)", perf.AircraftFrontalAreaSquareMeters, "0.00");
-        DrawMetric("Total Drag Area (Cd*A, m2)", perf.TotalDragAreaSquareMeters, "0.000");
         DrawMetric("Maneuverability", airframePerf.Maneuverability, "0.0");
 
         DrawMetric("Production Cost", perf.TotalProductionCost, "0");
         DrawMetric("Production MD", perf.TotalProductionManDays, "0.0");
         DrawMetric(
-            "Research Time (months)",
+            "Engineering Time (months)",
             ResolveTypeResearchTimeMonthsForDesignerPreview(
                 _aircraftPreview,
                 _typeVersionDevelopment?.SourceDevelopmentStartedYear),
@@ -4005,6 +3859,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUI.DragWindow(new Rect(0f, 0f, 10000f, 28f));
             return;
         }
+
+        DrawRect(
+            new Rect(0f, 0f, _pastOrdersWindowRect.width, _pastOrdersWindowRect.height),
+            new Color(0.12f, 0.12f, 0.12f, 1f));
 
         GUILayout.BeginHorizontal();
         GUILayout.Label($"Fulfilled: {FormatUiInteger(_contractBoard.DeliveredContracts.Count)}", GUILayout.Width(170f));
@@ -4831,10 +4689,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void DrawResearchTab()
     {
-        DrawSection("Research (M4)");
+        DrawSection("Engineering (M4)");
         if (_researchBoard is null)
         {
-            DrawError("Research board is not initialized.");
+            DrawError("Engineering board is not initialized.");
             return;
         }
 
@@ -4842,7 +4700,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var ongoing = GetVisibleResearchProjectsByStatus(ResearchStatus.Ongoing);
         var completed = GetVisibleResearchProjectsByStatus(ResearchStatus.Completed);
 
-        GUILayout.Label("Approve proposed engines/families/types and tune research modifiers per proposal. Ongoing projects advance every month.");
+        GUILayout.Label("Approve proposed engines/families/types and tune engineering modifiers per proposal. Ongoing projects advance every month.");
         DrawMetric("Proposed", proposed.Count, "0");
         DrawMetric("Ongoing", ongoing.Count, "0");
         DrawMetric("Completed", completed.Count, "0");
@@ -4856,15 +4714,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         GUILayout.Space(6f);
-        GUILayout.Label("Research details and controls are shown on the right panel only.");
+        GUILayout.Label("Engineering details and controls are shown on the right panel only.");
     }
 
     private void DrawResearchReport()
     {
-        DrawSection("Research Board");
+        DrawSection("Engineering Board");
         if (_researchBoard is null)
         {
-            DrawError("Research board is not initialized.");
+            DrawError("Engineering board is not initialized.");
             return;
         }
 
@@ -4888,11 +4746,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        DrawSection("Current Research");
+        DrawSection("Current Engineering");
         var ongoing = GetVisibleResearchProjectsByStatus(ResearchStatus.Ongoing);
         if (ongoing.Count == 0)
         {
-            GUILayout.Label("No ongoing research.");
+            GUILayout.Label("No ongoing engineering.");
         }
         else
         {
@@ -4906,7 +4764,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 DrawHorizontalBar(project.ProgressMonths, project.ResearchTimeMonths, new Color(0.65f, 0.82f, 0.53f, 1f));
                 if (isDetailed)
                 {
-                    DrawMetric("Research Cost", project.ResearchCost, "0.00");
+                    DrawMetric("Engineering Cost", project.ResearchCost, "0.00");
                     DrawMetric("Complexity (%)", project.ComplexityNormalized * 100d, "0.0");
                     DrawMetric("Remaining Months", project.RemainingMonths, "0");
                     GUILayout.Label($"ID: {project.SubjectId}");
@@ -4916,11 +4774,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        DrawSection("Completed Research");
+        DrawSection("Completed Engineering");
         var completed = GetVisibleResearchProjectsByStatus(ResearchStatus.Completed);
         if (completed.Count == 0)
         {
-            GUILayout.Label("No completed research yet.");
+            GUILayout.Label("No completed engineering yet.");
             return;
         }
 
@@ -4964,10 +4822,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             var project = proposed[index];
             var displayName = ResolveResearchProjectDisplayName(project);
             GUILayout.BeginVertical(GUI.skin.box);
-            GUILayout.Label($"Research Subject: {GetResearchSubjectLabel(project.SubjectType)}");
+            GUILayout.Label($"Engineering Subject: {GetResearchSubjectLabel(project.SubjectType)}");
             GUILayout.Label($"{GetResearchNameFieldLabel(project.SubjectType)}: {displayName}");
-            DrawMetric("Research Cost", project.ResearchCost, "0.00");
-            DrawMetric("Research Time (months)", project.ResearchTimeMonths, "0");
+            DrawMetric("Engineering Cost", project.ResearchCost, "0.00");
+            DrawMetric("Engineering Time (months)", project.ResearchTimeMonths, "0");
             if (IsFirstYearResearchApprovalWindow())
             {
                 GUILayout.Label(BuildResearchTimeBonusFormula(project.ResearchTimeMonths));
@@ -4976,7 +4834,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawResearchModifierEditor(project);
             if (isDetailed)
             {
-                GUILayout.Label($"Research ID: {project.SubjectId}");
+                GUILayout.Label($"Engineering ID: {project.SubjectId}");
             }
 
             if (GUILayout.Button($"Approve {GetResearchSubjectLabel(project.SubjectType)}", GUILayout.Height(24f)))
@@ -5024,7 +4882,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var normalizedBaseMonths = System.Math.Max(baseResearchMonths, 1);
         var bonusMonths = System.Math.Max(ResearchBalance.FirstYearApprovalSpeedBonusMonths, 0);
         var adjustedMonths = System.Math.Max(1, normalizedBaseMonths - bonusMonths);
-        return $"Research time = {FormatUiInteger(normalizedBaseMonths)} - {FormatUiInteger(bonusMonths)} = {FormatUiInteger(adjustedMonths)}";
+        return $"Engineering time = {FormatUiInteger(normalizedBaseMonths)} - {FormatUiInteger(bonusMonths)} = {FormatUiInteger(adjustedMonths)}";
     }
 
     private void ApplyApprovedYearForApprovedProject(ResearchProject project, SimulationDate approvedDate)
@@ -5322,7 +5180,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var previousProductionOptimization = points.ProductionOptimizationPoints;
         var previousFastDevelopment = points.FastDevelopmentPoints;
 
-        DrawSection($"{GetResearchSubjectLabel(project.SubjectType)} Research Modifiers");
+        DrawSection($"{GetResearchSubjectLabel(project.SubjectType)} Engineering Modifiers");
         points.ReliabilityPoints = DrawIntSlider(
             $"Reliability (0-10) [{sliderIdSuffix}]",
             points.ReliabilityPoints,
@@ -5421,12 +5279,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             modifiedProductionManDays,
             "0.0");
         DrawModifierPercentagePreview(
-            "Research Cost",
+            "Engineering Cost",
             CalculatePercentageDelta(baseQuote.ResearchCost, modifiedQuote.ResearchCost),
             modifiedQuote.ResearchCost,
             "0.00");
         DrawModifierPercentagePreview(
-            "Research Time (months)",
+            "Engineering Time (months)",
             CalculatePercentageDelta(baseQuote.ResearchTimeMonths, modifiedQuote.ResearchTimeMonths),
             modifiedQuote.ResearchTimeMonths,
             "0");
@@ -5469,12 +5327,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             modifiedProductionManDays,
             "0.0");
         DrawModifierPercentagePreview(
-            "Research Cost",
+            "Engineering Cost",
             CalculatePercentageDelta(baseQuote.ResearchCost, modifiedQuote.ResearchCost),
             modifiedQuote.ResearchCost,
             "0.00");
         DrawModifierPercentagePreview(
-            "Research Time (months)",
+            "Engineering Time (months)",
             CalculatePercentageDelta(baseQuote.ResearchTimeMonths, modifiedQuote.ResearchTimeMonths),
             modifiedQuote.ResearchTimeMonths,
             "0");
@@ -5518,12 +5376,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             modifiedProductionManDays,
             "0.0");
         DrawModifierPercentagePreview(
-            "Research Cost",
+            "Engineering Cost",
             CalculatePercentageDelta(baseQuote.ResearchCost, modifiedQuote.ResearchCost),
             modifiedQuote.ResearchCost,
             "0.00");
         DrawModifierPercentagePreview(
-            "Research Time (months)",
+            "Engineering Time (months)",
             CalculatePercentageDelta(baseQuote.ResearchTimeMonths, modifiedQuote.ResearchTimeMonths),
             modifiedQuote.ResearchTimeMonths,
             "0");
@@ -6288,7 +6146,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             var savedEngine = _savedEngines[index];
             GUILayout.BeginVertical(GUI.skin.box);
             GUILayout.Label(BuildEngineDisplayName(savedEngine.Name, savedEngine.Definition.EngineType, savedEngine.Parameters));
-            GUILayout.Label($"Research: {ResolveResearchStatusLabel(ResearchSubjectType.Engine, savedEngine.ResearchId)}");
+            GUILayout.Label($"Engineering: {ResolveResearchStatusLabel(ResearchSubjectType.Engine, savedEngine.ResearchId)}");
             GUILayout.Label($"Approved Year: {FormatApprovedYear(savedEngine.ApprovedYear)}");
             try
             {
@@ -6424,7 +6282,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawParameterValueRow("Approved Year", FormatApprovedYear(selected.ApprovedYear));
         if (TryResolveResearchTimeMonthsFromResearchBoard(ResearchSubjectType.Engine, selected.ResearchId, out var engineResearchTimeMonths))
         {
-            DrawParameterValueRow("Research Time (months)", FormatUiInteger(engineResearchTimeMonths));
+            DrawParameterValueRow("Engineering Time (months)", FormatUiInteger(engineResearchTimeMonths));
         }
 
         DrawParameterValueRow("Definition", $"{selected.Definition.DisplayName} ({selected.Definition.EngineType})");
@@ -6498,7 +6356,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawParameterValueRow("Approved Year", FormatApprovedYear(selected.ApprovedYear));
         if (TryResolveResearchTimeMonthsFromResearchBoard(ResearchSubjectType.AircraftType, selected.TypeResearchId, out var typeResearchTimeMonths))
         {
-            DrawParameterValueRow("Research Time (months)", FormatUiInteger(typeResearchTimeMonths));
+            DrawParameterValueRow("Engineering Time (months)", FormatUiInteger(typeResearchTimeMonths));
         }
         DrawParameterValueRow("Category", category);
         DrawParameterValueRow(
@@ -6597,7 +6455,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _tab = 0;
         _researchActionMessage =
             $"Developing engine version from '{saved.Name}'. Fixed: engine family/type and cylinder count. " +
-            "Research quote uses 90% base discount and 50% of technology progress since baseline.";
+            "Engineering quote uses 90% base discount and 50% of technology progress since baseline.";
     }
 
     private void OpenTypeDesignerForExistingDesign(int designIndex)
@@ -6638,7 +6496,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _tab = 1;
         _factoryActionMessage =
             $"Developing new type version from '{savedDesign.Name}'. " +
-            "Research quote uses 90% base discount and 50% of technology progress since baseline.";
+            "Engineering quote uses 90% base discount and 50% of technology progress since baseline.";
     }
 
     private bool TryLoadSavedAircraftDesignIntoTypeDesigner(
@@ -6802,7 +6660,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         if (_researchBoard is null)
         {
-            return "Research board unavailable";
+            return "Engineering board unavailable";
         }
 
         var projects = _researchBoard.GetAllProjects();
@@ -7012,7 +6870,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.Label("Aircraft factory lines consume 21 MD per employee per month.");
         GUILayout.Label("Overflow MD carries over. Engine factory auto-scales to exact demand; excess capacity is discarded.");
-        GUILayout.Label("Lines produce continuously until you unassign the type or remove the line.");
+        GUILayout.Label("Lines produce continuously until you unassign/remove them, or until an optional total target is reached.");
         GUILayout.Label($"Factory Tool Level: {FormatUiInteger(_productionFactory.FactoryToolLevel)}");
 
         var targetFactoryToolLevel = DrawIntSlider("Target Factory Tool Level", _productionFactory.FactoryToolLevel, _productionFactory.FactoryToolLevel, 10);
@@ -7058,7 +6916,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var blockedDesignsCount = _savedAircraftDesigns.Count - productionReadyDesigns.Length;
         if (blockedDesignsCount > 0)
         {
-            GUILayout.Label($"{FormatUiInteger(blockedDesignsCount)} saved aircraft types are blocked until engine + family + type research is completed.");
+            GUILayout.Label($"{FormatUiInteger(blockedDesignsCount)} saved aircraft types are blocked until engine + family + type engineering is completed.");
         }
 
         var designOptions = new string[productionReadyDesigns.Length + 1];
@@ -7072,11 +6930,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (productionReadyDesigns.Length == 0)
         {
-            DrawError("No researched aircraft types available for production. Approve and complete research in Research tab.");
+            DrawError("No engineered aircraft types available for production. Approve and complete engineering in Engineering tab.");
         }
 
         var linesToRemove = new List<string>();
         var lines = _productionFactory.Lines;
+        PruneFactoryTotalTargetInputs(lines);
         for (var lineIndex = 0; lineIndex < lines.Count; lineIndex++)
         {
             var line = lines[lineIndex];
@@ -7113,6 +6972,54 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _productionFactory.SetMonthlyProductionTargetUnits(line.LineId, nextTargetUnits);
             }
 
+            if (!_factoryTotalTargetInputByLineId.TryGetValue(line.LineId, out var totalTargetInput))
+            {
+                totalTargetInput = line.TotalProductionTargetUnits > 0
+                    ? FormatUiInteger(line.TotalProductionTargetUnits)
+                    : string.Empty;
+            }
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"Total target ({line.LineId})", GUILayout.Width(200f));
+            totalTargetInput = GUILayout.TextField(totalTargetInput, GUILayout.Width(120f));
+            GUILayout.Label("blank = no limit");
+            GUILayout.EndHorizontal();
+            _factoryTotalTargetInputByLineId[line.LineId] = totalTargetInput;
+
+            var hasTotalTargetInput = !string.IsNullOrWhiteSpace(totalTargetInput);
+            var hasValidTotalTarget = !hasTotalTargetInput;
+            var parsedTotalTargetUnits = 0;
+            if (hasTotalTargetInput && TryParsePositiveInt(totalTargetInput, out var parsedTarget))
+            {
+                hasValidTotalTarget = true;
+                parsedTotalTargetUnits = parsedTarget;
+            }
+
+            if (hasValidTotalTarget)
+            {
+                var nextTotalTargetUnits = hasTotalTargetInput ? parsedTotalTargetUnits : 0;
+                if (nextTotalTargetUnits != line.TotalProductionTargetUnits)
+                {
+                    _productionFactory.SetTotalProductionTargetUnits(line.LineId, nextTotalTargetUnits);
+                }
+            }
+            else
+            {
+                DrawError("Total target must be a positive whole number, or leave it blank for no limit.");
+            }
+
+            if (line.TotalProductionTargetUnits > 0)
+            {
+                var remainingUnits = System.Math.Max(line.TotalProductionTargetUnits - line.LifetimeProducedUnits, 0);
+                GUILayout.Label(
+                    $"Progress: {FormatUiInteger(line.LifetimeProducedUnits)}/{FormatUiInteger(line.TotalProductionTargetUnits)} " +
+                    $"(remaining {FormatUiInteger(remainingUnits)})");
+            }
+            else
+            {
+                GUILayout.Label($"Progress: {FormatUiInteger(line.LifetimeProducedUnits)} built (no total limit)");
+            }
+
             GUILayout.Label($"Auto-hired staff (last month): {FormatUiInteger(line.Employees)}");
 
             if (GUILayout.Button($"Remove {line.LineId}", GUILayout.Height(24f)))
@@ -7138,6 +7045,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         for (var index = 0; index < staleDesignIds.Length; index++)
         {
             _factoryScrapQuantityInputByDesignId.Remove(staleDesignIds[index]);
+        }
+    }
+
+    private void PruneFactoryTotalTargetInputs(IReadOnlyList<AircraftProductionLineState> lines)
+    {
+        var liveLineIds = new HashSet<string>(lines.Select(line => line.LineId), StringComparer.Ordinal);
+        var staleLineIds = _factoryTotalTargetInputByLineId.Keys
+            .Where(lineId => !liveLineIds.Contains(lineId))
+            .ToArray();
+        for (var index = 0; index < staleLineIds.Length; index++)
+        {
+            _factoryTotalTargetInputByLineId.Remove(staleLineIds[index]);
         }
     }
 
@@ -7227,6 +7146,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
                 GUILayout.Label($"Produced: {FormatUiInteger(line.ProducedUnits)}");
                 GUILayout.Label($"Target: {FormatUiInteger(line.TargetUnits)} aircraft / month");
+                if (line.TotalProductionTargetUnits > 0)
+                {
+                    var remainingUnits = System.Math.Max(line.TotalProductionTargetUnits - line.LifetimeProducedUnits, 0);
+                    GUILayout.Label(
+                        $"Total Target: {FormatUiInteger(line.LifetimeProducedUnits)}/{FormatUiInteger(line.TotalProductionTargetUnits)} " +
+                        $"(remaining {FormatUiInteger(remainingUnits)})");
+                }
+                else
+                {
+                    GUILayout.Label($"Total Target: no limit | Built: {FormatUiInteger(line.LifetimeProducedUnits)}");
+                }
                 GUILayout.Label($"Auto Staff: {FormatUiInteger(line.Employees)}");
                 GUILayout.Label($"MD: {FormatUiNumber(line.UsedManDays, "0.0")}/{FormatUiNumber(line.AvailableManDays, "0.0")} | Carry: {FormatUiNumber(line.CarryOverManDays, "0.0")}");
                 GUILayout.Label($"Capacity: {FormatUiInteger(line.CapacityUnitsAtCurrentStaff)} units");
@@ -7666,7 +7596,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         if (_researchBoard is null)
         {
-            return "Research board unavailable";
+            return "Engineering board unavailable";
         }
 
         var missing = new List<string>();

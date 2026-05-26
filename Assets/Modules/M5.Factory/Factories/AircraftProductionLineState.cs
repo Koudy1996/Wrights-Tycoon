@@ -18,6 +18,8 @@ public sealed class AircraftProductionLineState
 
     public int MonthlyProductionTargetUnits { get; private set; }
 
+    public int TotalProductionTargetUnits { get; private set; }
+
     public int Employees { get; private set; }
 
     public double CarryOverManDays { get; private set; }
@@ -46,6 +48,11 @@ public sealed class AircraftProductionLineState
                 $"Monthly production target must be between 0 and {FactoryBalance.MaximumAircraftPerLinePerMonth}.");
         }
 
+        if (TotalProductionTargetUnits < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(TotalProductionTargetUnits), "Total production target must be >= 0.");
+        }
+
         Numeric.ThrowIfNotFinite(CarryOverManDays, nameof(CarryOverManDays));
         if (CarryOverManDays < 0d)
         {
@@ -55,6 +62,11 @@ public sealed class AircraftProductionLineState
         if (LineToolLevel < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(LineToolLevel), "Line tool level must be >= 1.");
+        }
+
+        if (LifetimeProducedUnits < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(LifetimeProducedUnits), "Lifetime produced units must be >= 0.");
         }
     }
 
@@ -70,6 +82,16 @@ public sealed class AircraftProductionLineState
         }
 
         MonthlyProductionTargetUnits = targetUnits;
+    }
+
+    public void SetTotalProductionTargetUnits(int targetUnits)
+    {
+        if (targetUnits < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(targetUnits), "Total production target must be >= 0.");
+        }
+
+        TotalProductionTargetUnits = targetUnits;
     }
 
     public void SetAutoAssignedEmployees(int employees)
@@ -112,6 +134,16 @@ public sealed class AircraftProductionLineState
 
         LifetimeProducedUnits += producedUnits;
         CarryOverManDays = carryOverManDays;
+    }
+
+    public void SetLifetimeProducedUnits(int producedUnits)
+    {
+        if (producedUnits < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(producedUnits), "Lifetime produced units must be >= 0.");
+        }
+
+        LifetimeProducedUnits = producedUnits;
     }
 
     public void SetCarryOverWithoutProduction(double carryOverManDays)
