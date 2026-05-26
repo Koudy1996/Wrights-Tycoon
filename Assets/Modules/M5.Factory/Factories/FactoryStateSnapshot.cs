@@ -19,6 +19,8 @@ public sealed class FactoryLineSnapshot
 
     public string? AssignedDesignId { get; set; }
 
+    public int MonthlyProductionTargetUnits { get; set; }
+
     public int Employees { get; set; }
 
     public double CarryOverManDays { get; set; }

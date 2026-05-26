@@ -4,6 +4,7 @@ namespace WrightTycoon.Core.Balance;
 public static class FactoryBalance
 {
     public const double EmployeeManDaysPerMonth = 21d;
+    public const int MaximumAircraftPerLinePerMonth = 100;
     public const int MinimumToolLevel = 1;
     public const int InitialFactoryToolLevel = 1;
 

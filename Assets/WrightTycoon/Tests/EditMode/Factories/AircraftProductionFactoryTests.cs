@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using NUnit.Framework;
 using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Airframes;
+using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Engines;
 using WrightTycoon.Core.Factories;
 using WrightTycoon.Core.Simulation;
@@ -18,7 +19,7 @@ public sealed class AircraftProductionFactoryTests
     {
         var factory = new AircraftProductionFactory();
         var lineId = factory.AddLine("line.main");
-        factory.SetEmployees(lineId, 10);
+        factory.SetMonthlyProductionTargetUnits(lineId, 2);
         factory.AssignDesign(lineId, "design.alpha");
 
         var catalog = new Dictionary<string, FactoryAircraftTypeCatalogItem>
@@ -40,7 +41,7 @@ public sealed class AircraftProductionFactoryTests
     {
         var factory = new AircraftProductionFactory();
         var lineId = factory.AddLine("line.tools");
-        factory.SetEmployees(lineId, 10);
+        factory.SetMonthlyProductionTargetUnits(lineId, 3);
         factory.AssignDesign(lineId, "design.beta");
 
         var catalog = new Dictionary<string, FactoryAircraftTypeCatalogItem>
@@ -54,7 +55,7 @@ public sealed class AircraftProductionFactoryTests
 
         Assert.That(blocked.TotalAircraftProduced, Is.EqualTo(0));
         Assert.That(blocked.LineReports[0].IsBlocked, Is.True);
-        Assert.That(active.TotalAircraftProduced, Is.GreaterThan(0));
+        Assert.That(active.TotalAircraftProduced, Is.EqualTo(3));
         Assert.That(active.LineReports[0].IsBlocked, Is.False);
     }
 
@@ -63,7 +64,7 @@ public sealed class AircraftProductionFactoryTests
     {
         var factory = new AircraftProductionFactory();
         var lineId = factory.AddLine("line.eng");
-        factory.SetEmployees(lineId, 10);
+        factory.SetMonthlyProductionTargetUnits(lineId, 21);
         factory.AssignDesign(lineId, "design.gamma");
 
         var catalog = new Dictionary<string, FactoryAircraftTypeCatalogItem>
@@ -85,7 +86,7 @@ public sealed class AircraftProductionFactoryTests
     {
         var factory = new AircraftProductionFactory();
         var lineId = factory.AddLine("line.warehouse");
-        factory.SetEmployees(lineId, 10);
+        factory.SetMonthlyProductionTargetUnits(lineId, 7);
         factory.AssignDesign(lineId, "design.stock");
 
         var catalog = new Dictionary<string, FactoryAircraftTypeCatalogItem>
@@ -98,6 +99,20 @@ public sealed class AircraftProductionFactoryTests
         Assert.That(report.TotalAircraftProduced, Is.EqualTo(7));
         Assert.That(factory.GetWarehouseUnits("design.stock"), Is.EqualTo(7));
         Assert.That(report.TotalWarehouseUnits, Is.EqualTo(7));
+    }
+
+    [Test]
+    public void ProductionTarget_RejectsValuesAboveMaximum()
+    {
+        var factory = new AircraftProductionFactory();
+        var lineId = factory.AddLine("line.max");
+
+        var exception = Assert.Throws<System.ArgumentOutOfRangeException>(
+            () => factory.SetMonthlyProductionTargetUnits(
+                lineId,
+                FactoryBalance.MaximumAircraftPerLinePerMonth + 1));
+
+        Assert.That(exception, Is.Not.Null);
     }
 
     [Test]

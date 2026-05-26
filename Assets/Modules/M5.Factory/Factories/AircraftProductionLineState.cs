@@ -1,4 +1,5 @@
 using System;
+using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Math;
 
 namespace WrightTycoon.Core.Factories;
@@ -15,7 +16,9 @@ public sealed class AircraftProductionLineState
 
     public string? AssignedDesignId { get; private set; }
 
-    public int Employees { get; private set; } = 10;
+    public int MonthlyProductionTargetUnits { get; private set; }
+
+    public int Employees { get; private set; }
 
     public double CarryOverManDays { get; private set; }
 
@@ -35,6 +38,14 @@ public sealed class AircraftProductionLineState
             throw new ArgumentOutOfRangeException(nameof(Employees), "Employees must be >= 0.");
         }
 
+        if (MonthlyProductionTargetUnits < 0
+            || MonthlyProductionTargetUnits > FactoryBalance.MaximumAircraftPerLinePerMonth)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MonthlyProductionTargetUnits),
+                $"Monthly production target must be between 0 and {FactoryBalance.MaximumAircraftPerLinePerMonth}.");
+        }
+
         Numeric.ThrowIfNotFinite(CarryOverManDays, nameof(CarryOverManDays));
         if (CarryOverManDays < 0d)
         {
@@ -49,7 +60,19 @@ public sealed class AircraftProductionLineState
 
     public void AssignDesign(string? designId) => AssignedDesignId = string.IsNullOrWhiteSpace(designId) ? null : designId.Trim();
 
-    public void SetEmployees(int employees)
+    public void SetMonthlyProductionTargetUnits(int targetUnits)
+    {
+        if (targetUnits < 0 || targetUnits > FactoryBalance.MaximumAircraftPerLinePerMonth)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(targetUnits),
+                $"Monthly production target must be between 0 and {FactoryBalance.MaximumAircraftPerLinePerMonth}.");
+        }
+
+        MonthlyProductionTargetUnits = targetUnits;
+    }
+
+    public void SetAutoAssignedEmployees(int employees)
     {
         if (employees < 0)
         {

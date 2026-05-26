@@ -7034,13 +7034,214 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         DrawSection("Warehouse");
-        var fullProductionCatalog = BuildProductionCatalog(includeOnlyResearched: false);
         var liveWarehouseSnapshot = _productionFactory.WarehouseUnitsByDesign;
-        PruneFactoryScrapQuantityInputs(liveWarehouseSnapshot);
         DrawMetric("Stored Aircraft Units", liveWarehouseSnapshot.Values.Sum(), "0");
         if (liveWarehouseSnapshot.Count == 0)
         {
             GUILayout.Label("Warehouse is empty.");
+        }
+        else
+        {
+            foreach (var entry in liveWarehouseSnapshot.OrderByDescending(item => item.Value).ThenBy(item => item.Key, StringComparer.Ordinal))
+            {
+                GUILayout.BeginHorizontal(GUI.skin.box);
+                GUILayout.Label($"{ResolveAircraftDesignName(entry.Key)} ({ResolveAircraftCategoryName(entry.Key)})", GUILayout.Width(360f));
+                GUILayout.Label($"{FormatUiInteger(entry.Value)} units");
+                GUILayout.EndHorizontal();
+            }
+        }
+
+        var productionReadyDesigns = _savedAircraftDesigns
+            .Where(IsAircraftDesignReadyForProduction)
+            .ToArray();
+
+        var blockedDesignsCount = _savedAircraftDesigns.Count - productionReadyDesigns.Length;
+        if (blockedDesignsCount > 0)
+        {
+            GUILayout.Label($"{FormatUiInteger(blockedDesignsCount)} saved aircraft types are blocked until engine + family + type research is completed.");
+        }
+
+        var designOptions = new string[productionReadyDesigns.Length + 1];
+        designOptions[0] = "(None)";
+        for (var index = 0; index < productionReadyDesigns.Length; index++)
+        {
+            var design = productionReadyDesigns[index];
+            var categoryName = AircraftCategoryCatalog.GetProfile(design.CatalogItem.Category).DisplayName;
+            designOptions[index + 1] = $"{design.Name} | {categoryName} | Tool F{FormatUiInteger(design.CatalogItem.RequiredFactoryToolLevel)}";
+        }
+
+        if (productionReadyDesigns.Length == 0)
+        {
+            DrawError("No researched aircraft types available for production. Approve and complete research in Research tab.");
+        }
+
+        var linesToRemove = new List<string>();
+        var lines = _productionFactory.Lines;
+        for (var lineIndex = 0; lineIndex < lines.Count; lineIndex++)
+        {
+            var line = lines[lineIndex];
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label($"Line: {line.LineId}");
+
+            var selectedDesignIndex = 0;
+            if (!string.IsNullOrWhiteSpace(line.AssignedDesignId))
+            {
+                for (var index = 0; index < productionReadyDesigns.Length; index++)
+                {
+                    if (string.Equals(productionReadyDesigns[index].CatalogItem.DesignId, line.AssignedDesignId, StringComparison.Ordinal))
+                    {
+                        selectedDesignIndex = index + 1;
+                        break;
+                    }
+                }
+            }
+
+            var nextSelectedDesignIndex = DrawListSelector($"Assigned Type ({line.LineId})", selectedDesignIndex, designOptions);
+            var nextDesignId = nextSelectedDesignIndex == 0 ? null : productionReadyDesigns[nextSelectedDesignIndex - 1].CatalogItem.DesignId;
+            if (!string.Equals(line.AssignedDesignId, nextDesignId, StringComparison.Ordinal))
+            {
+                _productionFactory.AssignDesign(line.LineId, nextDesignId);
+            }
+
+            var nextTargetUnits = DrawIntSlider(
+                $"Planes / month ({line.LineId})",
+                line.MonthlyProductionTargetUnits,
+                0,
+                FactoryBalance.MaximumAircraftPerLinePerMonth);
+            if (nextTargetUnits != line.MonthlyProductionTargetUnits)
+            {
+                _productionFactory.SetMonthlyProductionTargetUnits(line.LineId, nextTargetUnits);
+            }
+
+            GUILayout.Label($"Auto-hired staff (last month): {FormatUiInteger(line.Employees)}");
+
+            if (GUILayout.Button($"Remove {line.LineId}", GUILayout.Height(24f)))
+            {
+                linesToRemove.Add(line.LineId);
+            }
+
+            GUILayout.EndVertical();
+        }
+
+        for (var removeIndex = 0; removeIndex < linesToRemove.Count; removeIndex++)
+        {
+            _productionFactory.RemoveLine(linesToRemove[removeIndex]);
+        }
+    }
+
+    private void PruneFactoryScrapQuantityInputs(IReadOnlyDictionary<string, int> liveWarehouseSnapshot)
+    {
+        var liveDesignIds = new HashSet<string>(liveWarehouseSnapshot.Keys, StringComparer.Ordinal);
+        var staleDesignIds = _factoryScrapQuantityInputByDesignId.Keys
+            .Where(designId => !liveDesignIds.Contains(designId))
+            .ToArray();
+        for (var index = 0; index < staleDesignIds.Length; index++)
+        {
+            _factoryScrapQuantityInputByDesignId.Remove(staleDesignIds[index]);
+        }
+    }
+
+    private void ProcessFactoryScrap(
+        string designId,
+        string designName,
+        int unitsToScrap,
+        double unitProductionCost,
+        IReadOnlyDictionary<string, FactoryAircraftTypeCatalogItem> fullProductionCatalog)
+    {
+        if (_productionFactory is null)
+        {
+            _factoryActionMessage = "Scrap failed: production factory is not initialized.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(designId) || unitsToScrap <= 0)
+        {
+            _factoryActionMessage = "Scrap failed: invalid design or quantity.";
+            return;
+        }
+
+        var normalizedDesignName = string.IsNullOrWhiteSpace(designName) ? designId : designName.Trim();
+        var normalizedUnitProductionCost = System.Math.Max(unitProductionCost, 0d);
+        if (!_productionFactory.TryWithdrawFromWarehouse(designId, unitsToScrap, out var withdrawalMessage))
+        {
+            _factoryActionMessage = $"Scrap failed: {withdrawalMessage}";
+            return;
+        }
+
+        var recoveredIncome = normalizedUnitProductionCost * 0.5d * unitsToScrap;
+        if (_accountingSystem is not null && recoveredIncome > 0d)
+        {
+            var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
+                _productionFactory.WarehouseUnitsByDesign,
+                fullProductionCatalog);
+            _accountingSystem.RegisterContractIncome(
+                _elapsedMonths,
+                _currentDate,
+                recoveredIncome,
+                inventoryByDesign,
+                $"Scrap income: {normalizedDesignName} x{FormatUiInteger(unitsToScrap)}");
+        }
+
+        _factoryScrapQuantityInputByDesignId[designId] = "1";
+        _factoryActionMessage =
+            $"Scrapped {FormatUiInteger(unitsToScrap)} units of '{normalizedDesignName}'. " +
+            $"Recovered {FormatCurrency(recoveredIncome)} (50% of production cost, no MD refund).";
+    }
+
+    private void DrawFactoryReport()
+    {
+        DrawSection("Factory Report");
+        if (_productionFactory is null)
+        {
+            DrawError("Production factory is not initialized.");
+            return;
+        }
+
+        var hasMonthlyReport = _lastFactoryReport is not null;
+        if (!hasMonthlyReport)
+        {
+            GUILayout.Label("No factory month processed yet. Press Next Month.");
+        }
+        else
+        {
+            var lastReport = _lastFactoryReport!;
+            GUILayout.Label($"Report Date: {FormatSimulationDate(lastReport.Date)}");
+            DrawMetric("Factory Tool Level", lastReport.FactoryToolLevel, "0");
+            DrawMetric("Produced Aircraft", lastReport.TotalAircraftProduced, "0");
+            DrawMetric("Warehouse Aircraft Units", lastReport.TotalWarehouseUnits, "0");
+            DrawMetric("Available MD", lastReport.TotalAvailableManDays, "0.0");
+            DrawMetric("Used MD", lastReport.TotalUsedManDays, "0.0");
+            DrawMetric("Capacity Utilization", lastReport.CapacityUtilization * 100d, "0.0");
+
+            DrawSection("Line Results");
+            for (var index = 0; index < lastReport.LineReports.Count; index++)
+            {
+                var line = lastReport.LineReports[index];
+                GUILayout.BeginVertical(GUI.skin.box);
+                GUILayout.Label($"{line.LineId} | {line.AssignedDesignName}");
+                GUILayout.Label($"Status: {line.StatusMessage}");
+                if (!string.IsNullOrWhiteSpace(line.AssignedDesignId))
+                {
+                    GUILayout.Label($"Category: {ResolveAircraftCategoryName(line.AssignedDesignId)}");
+                }
+
+                GUILayout.Label($"Produced: {FormatUiInteger(line.ProducedUnits)}");
+                GUILayout.Label($"Target: {FormatUiInteger(line.TargetUnits)} aircraft / month");
+                GUILayout.Label($"Auto Staff: {FormatUiInteger(line.Employees)}");
+                GUILayout.Label($"MD: {FormatUiNumber(line.UsedManDays, "0.0")}/{FormatUiNumber(line.AvailableManDays, "0.0")} | Carry: {FormatUiNumber(line.CarryOverManDays, "0.0")}");
+                GUILayout.Label($"Capacity: {FormatUiInteger(line.CapacityUnitsAtCurrentStaff)} units");
+                GUILayout.Label($"Warehouse Units For Type: {FormatUiInteger(line.WarehouseUnitsAfterProduction)}");
+                GUILayout.EndVertical();
+            }
+        }
+
+        DrawSection("Warehouse Snapshot");
+        var liveWarehouseSnapshot = _productionFactory.WarehouseUnitsByDesign;
+        var fullProductionCatalog = BuildProductionCatalog(includeOnlyResearched: false);
+        PruneFactoryScrapQuantityInputs(liveWarehouseSnapshot);
+        if (liveWarehouseSnapshot.Count == 0)
+        {
+            GUILayout.Label("No aircraft in warehouse.");
         }
         else
         {
@@ -7126,198 +7327,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        var productionReadyDesigns = _savedAircraftDesigns
-            .Where(IsAircraftDesignReadyForProduction)
-            .ToArray();
-
-        var blockedDesignsCount = _savedAircraftDesigns.Count - productionReadyDesigns.Length;
-        if (blockedDesignsCount > 0)
+        if (!hasMonthlyReport)
         {
-            GUILayout.Label($"{FormatUiInteger(blockedDesignsCount)} saved aircraft types are blocked until engine + family + type research is completed.");
-        }
-
-        var designOptions = new string[productionReadyDesigns.Length + 1];
-        designOptions[0] = "(None)";
-        for (var index = 0; index < productionReadyDesigns.Length; index++)
-        {
-            var design = productionReadyDesigns[index];
-            var categoryName = AircraftCategoryCatalog.GetProfile(design.CatalogItem.Category).DisplayName;
-            designOptions[index + 1] = $"{design.Name} | {categoryName} | Tool F{FormatUiInteger(design.CatalogItem.RequiredFactoryToolLevel)}";
-        }
-
-        if (productionReadyDesigns.Length == 0)
-        {
-            DrawError("No researched aircraft types available for production. Approve and complete research in Research tab.");
-        }
-
-        var linesToRemove = new List<string>();
-        var lines = _productionFactory.Lines;
-        for (var lineIndex = 0; lineIndex < lines.Count; lineIndex++)
-        {
-            var line = lines[lineIndex];
-            GUILayout.BeginVertical(GUI.skin.box);
-            GUILayout.Label($"Line: {line.LineId}");
-
-            var selectedDesignIndex = 0;
-            if (!string.IsNullOrWhiteSpace(line.AssignedDesignId))
-            {
-                for (var index = 0; index < productionReadyDesigns.Length; index++)
-                {
-                    if (string.Equals(productionReadyDesigns[index].CatalogItem.DesignId, line.AssignedDesignId, StringComparison.Ordinal))
-                    {
-                        selectedDesignIndex = index + 1;
-                        break;
-                    }
-                }
-            }
-
-            var nextSelectedDesignIndex = DrawListSelector($"Assigned Type ({line.LineId})", selectedDesignIndex, designOptions);
-            var nextDesignId = nextSelectedDesignIndex == 0 ? null : productionReadyDesigns[nextSelectedDesignIndex - 1].CatalogItem.DesignId;
-            if (!string.Equals(line.AssignedDesignId, nextDesignId, StringComparison.Ordinal))
-            {
-                _productionFactory.AssignDesign(line.LineId, nextDesignId);
-            }
-
-            var nextEmployees = DrawIntSlider($"Employees ({line.LineId})", line.Employees, 0, 500);
-            if (nextEmployees != line.Employees)
-            {
-                _productionFactory.SetEmployees(line.LineId, nextEmployees);
-            }
-
-            if (GUILayout.Button($"Remove {line.LineId}", GUILayout.Height(24f)))
-            {
-                linesToRemove.Add(line.LineId);
-            }
-
-            GUILayout.EndVertical();
-        }
-
-        for (var removeIndex = 0; removeIndex < linesToRemove.Count; removeIndex++)
-        {
-            _productionFactory.RemoveLine(linesToRemove[removeIndex]);
-        }
-    }
-
-    private void PruneFactoryScrapQuantityInputs(IReadOnlyDictionary<string, int> liveWarehouseSnapshot)
-    {
-        var liveDesignIds = new HashSet<string>(liveWarehouseSnapshot.Keys, StringComparer.Ordinal);
-        var staleDesignIds = _factoryScrapQuantityInputByDesignId.Keys
-            .Where(designId => !liveDesignIds.Contains(designId))
-            .ToArray();
-        for (var index = 0; index < staleDesignIds.Length; index++)
-        {
-            _factoryScrapQuantityInputByDesignId.Remove(staleDesignIds[index]);
-        }
-    }
-
-    private void ProcessFactoryScrap(
-        string designId,
-        string designName,
-        int unitsToScrap,
-        double unitProductionCost,
-        IReadOnlyDictionary<string, FactoryAircraftTypeCatalogItem> fullProductionCatalog)
-    {
-        if (_productionFactory is null)
-        {
-            _factoryActionMessage = "Scrap failed: production factory is not initialized.";
             return;
-        }
-
-        if (string.IsNullOrWhiteSpace(designId) || unitsToScrap <= 0)
-        {
-            _factoryActionMessage = "Scrap failed: invalid design or quantity.";
-            return;
-        }
-
-        var normalizedDesignName = string.IsNullOrWhiteSpace(designName) ? designId : designName.Trim();
-        var normalizedUnitProductionCost = System.Math.Max(unitProductionCost, 0d);
-        if (!_productionFactory.TryWithdrawFromWarehouse(designId, unitsToScrap, out var withdrawalMessage))
-        {
-            _factoryActionMessage = $"Scrap failed: {withdrawalMessage}";
-            return;
-        }
-
-        var recoveredIncome = normalizedUnitProductionCost * 0.5d * unitsToScrap;
-        if (_accountingSystem is not null && recoveredIncome > 0d)
-        {
-            var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
-                _productionFactory.WarehouseUnitsByDesign,
-                fullProductionCatalog);
-            _accountingSystem.RegisterContractIncome(
-                _elapsedMonths,
-                _currentDate,
-                recoveredIncome,
-                inventoryByDesign,
-                $"Scrap income: {normalizedDesignName} x{FormatUiInteger(unitsToScrap)}");
-        }
-
-        _factoryScrapQuantityInputByDesignId[designId] = "1";
-        _factoryActionMessage =
-            $"Scrapped {FormatUiInteger(unitsToScrap)} units of '{normalizedDesignName}'. " +
-            $"Recovered {FormatCurrency(recoveredIncome)} (50% of production cost, no MD refund).";
-    }
-
-    private void DrawFactoryReport()
-    {
-        DrawSection("Factory Report");
-        if (_productionFactory is null)
-        {
-            DrawError("Production factory is not initialized.");
-            return;
-        }
-
-        if (_lastFactoryReport is null)
-        {
-            GUILayout.Label("No factory month processed yet. Press Next Month.");
-            return;
-        }
-
-        GUILayout.Label($"Report Date: {FormatSimulationDate(_lastFactoryReport.Date)}");
-        DrawMetric("Factory Tool Level", _lastFactoryReport.FactoryToolLevel, "0");
-        DrawMetric("Produced Aircraft", _lastFactoryReport.TotalAircraftProduced, "0");
-        DrawMetric("Warehouse Aircraft Units", _lastFactoryReport.TotalWarehouseUnits, "0");
-        DrawMetric("Available MD", _lastFactoryReport.TotalAvailableManDays, "0.0");
-        DrawMetric("Used MD", _lastFactoryReport.TotalUsedManDays, "0.0");
-        DrawMetric("Capacity Utilization", _lastFactoryReport.CapacityUtilization * 100d, "0.0");
-
-        DrawSection("Line Results");
-        for (var index = 0; index < _lastFactoryReport.LineReports.Count; index++)
-        {
-            var line = _lastFactoryReport.LineReports[index];
-            GUILayout.BeginVertical(GUI.skin.box);
-            GUILayout.Label($"{line.LineId} | {line.AssignedDesignName}");
-            GUILayout.Label($"Status: {line.StatusMessage}");
-            if (!string.IsNullOrWhiteSpace(line.AssignedDesignId))
-            {
-                GUILayout.Label($"Category: {ResolveAircraftCategoryName(line.AssignedDesignId)}");
-            }
-
-            GUILayout.Label($"Produced: {FormatUiInteger(line.ProducedUnits)}");
-            GUILayout.Label($"Staff: {FormatUiInteger(line.Employees)}");
-            GUILayout.Label($"MD: {FormatUiNumber(line.UsedManDays, "0.0")}/{FormatUiNumber(line.AvailableManDays, "0.0")} | Carry: {FormatUiNumber(line.CarryOverManDays, "0.0")}");
-            GUILayout.Label($"Capacity: {FormatUiInteger(line.CapacityUnitsAtCurrentStaff)} units");
-            GUILayout.Label($"Warehouse Units For Type: {FormatUiInteger(line.WarehouseUnitsAfterProduction)}");
-            GUILayout.EndVertical();
-        }
-
-        DrawSection("Warehouse Snapshot");
-        if (_lastFactoryReport.WarehouseUnitsByDesign.Count == 0)
-        {
-            GUILayout.Label("No aircraft in warehouse.");
-        }
-        else
-        {
-            foreach (var entry in _lastFactoryReport.WarehouseUnitsByDesign.OrderByDescending(item => item.Value).ThenBy(item => item.Key, StringComparer.Ordinal))
-            {
-                GUILayout.BeginHorizontal(GUI.skin.box);
-                GUILayout.Label($"{ResolveAircraftDesignName(entry.Key)} ({ResolveAircraftCategoryName(entry.Key)})", GUILayout.Width(360f));
-                GUILayout.Label($"{FormatUiInteger(entry.Value)} units");
-                GUILayout.EndHorizontal();
-            }
         }
 
         DrawSection("Engine Factory");
-        var engineReport = _lastFactoryReport.EngineFactoryReport;
+        var engineReport = _lastFactoryReport!.EngineFactoryReport;
         DrawMetric("Required Engines", engineReport.TotalRequiredEngines, "0");
         DrawMetric("Produced Engines", engineReport.TotalProducedEngines, "0");
         DrawMetric("Discarded Engines", engineReport.TotalDiscardedEngines, "0");

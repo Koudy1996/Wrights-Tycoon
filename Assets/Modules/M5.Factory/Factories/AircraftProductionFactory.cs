@@ -49,7 +49,7 @@ public sealed class AircraftProductionFactory
 
     public void AssignDesign(string lineId, string? designId) => GetLine(lineId).AssignDesign(designId);
 
-    public void SetEmployees(string lineId, int employees) => GetLine(lineId).SetEmployees(employees);
+    public void SetMonthlyProductionTargetUnits(string lineId, int targetUnits) => GetLine(lineId).SetMonthlyProductionTargetUnits(targetUnits);
 
     public void UpgradeFactoryToolLevel(int targetLevel)
     {
@@ -166,8 +166,9 @@ public sealed class AircraftProductionFactory
         foreach (var line in _lines.Values.OrderBy(entry => entry.LineId, StringComparer.Ordinal))
         {
             var carryIn = line.CarryOverManDays;
-            var availableManDays = carryIn + (line.Employees * EmployeeManDaysPerMonth);
-            totalAvailableManDays += availableManDays;
+            var availableManDays = carryIn;
+            var targetUnits = line.MonthlyProductionTargetUnits;
+            line.SetAutoAssignedEmployees(0);
 
             var producedUnits = 0;
             var usedManDays = 0d;
@@ -212,68 +213,71 @@ public sealed class AircraftProductionFactory
                 }
                 else
                 {
-                    capacityUnits = System.Math.Max(0, (int)System.Math.Floor(availableManDays / unitManDays));
-                    producedUnits = capacityUnits;
-                    usedManDays = producedUnits * unitManDays;
-                    var carryOut = System.Math.Max(0d, availableManDays - usedManDays);
-                    line.ApplyMonthResult(producedUnits, carryOut);
-                    status = producedUnits > 0
-                        ? $"Produced {producedUnits} aircraft."
-                        : "Insufficient capacity to finish one aircraft.";
-                    if (producedUnits > 0 && !string.IsNullOrWhiteSpace(line.AssignedDesignId))
+                    if (targetUnits <= 0)
                     {
-                        AddWarehouseUnits(line.AssignedDesignId, producedUnits);
+                        status = "No production target set.";
+                        line.SetCarryOverWithoutProduction(availableManDays);
                     }
-
-                    requiredEngines = producedUnits * catalogItem.Aircraft.Airframe.Parameters.EngineCount;
-                    if (requiredEngines > 0)
+                    else
                     {
-                        var engineManDaysPerUnit = System.Math.Max(catalogItem.Aircraft.Engine.Performance.ProductionManDays, Numeric.Epsilon);
-                        var requiredEngineManDays = requiredEngines * engineManDaysPerUnit;
-                        engineFactoryEmployees = (int)System.Math.Ceiling(requiredEngineManDays / EmployeeManDaysPerMonth);
-                        var engineCapacity = (int)System.Math.Floor((engineFactoryEmployees * EmployeeManDaysPerMonth) / engineManDaysPerUnit);
-                        engineDiscarded = System.Math.Max(0, engineCapacity - requiredEngines);
+                        var requiredManDays = targetUnits * unitManDays;
+                        var requiredAdditionalManDays = System.Math.Max(0d, requiredManDays - carryIn);
+                        var autoAssignedEmployees = (int)System.Math.Ceiling(requiredAdditionalManDays / EmployeeManDaysPerMonth);
+                        line.SetAutoAssignedEmployees(autoAssignedEmployees);
+                        availableManDays = carryIn + (autoAssignedEmployees * EmployeeManDaysPerMonth);
 
-                        engineReports.Add(new EngineProductionReport(
-                            line.LineId,
-                            catalogItem.Aircraft.Engine.Definition.DisplayName,
-                            requiredEngines,
-                            requiredEngines,
-                            engineDiscarded,
-                            engineFactoryEmployees,
-                            requiredEngineManDays,
-                            engineFactoryEmployees * EmployeeManDaysPerMonth));
+                        capacityUnits = System.Math.Max(0, (int)System.Math.Floor(availableManDays / unitManDays));
+                        producedUnits = System.Math.Min(targetUnits, capacityUnits);
+                        usedManDays = producedUnits * unitManDays;
+                        var carryOut = System.Math.Max(0d, availableManDays - usedManDays);
+                        line.ApplyMonthResult(producedUnits, carryOut);
+                        status = producedUnits >= targetUnits
+                            ? $"Produced {producedUnits} aircraft."
+                            : $"Produced {producedUnits}/{targetUnits} aircraft.";
+                        if (producedUnits > 0 && !string.IsNullOrWhiteSpace(line.AssignedDesignId))
+                        {
+                            AddWarehouseUnits(line.AssignedDesignId, producedUnits);
+                        }
+
+                        requiredEngines = producedUnits * catalogItem.Aircraft.Airframe.Parameters.EngineCount;
+                        if (requiredEngines > 0)
+                        {
+                            var engineManDaysPerUnit = System.Math.Max(catalogItem.Aircraft.Engine.Performance.ProductionManDays, Numeric.Epsilon);
+                            var requiredEngineManDays = requiredEngines * engineManDaysPerUnit;
+                            engineFactoryEmployees = (int)System.Math.Ceiling(requiredEngineManDays / EmployeeManDaysPerMonth);
+                            var engineCapacity = (int)System.Math.Floor((engineFactoryEmployees * EmployeeManDaysPerMonth) / engineManDaysPerUnit);
+                            engineDiscarded = System.Math.Max(0, engineCapacity - requiredEngines);
+
+                            engineReports.Add(new EngineProductionReport(
+                                line.LineId,
+                                catalogItem.Aircraft.Engine.Definition.DisplayName,
+                                requiredEngines,
+                                requiredEngines,
+                                engineDiscarded,
+                                engineFactoryEmployees,
+                                requiredEngineManDays,
+                                engineFactoryEmployees * EmployeeManDaysPerMonth));
+                        }
                     }
                 }
             }
 
+            totalAvailableManDays += availableManDays;
             totalUsedManDays += usedManDays;
             totalProducedAircraft += producedUnits;
-
-            var effectiveCapacityUnits = capacityUnits;
-            if (effectiveCapacityUnits == 0
-                && !blocked
-                && !string.IsNullOrWhiteSpace(line.AssignedDesignId)
-                && catalog.TryGetValue(line.AssignedDesignId, out var assignedItem))
-            {
-                var unitManDays = assignedItem.Aircraft.Performance.TotalProductionManDays;
-                if (unitManDays > Numeric.Epsilon)
-                {
-                    effectiveCapacityUnits = System.Math.Max(0, (int)System.Math.Floor(availableManDays / unitManDays));
-                }
-            }
 
             lineReports.Add(new LineProductionReport(
                 line.LineId,
                 line.AssignedDesignId,
                 designName,
                 line.Employees,
+                targetUnits,
                 line.LineToolLevel,
                 producedUnits,
                 availableManDays,
                 usedManDays,
                 line.CarryOverManDays,
-                effectiveCapacityUnits,
+                capacityUnits,
                 blocked,
                 status,
                 requiredFactoryToolLevel,
@@ -349,6 +353,7 @@ public sealed class AircraftProductionFactory
             {
                 LineId = line.LineId,
                 AssignedDesignId = line.AssignedDesignId,
+                MonthlyProductionTargetUnits = line.MonthlyProductionTargetUnits,
                 Employees = line.Employees,
                 CarryOverManDays = line.CarryOverManDays,
                 LineToolLevel = line.LineToolLevel,
@@ -397,7 +402,12 @@ public sealed class AircraftProductionFactory
 
                 var state = new AircraftProductionLineState(lineSnapshot.LineId);
                 state.AssignDesign(lineSnapshot.AssignedDesignId);
-                state.SetEmployees(System.Math.Max(lineSnapshot.Employees, 0));
+                var restoredTargetUnits = lineSnapshot.MonthlyProductionTargetUnits > 0
+                    ? lineSnapshot.MonthlyProductionTargetUnits
+                    : lineSnapshot.Employees;
+                restoredTargetUnits = System.Math.Clamp(restoredTargetUnits, 0, FactoryBalance.MaximumAircraftPerLinePerMonth);
+                state.SetMonthlyProductionTargetUnits(restoredTargetUnits);
+                state.SetAutoAssignedEmployees(System.Math.Max(lineSnapshot.Employees, 0));
                 state.SetCarryOverWithoutProduction(System.Math.Max(lineSnapshot.CarryOverManDays, 0d));
 
                 _lines.Add(state.LineId, state);

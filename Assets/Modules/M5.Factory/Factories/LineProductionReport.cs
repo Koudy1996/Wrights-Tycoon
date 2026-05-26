@@ -5,6 +5,7 @@ public sealed record LineProductionReport(
     string? AssignedDesignId,
     string AssignedDesignName,
     int Employees,
+    int TargetUnits,
     int LineToolLevel,
     int ProducedUnits,
     double AvailableManDays,
