@@ -31,6 +31,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 {
     private const int FixedFactoryToolRequirementLevel = 1;
     private const int ModernCampaignStartYear = 2020;
+    private const int PastOrdersWindowId = 9401;
     private const string HistoricalCampaignBonusContractBatchEffectType = "bonus_contract_batch";
     private const double VersionDevelopmentResearchCostMultiplier = 0.1d;
     private const double VersionDevelopmentResearchTimeMultiplier = 0.1d;
@@ -167,9 +168,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private bool _initialized;
     private bool _showHistoricalArchive;
+    private bool _showPastOrdersWindow;
     private Vector2 _leftScroll;
     private Vector2 _rightScroll;
     private Vector2 _historicalCampaignArchiveScroll;
+    private Vector2 _pastOrdersScroll;
+    private Rect _pastOrdersWindowRect = new(120f, 100f, 980f, 620f);
     private bool _showHistoricalCampaignDebugPanel;
     private string _historicalCampaignDebugYearInput = string.Empty;
     private string _historicalCampaignDebugMonthInput = string.Empty;
@@ -630,6 +634,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.EndArea();
 
         DrawModifierTooltipOverlay(virtualScreenSize);
+        DrawPastOrdersWindow(virtualScreenSize);
         _historicalCampaignPopupWindow.Draw(virtualScreenSize);
     }
 
@@ -787,6 +792,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _factoryActionMessage = string.Empty;
         _researchActionMessage = string.Empty;
         _saveActionMessage = string.Empty;
+        _showPastOrdersWindow = false;
+        _pastOrdersScroll = Vector2.zero;
         _showHistoricalCampaignDebugPanel = false;
         _historicalCampaignDebugMessage = string.Empty;
         _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
@@ -1651,6 +1658,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _tab = Mathf.Clamp(data.Tab, 0, _tabs.Length - 1);
         _showHistoricalArchive = false;
+        _showPastOrdersWindow = false;
+        _pastOrdersScroll = Vector2.zero;
         _financeSubTab = Mathf.Clamp(data.FinanceSubTab, 0, _financeSubTabs.Length - 1);
         _researchSubTab = Mathf.Clamp(data.ResearchSubTab, 0, _researchSubTabs.Length - 1);
         _myMachinesSubTab = Mathf.Clamp(data.MyMachinesSubTab, 0, _myMachinesSubTabs.Length - 1);
@@ -3638,24 +3647,32 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _tab = 1;
         }
 
-        if (_lastGeneratedContracts.Count == 0)
+        if (_lastGeneratedContracts.Count > 0)
         {
-            return;
+            DrawSection("Last Generated Batch");
+            for (var index = 0; index < _lastGeneratedContracts.Count; index++)
+            {
+                var contract = _lastGeneratedContracts[index];
+                GUILayout.BeginHorizontal(GUI.skin.box);
+                GUILayout.Label(contract.Id, GUILayout.Width(150f));
+                GUILayout.Label(contract.CompanyName, GUILayout.Width(180f));
+                var categoryLabel = contract.Requirements.RequiredCategory.HasValue
+                    ? AircraftCategoryCatalog.GetProfile(contract.Requirements.RequiredCategory.Value).DisplayName
+                    : "Any Category";
+                var contractTotalPrice = GetContractTotalPrice(contract);
+                GUILayout.Label($"{categoryLabel} | {FormatUiInteger(contract.QuantityUnits)} units / {FormatUiInteger(contract.DeadlineMonths)} months | Price {FormatCurrency(contractTotalPrice)}");
+                GUILayout.EndHorizontal();
+            }
+        }
+        else
+        {
+            GUILayout.Label("No generated contract batch in this session yet.");
         }
 
-        DrawSection("Last Generated Batch");
-        for (var index = 0; index < _lastGeneratedContracts.Count; index++)
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button("Past Orders", GUILayout.Height(30f)))
         {
-            var contract = _lastGeneratedContracts[index];
-            GUILayout.BeginHorizontal(GUI.skin.box);
-            GUILayout.Label(contract.Id, GUILayout.Width(150f));
-            GUILayout.Label(contract.CompanyName, GUILayout.Width(180f));
-            var categoryLabel = contract.Requirements.RequiredCategory.HasValue
-                ? AircraftCategoryCatalog.GetProfile(contract.Requirements.RequiredCategory.Value).DisplayName
-                : "Any Category";
-            var contractTotalPrice = GetContractTotalPrice(contract);
-            GUILayout.Label($"{categoryLabel} | {FormatUiInteger(contract.QuantityUnits)} units / {FormatUiInteger(contract.DeadlineMonths)} months | Price {FormatCurrency(contractTotalPrice)}");
-            GUILayout.EndHorizontal();
+            _showPastOrdersWindow = true;
         }
     }
 
@@ -3950,44 +3967,100 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        if (_contractBoard.DeliveredContracts.Count == 0)
-        {
-            GUILayout.Label("No delivered contracts yet.");
-        }
-        else
-        {
-            DrawSection("Delivered Contracts");
-            for (var index = _contractBoard.DeliveredContracts.Count - 1; index >= 0; index--)
-            {
-                var delivered = _contractBoard.DeliveredContracts[index];
-                GUILayout.BeginHorizontal(GUI.skin.box);
-                GUILayout.Label(delivered.Id, GUILayout.Width(150f));
-                GUILayout.Label(delivered.CompanyName, GUILayout.Width(180f));
-                GUILayout.Label($"{FormatUiInteger(delivered.QuantityUnits)} units", GUILayout.Width(110f));
-                GUILayout.Label($"Revenue: {FormatCurrency(GetContractTotalPrice(delivered))}", GUILayout.Width(220f));
-                var deliveredProfitLoss = _deliveredContractProfitById.TryGetValue(delivered.Id, out var value)
-                    ? value
-                    : 0d;
-                DrawSignedCurrencyInline($"P/L: {FormatCurrency(deliveredProfitLoss)}", deliveredProfitLoss, 170f);
-                GUILayout.EndHorizontal();
-            }
-        }
+        var pastOrdersCount = _contractBoard.DeliveredContracts.Count + _contractBoard.CanceledContracts.Count;
+        DrawSection("Past Orders");
+        DrawMetric("Archived Orders", pastOrdersCount, "0");
+        GUILayout.Label("Use the 'Past Orders' button in Contracts tab (left bottom) to review fulfilled and canceled orders.");
+    }
 
-        if (_contractBoard.CanceledContracts.Count == 0)
+    private void DrawPastOrdersWindow(Vector2 virtualScreenSize)
+    {
+        if (!_showPastOrdersWindow || _contractBoard is null)
         {
             return;
         }
 
-        DrawSection("Canceled Contracts");
-        for (var index = _contractBoard.CanceledContracts.Count - 1; index >= 0; index--)
+        var minWidth = 780f;
+        var minHeight = 460f;
+        var maxX = System.Math.Max(virtualScreenSize.x - _pastOrdersWindowRect.width - 10f, 10f);
+        var maxY = System.Math.Max(virtualScreenSize.y - _pastOrdersWindowRect.height - 10f, 10f);
+        _pastOrdersWindowRect.x = Mathf.Clamp(_pastOrdersWindowRect.x, 10f, maxX);
+        _pastOrdersWindowRect.y = Mathf.Clamp(_pastOrdersWindowRect.y, 10f, maxY);
+        _pastOrdersWindowRect.width = Mathf.Clamp(_pastOrdersWindowRect.width, minWidth, virtualScreenSize.x - 20f);
+        _pastOrdersWindowRect.height = Mathf.Clamp(_pastOrdersWindowRect.height, minHeight, virtualScreenSize.y - 20f);
+
+        _pastOrdersWindowRect = GUI.Window(PastOrdersWindowId, _pastOrdersWindowRect, DrawPastOrdersWindowContents, "Past Orders");
+    }
+
+    private void DrawPastOrdersWindowContents(int windowId)
+    {
+        if (_contractBoard is null)
         {
-            var canceled = _contractBoard.CanceledContracts[index];
-            GUILayout.BeginVertical(GUI.skin.box);
-            GUILayout.Label($"{canceled.Id} | {canceled.CompanyName}");
-            GUILayout.Label($"Quantity: {FormatUiInteger(canceled.QuantityUnits)} units");
-            GUILayout.Label($"Reason: {canceled.CancellationReason}");
-            GUILayout.EndVertical();
+            GUILayout.Label("Contract board is not initialized.");
+            if (GUILayout.Button("Close", GUILayout.Width(120f), GUILayout.Height(26f)))
+            {
+                _showPastOrdersWindow = false;
+            }
+
+            GUI.DragWindow(new Rect(0f, 0f, 10000f, 28f));
+            return;
         }
+
+        GUILayout.BeginHorizontal();
+        GUILayout.Label($"Fulfilled: {FormatUiInteger(_contractBoard.DeliveredContracts.Count)}", GUILayout.Width(170f));
+        GUILayout.Label($"Canceled: {FormatUiInteger(_contractBoard.CanceledContracts.Count)}", GUILayout.Width(170f));
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button("Close", GUILayout.Width(120f), GUILayout.Height(24f)))
+        {
+            _showPastOrdersWindow = false;
+        }
+
+        GUILayout.EndHorizontal();
+        GUILayout.Space(6f);
+
+        _pastOrdersScroll = GUILayout.BeginScrollView(_pastOrdersScroll);
+        if (_contractBoard.DeliveredContracts.Count == 0 && _contractBoard.CanceledContracts.Count == 0)
+        {
+            GUILayout.Label("No past orders yet.");
+        }
+        else
+        {
+            if (_contractBoard.DeliveredContracts.Count > 0)
+            {
+                DrawSection("Fulfilled Contracts");
+                for (var index = _contractBoard.DeliveredContracts.Count - 1; index >= 0; index--)
+                {
+                    var delivered = _contractBoard.DeliveredContracts[index];
+                    GUILayout.BeginHorizontal(GUI.skin.box);
+                    GUILayout.Label(delivered.Id, GUILayout.Width(150f));
+                    GUILayout.Label(delivered.CompanyName, GUILayout.Width(180f));
+                    GUILayout.Label($"{FormatUiInteger(delivered.QuantityUnits)} units", GUILayout.Width(110f));
+                    GUILayout.Label($"Revenue: {FormatCurrency(GetContractTotalPrice(delivered))}", GUILayout.Width(220f));
+                    var deliveredProfitLoss = _deliveredContractProfitById.TryGetValue(delivered.Id, out var value)
+                        ? value
+                        : 0d;
+                    DrawSignedCurrencyInline($"P/L: {FormatCurrency(deliveredProfitLoss)}", deliveredProfitLoss, 170f);
+                    GUILayout.EndHorizontal();
+                }
+            }
+
+            if (_contractBoard.CanceledContracts.Count > 0)
+            {
+                DrawSection("Canceled Contracts");
+                for (var index = _contractBoard.CanceledContracts.Count - 1; index >= 0; index--)
+                {
+                    var canceled = _contractBoard.CanceledContracts[index];
+                    GUILayout.BeginVertical(GUI.skin.box);
+                    GUILayout.Label($"{canceled.Id} | {canceled.CompanyName}");
+                    GUILayout.Label($"Quantity: {FormatUiInteger(canceled.QuantityUnits)} units");
+                    GUILayout.Label($"Reason: {canceled.CancellationReason}");
+                    GUILayout.EndVertical();
+                }
+            }
+        }
+
+        GUILayout.EndScrollView();
+        GUI.DragWindow(new Rect(0f, 0f, 10000f, 28f));
     }
 
 
