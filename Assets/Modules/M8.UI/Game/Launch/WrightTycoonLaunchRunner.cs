@@ -67,6 +67,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly Dictionary<string, HashSet<string>> _excludedWarehouseDesignByContractId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _deliveredContractProfitById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _governmentDeliveryQuantityInputById = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _factoryScrapQuantityInputByDesignId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TypeResearchModifierPoints> _researchModifiersByResearchId = new(StringComparer.Ordinal);
     private readonly HistoricalCampaignState _historicalCampaignState = new();
     private readonly List<HistoricalCampaignArchiveEntry> _historicalCampaignArchive = new();
@@ -763,6 +764,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _excludedWarehouseDesignByContractId.Clear();
         _deliveredContractProfitById.Clear();
         _governmentDeliveryQuantityInputById.Clear();
+        _factoryScrapQuantityInputByDesignId.Clear();
         _selectedSavedEngineIndex = -1;
         _selectedSavedFamilyIndex = -1;
         _selectedSavedAircraftDesignIndex = -1;
@@ -1912,6 +1914,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _deliveredContractProfitById.Clear();
         _governmentDeliveryQuantityInputById.Clear();
+        _factoryScrapQuantityInputByDesignId.Clear();
         if (data.DeliveredContractProfitById is not null)
         {
             for (var index = 0; index < data.DeliveredContractProfitById.Count; index++)
@@ -2827,6 +2830,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                                 _excludedWarehouseDesignByContractId.Remove(contractId);
                             }
                         }
+
+                        _factoryScrapQuantityInputByDesignId.Remove(designToDelete.CatalogItem.DesignId);
 
                         if (_savedAircraftDesigns.Count == 0)
                         {
@@ -6956,7 +6961,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         DrawSection("Warehouse");
+        var fullProductionCatalog = BuildProductionCatalog(includeOnlyResearched: false);
         var liveWarehouseSnapshot = _productionFactory.WarehouseUnitsByDesign;
+        PruneFactoryScrapQuantityInputs(liveWarehouseSnapshot);
         DrawMetric("Stored Aircraft Units", liveWarehouseSnapshot.Values.Sum(), "0");
         if (liveWarehouseSnapshot.Count == 0)
         {
@@ -6964,12 +6971,85 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
         else
         {
+            string? pendingScrapDesignId = null;
+            string pendingScrapDisplayName = string.Empty;
+            int pendingScrapUnits = 0;
+            double pendingScrapUnitProductionCost = 0d;
+
             foreach (var entry in liveWarehouseSnapshot.OrderByDescending(item => item.Value).ThenBy(item => item.Key, StringComparer.Ordinal))
             {
-                GUILayout.BeginHorizontal(GUI.skin.box);
-                GUILayout.Label($"{ResolveAircraftDesignName(entry.Key)} ({ResolveAircraftCategoryName(entry.Key)})", GUILayout.Width(360f));
-                GUILayout.Label($"{FormatUiInteger(entry.Value)} units");
+                var designName = ResolveAircraftDesignName(entry.Key);
+                var categoryName = ResolveAircraftCategoryName(entry.Key);
+                var availableUnits = entry.Value;
+
+                if (!fullProductionCatalog.TryGetValue(entry.Key, out var catalogItem))
+                {
+                    GUILayout.BeginVertical(GUI.skin.box);
+                    GUILayout.Label($"{designName} ({categoryName})");
+                    GUILayout.Label($"{FormatUiInteger(availableUnits)} units");
+                    DrawError("Scrap unavailable: saved aircraft definition was not found.");
+                    GUILayout.EndVertical();
+                    continue;
+                }
+
+                var unitProductionCost = System.Math.Max(catalogItem.Aircraft.Performance.TotalProductionCost, 0d);
+                var unitScrapIncome = unitProductionCost * 0.5d;
+
+                if (!_factoryScrapQuantityInputByDesignId.TryGetValue(entry.Key, out var scrapQuantityInput)
+                    || string.IsNullOrWhiteSpace(scrapQuantityInput))
+                {
+                    scrapQuantityInput = "1";
+                }
+
+                GUILayout.BeginVertical(GUI.skin.box);
+                GUILayout.Label($"{designName} ({categoryName})");
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"{FormatUiInteger(availableUnits)} units", GUILayout.Width(120f));
+                GUILayout.Label($"Scrap value / unit: {FormatCurrency(unitScrapIncome)}", GUILayout.Width(230f));
+                GUILayout.Label("Units", GUILayout.Width(40f));
+                scrapQuantityInput = GUILayout.TextField(scrapQuantityInput, GUILayout.Width(90f));
+                _factoryScrapQuantityInputByDesignId[entry.Key] = scrapQuantityInput;
+
+                var hasParsedScrapUnits = TryParsePositiveInt(scrapQuantityInput, out var requestedScrapUnits);
+                var hasEnoughForRequested = hasParsedScrapUnits && requestedScrapUnits <= availableUnits;
+
+                GUI.enabled = hasEnoughForRequested;
+                if (GUILayout.Button("Scrap", GUILayout.Width(90f), GUILayout.Height(24f)))
+                {
+                    pendingScrapDesignId = entry.Key;
+                    pendingScrapDisplayName = designName;
+                    pendingScrapUnits = requestedScrapUnits;
+                    pendingScrapUnitProductionCost = unitProductionCost;
+                }
+
+                GUI.enabled = availableUnits > 0;
+                if (GUILayout.Button("Scrap All", GUILayout.Width(110f), GUILayout.Height(24f)))
+                {
+                    pendingScrapDesignId = entry.Key;
+                    pendingScrapDisplayName = designName;
+                    pendingScrapUnits = availableUnits;
+                    pendingScrapUnitProductionCost = unitProductionCost;
+                }
+
+                GUI.enabled = true;
                 GUILayout.EndHorizontal();
+                if (hasParsedScrapUnits && requestedScrapUnits > availableUnits)
+                {
+                    DrawError(
+                        $"Requested scrap quantity ({FormatUiInteger(requestedScrapUnits)}) exceeds available units ({FormatUiInteger(availableUnits)}).");
+                }
+
+                GUILayout.EndVertical();
+            }
+
+            if (!string.IsNullOrWhiteSpace(pendingScrapDesignId) && pendingScrapUnits > 0)
+            {
+                ProcessFactoryScrap(
+                    pendingScrapDesignId,
+                    pendingScrapDisplayName,
+                    pendingScrapUnits,
+                    pendingScrapUnitProductionCost,
+                    fullProductionCatalog);
             }
         }
 
@@ -7043,6 +7123,65 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             _productionFactory.RemoveLine(linesToRemove[removeIndex]);
         }
+    }
+
+    private void PruneFactoryScrapQuantityInputs(IReadOnlyDictionary<string, int> liveWarehouseSnapshot)
+    {
+        var liveDesignIds = new HashSet<string>(liveWarehouseSnapshot.Keys, StringComparer.Ordinal);
+        var staleDesignIds = _factoryScrapQuantityInputByDesignId.Keys
+            .Where(designId => !liveDesignIds.Contains(designId))
+            .ToArray();
+        for (var index = 0; index < staleDesignIds.Length; index++)
+        {
+            _factoryScrapQuantityInputByDesignId.Remove(staleDesignIds[index]);
+        }
+    }
+
+    private void ProcessFactoryScrap(
+        string designId,
+        string designName,
+        int unitsToScrap,
+        double unitProductionCost,
+        IReadOnlyDictionary<string, FactoryAircraftTypeCatalogItem> fullProductionCatalog)
+    {
+        if (_productionFactory is null)
+        {
+            _factoryActionMessage = "Scrap failed: production factory is not initialized.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(designId) || unitsToScrap <= 0)
+        {
+            _factoryActionMessage = "Scrap failed: invalid design or quantity.";
+            return;
+        }
+
+        var normalizedDesignName = string.IsNullOrWhiteSpace(designName) ? designId : designName.Trim();
+        var normalizedUnitProductionCost = System.Math.Max(unitProductionCost, 0d);
+        if (!_productionFactory.TryWithdrawFromWarehouse(designId, unitsToScrap, out var withdrawalMessage))
+        {
+            _factoryActionMessage = $"Scrap failed: {withdrawalMessage}";
+            return;
+        }
+
+        var recoveredIncome = normalizedUnitProductionCost * 0.5d * unitsToScrap;
+        if (_accountingSystem is not null && recoveredIncome > 0d)
+        {
+            var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
+                _productionFactory.WarehouseUnitsByDesign,
+                fullProductionCatalog);
+            _accountingSystem.RegisterContractIncome(
+                _elapsedMonths,
+                _currentDate,
+                recoveredIncome,
+                inventoryByDesign,
+                $"Scrap income: {normalizedDesignName} x{FormatUiInteger(unitsToScrap)}");
+        }
+
+        _factoryScrapQuantityInputByDesignId[designId] = "1";
+        _factoryActionMessage =
+            $"Scrapped {FormatUiInteger(unitsToScrap)} units of '{normalizedDesignName}'. " +
+            $"Recovered {FormatCurrency(recoveredIncome)} (50% of production cost, no MD refund).";
     }
 
     private void DrawFactoryReport()
