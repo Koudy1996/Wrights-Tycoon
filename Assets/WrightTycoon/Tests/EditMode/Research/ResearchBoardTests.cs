@@ -75,4 +75,55 @@ public sealed class ResearchBoardTests
         Assert.That(approvedProject, Is.Not.Null);
         Assert.That(approvedProject!.ResearchTimeMonths, Is.EqualTo(1));
     }
+
+    [Test]
+    public void CancelProposal_WhenStillProposed_RemovesProjectFromBoard()
+    {
+        var board = new ResearchBoard();
+        var quote = new ResearchQuote(2000d, 18, 0.4d);
+        board.UpsertProposal(
+            ResearchSubjectType.AircraftType,
+            "type.sample",
+            "Sample Type",
+            quote);
+
+        var canceled = board.TryCancelProposal(
+            ResearchSubjectType.AircraftType,
+            "type.sample",
+            out var canceledProject,
+            out var message);
+
+        Assert.That(canceled, Is.True);
+        Assert.That(canceledProject, Is.Not.Null);
+        Assert.That(board.GetProjectsByStatus(ResearchStatus.Proposed), Is.Empty);
+        Assert.That(message, Does.Contain("Canceled proposal"));
+    }
+
+    [Test]
+    public void CancelProposal_WhenAlreadyApproved_ReturnsFalse()
+    {
+        var board = new ResearchBoard();
+        var quote = new ResearchQuote(2000d, 18, 0.4d);
+        board.UpsertProposal(
+            ResearchSubjectType.AircraftType,
+            "type.sample",
+            "Sample Type",
+            quote);
+
+        board.TryApproveProposal(
+            ResearchSubjectType.AircraftType,
+            "type.sample",
+            expenseMonthIndex: 20,
+            out _,
+            out _);
+
+        var canceled = board.TryCancelProposal(
+            ResearchSubjectType.AircraftType,
+            "type.sample",
+            out _,
+            out var message);
+
+        Assert.That(canceled, Is.False);
+        Assert.That(message, Does.Contain("cannot be canceled"));
+    }
 }

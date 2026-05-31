@@ -102,6 +102,34 @@ public sealed class ResearchBoard
         return true;
     }
 
+    public bool TryCancelProposal(
+        ResearchSubjectType subjectType,
+        string subjectId,
+        out ResearchProject? canceledProject,
+        out string message)
+    {
+        var normalizedSubjectId = NormalizeSubjectId(subjectId);
+        var researchId = BuildResearchId(subjectType, normalizedSubjectId);
+        if (!_projects.TryGetValue(researchId, out var project))
+        {
+            canceledProject = null;
+            message = $"Research proposal '{researchId}' was not found.";
+            return false;
+        }
+
+        if (project.Status != ResearchStatus.Proposed)
+        {
+            canceledProject = project;
+            message = $"Research '{project.DisplayName}' is already {project.Status} and cannot be canceled.";
+            return false;
+        }
+
+        _projects.Remove(researchId);
+        canceledProject = project;
+        message = $"Canceled proposal '{project.DisplayName}'.";
+        return true;
+    }
+
     public int AdvanceMonth(int monthIndex)
     {
         if (monthIndex < 0)

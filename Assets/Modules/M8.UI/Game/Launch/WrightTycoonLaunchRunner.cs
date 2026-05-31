@@ -176,6 +176,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private Vector2 _pastOrdersScroll;
     private Rect _pastOrdersWindowRect = new(120f, 100f, 980f, 620f);
     private bool _showHistoricalCampaignDebugPanel;
+    private bool _showPendingProposalAdvanceDialog;
+    private bool _disablePendingProposalAdvancePrompt;
     private string _historicalCampaignDebugYearInput = string.Empty;
     private string _historicalCampaignDebugMonthInput = string.Empty;
     private string _historicalCampaignDebugMessage = string.Empty;
@@ -490,6 +492,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
+        var previousGuiEnabled = GUI.enabled;
+        if (_showPendingProposalAdvanceDialog)
+        {
+            GUI.enabled = false;
+        }
+
         var selectedTab = GUILayout.Toolbar(_tab, _tabs, GUILayout.Height(34f));
         if (selectedTab != _tab)
         {
@@ -502,7 +510,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"Company: {_playerCompanyName}", GUILayout.Width(220f));
         if (GUILayout.Button("Next Month", GUILayout.Width(150f), GUILayout.Height(26f)))
         {
-            AdvanceToNextMonth();
+            HandleNextMonthButtonPressed();
         }
         if (GUILayout.Button("Historical Archive", GUILayout.Width(170f), GUILayout.Height(26f)))
         {
@@ -633,10 +641,89 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.EndHorizontal();
         GUILayout.EndArea();
+        GUI.enabled = previousGuiEnabled;
 
         DrawModifierTooltipOverlay(virtualScreenSize);
         DrawPastOrdersWindow(virtualScreenSize);
         _historicalCampaignPopupWindow.Draw(virtualScreenSize);
+        DrawPendingProposalAdvanceDialog(virtualScreenSize);
+    }
+
+    private void HandleNextMonthButtonPressed()
+    {
+        if (ShouldShowPendingProposalAdvanceDialog())
+        {
+            _showPendingProposalAdvanceDialog = true;
+            return;
+        }
+
+        AdvanceToNextMonth();
+    }
+
+    private bool ShouldShowPendingProposalAdvanceDialog()
+    {
+        if (_disablePendingProposalAdvancePrompt || _researchBoard is null)
+        {
+            return false;
+        }
+
+        return CountVisiblePendingResearchProposals() > 0;
+    }
+
+    private int CountVisiblePendingResearchProposals() =>
+        GetVisibleResearchProjectsByStatus(ResearchStatus.Proposed).Count;
+
+    private void DrawPendingProposalAdvanceDialog(Vector2 virtualScreenSize)
+    {
+        if (!_showPendingProposalAdvanceDialog)
+        {
+            return;
+        }
+
+        var pendingProposalCount = CountVisiblePendingResearchProposals();
+        if (pendingProposalCount <= 0)
+        {
+            _showPendingProposalAdvanceDialog = false;
+            return;
+        }
+
+        var overlayRect = new Rect(0f, 0f, virtualScreenSize.x, virtualScreenSize.y);
+        DrawRect(overlayRect, new Color(0f, 0f, 0f, 0.62f));
+
+        var dialogWidth = Mathf.Min(620f, virtualScreenSize.x - 40f);
+        var dialogHeight = 190f;
+        var dialogRect = new Rect(
+            (virtualScreenSize.x - dialogWidth) * 0.5f,
+            (virtualScreenSize.y - dialogHeight) * 0.5f,
+            dialogWidth,
+            dialogHeight);
+
+        DrawRect(dialogRect, new Color(0.06f, 0.09f, 0.13f, 0.98f));
+        GUILayout.BeginArea(dialogRect, GUI.skin.box);
+        GUILayout.Label("Do you have proposals ready and not approved, do you want to continue");
+        GUILayout.Label($"Pending proposals: {FormatUiInteger(pendingProposalCount)}");
+        GUILayout.FlexibleSpace();
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("NO", GUILayout.Height(30f)))
+        {
+            _showPendingProposalAdvanceDialog = false;
+        }
+
+        if (GUILayout.Button("YES", GUILayout.Height(30f)))
+        {
+            _showPendingProposalAdvanceDialog = false;
+            AdvanceToNextMonth();
+        }
+
+        if (GUILayout.Button("YES, don't ask me again", GUILayout.Height(30f)))
+        {
+            _disablePendingProposalAdvancePrompt = true;
+            _showPendingProposalAdvanceDialog = false;
+            AdvanceToNextMonth();
+        }
+
+        GUILayout.EndHorizontal();
+        GUILayout.EndArea();
     }
 
     private void TryInitialize()
@@ -795,6 +882,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _saveActionMessage = string.Empty;
         _showPastOrdersWindow = false;
         _pastOrdersScroll = Vector2.zero;
+        _showPendingProposalAdvanceDialog = false;
+        _disablePendingProposalAdvancePrompt = false;
         _showHistoricalCampaignDebugPanel = false;
         _historicalCampaignDebugMessage = string.Empty;
         _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
@@ -1486,6 +1575,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             ContractRequestedCategoryFilter = _contractRequestedCategoryFilter,
             ContractQuantityFilterMin = _contractQuantityFilterMin,
             ContractQuantityFilterMax = _contractQuantityFilterMax,
+            DisablePendingProposalAdvancePrompt = _disablePendingProposalAdvancePrompt,
             GovernmentContractNotebookState = CreateNotebookWindowSaveState(_governmentContractNotebookState),
             FiredHistoricalCampaignEventIds = _historicalCampaignState.CreateSnapshot().ToList(),
             HistoricalCampaignArchiveEntries = _historicalCampaignArchive
@@ -1731,6 +1821,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             : AircraftCategory.LightSportAndRecreational;
         _contractQuantityFilterMin = Mathf.Clamp(data.ContractQuantityFilterMin, 5, 500);
         _contractQuantityFilterMax = Mathf.Clamp(data.ContractQuantityFilterMax, 5, 500);
+        _disablePendingProposalAdvancePrompt = data.DisablePendingProposalAdvancePrompt;
+        _showPendingProposalAdvanceDialog = false;
         _governmentContractNotebookState = ReadNotebookWindowSaveState(data.GovernmentContractNotebookState);
         _historicalCampaignState.ReplaceFiredEventIds(data.FiredHistoricalCampaignEventIds);
         NormalizeSelectedAircraftCategoryForHistoricalCampaign();
@@ -4837,10 +4929,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 GUILayout.Label($"Engineering ID: {project.SubjectId}");
             }
 
+            GUILayout.BeginHorizontal();
             if (GUILayout.Button($"Approve {GetResearchSubjectLabel(project.SubjectType)}", GUILayout.Height(24f)))
             {
                 TryApproveResearchProject(project);
             }
+
+            if (GUILayout.Button($"Cancel {GetResearchSubjectLabel(project.SubjectType)}", GUILayout.Height(24f)))
+            {
+                TryCancelResearchProject(project);
+            }
+
+            GUILayout.EndHorizontal();
 
             GUILayout.EndVertical();
         }
@@ -4864,6 +4964,26 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             ApplyApprovedYearForApprovedProject(project, bookedDate);
             _researchActionMessage = $"{message} Expense booked in {FormatSimulationDate(bookedDate)}.";
+            return;
+        }
+
+        _researchActionMessage = message;
+    }
+
+    private void TryCancelResearchProject(ResearchProject project)
+    {
+        if (_researchBoard is null)
+        {
+            return;
+        }
+
+        if (_researchBoard.TryCancelProposal(
+            project.SubjectType,
+            project.SubjectId,
+            out _,
+            out var message))
+        {
+            _researchActionMessage = message;
             return;
         }
 
@@ -11740,6 +11860,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public int ContractQuantityFilterMin { get; set; }
 
         public int ContractQuantityFilterMax { get; set; }
+
+        public bool DisablePendingProposalAdvancePrompt { get; set; }
 
         public NotebookWindowSaveState GovernmentContractNotebookState { get; set; } = new();
 
