@@ -7476,7 +7476,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var cleanBase = string.IsNullOrWhiteSpace(baseId) ? "aircraft.design" : baseId;
         var candidate = cleanBase;
         var suffix = 1;
-        while (_savedAircraftDesigns.Any(design => string.Equals(design.CatalogItem.DesignId, candidate, StringComparison.Ordinal)))
+        while (IsAircraftDesignIdInUse(candidate))
         {
             candidate = $"{cleanBase}.{suffix}";
             suffix++;
@@ -7491,13 +7491,54 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var baseId = BuildNamedId("eng", name, "prototype");
         var candidate = baseId;
         var suffix = 1;
-        while (_savedEngines.Any(engine => string.Equals(engine.ResearchId, candidate, StringComparison.Ordinal)))
+        while (IsEngineResearchIdInUse(candidate))
         {
             candidate = $"{baseId}.{suffix}";
             suffix++;
         }
 
         return candidate;
+    }
+
+    private bool IsAircraftDesignIdInUse(string designId)
+    {
+        if (_savedAircraftDesigns.Any(design => string.Equals(design.CatalogItem.DesignId, designId, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        var typeResearchSubjectId = $"type.{designId}";
+        return HasResearchProjectSubject(ResearchSubjectType.AircraftType, typeResearchSubjectId);
+    }
+
+    private bool IsEngineResearchIdInUse(string researchId)
+    {
+        if (_savedEngines.Any(engine => string.Equals(engine.ResearchId, researchId, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        return HasResearchProjectSubject(ResearchSubjectType.Engine, researchId);
+    }
+
+    private bool HasResearchProjectSubject(ResearchSubjectType subjectType, string subjectId)
+    {
+        if (_researchBoard is null || string.IsNullOrWhiteSpace(subjectId))
+        {
+            return false;
+        }
+
+        var researchId = ResearchBoard.BuildResearchId(subjectType, subjectId);
+        var projects = _researchBoard.GetAllProjects();
+        for (var index = 0; index < projects.Count; index++)
+        {
+            if (string.Equals(projects[index].ResearchId, researchId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void RegisterEngineResearchProposal(SavedEngineDesign savedDesign, Engine engineSnapshot)

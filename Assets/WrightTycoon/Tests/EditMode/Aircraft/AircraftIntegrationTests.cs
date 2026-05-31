@@ -522,6 +522,105 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    public void MediumBypassJet_MaxSpeedEnvelope_KeepsAltitudeSpeedProfileWhenCapped()
+    {
+        var calculator = new AircraftPerformanceCalculator(new IsaAtmosphereModel(), new AerodynamicsCalculator());
+
+        var engine = new Engine(
+            new EngineDefinition
+            {
+                Id = "eng.jet.cap.profile",
+                DisplayName = "Medium Bypass Jet",
+                EngineType = EngineType.Turbofan,
+            },
+            new EngineParameters
+            {
+                BypassRatio = 5d,
+                TurbineDiameterMeters = 2.4d,
+                CompressionRatio = 32d,
+                CoolingEfficiency = 0.85d,
+                MaximumSpeed = 8000d,
+            },
+            new EnginePerformanceReport(
+                EngineOutputKind.ThrustNewtons,
+                new[]
+                {
+                    new EngineAltitudePerformance(0d, 360000d, 7800d),
+                    new EngineAltitudePerformance(5000d, 240000d, 5900d),
+                    new EngineAltitudePerformance(10000d, 130000d, 4200d),
+                },
+                reliability: 0.92d,
+                weight: Mass.FromKilograms(4600d),
+                cost: 22000000d,
+                productionManDays: 170d,
+                engineLengthMeters: 5.6d,
+                engineFrontalAreaSquareMeters: 4.1d));
+
+        var airframe = new Airframe(
+            new AirframeDefinition
+            {
+                Id = "air.jet.cap.profile",
+                DisplayName = "Medium Tactical Frame",
+                BaseStructuralWeightKilograms = 42000d,
+                ReferenceWingAreaSquareMeters = 210d,
+                BaseDragCoefficient = 0.027d,
+                BaseLiftCoefficient = 0.82d,
+                BaseReliabilityModifier = 0.98d,
+                BaseCost = 120000000d,
+                BaseProductionManDays = 980d,
+            },
+            new AirframeParameters
+            {
+                EngineCount = 2,
+                StructureType = StructureType.Monocoque,
+                MaterialType = MaterialType.Aluminum,
+                WingPosition = WingPosition.Low,
+                WingShape = WingShape.Swept,
+                WingAreaSquareMeters = 210d,
+                TailType = TailType.Classic,
+                FlapType = FlapType.Fowler,
+                LandingGearType = LandingGearType.Retractable,
+                EngineCowling = 0.6d,
+                FuelAmountLiters = 16000d,
+                CrewCount = 2,
+            },
+            new AirframePerformanceReport(
+                TotalWeight: Mass.FromKilograms(56000d),
+                DragCoefficient: 0.027d,
+                LiftCoefficient: 0.82d,
+                Maneuverability: 52d,
+                ProductionCost: 165000000d,
+                ProductionManDays: 1400d,
+                ReliabilityModifier: 0.97d,
+                ReferenceLiftAtSeaLevel100Ms: Force.FromNewtons(1100000d),
+                ReferenceDragAtSeaLevel100Ms: Force.FromNewtons(33000d),
+                AircraftLengthMeters: 32d,
+                AirframeFrontalAreaSquareMeters: 10.6d,
+                EffectiveDragAreaSquareMeters: 0.2862d,
+                AerodynamicCleanlinessPercent: 14d));
+
+        var performance = calculator.Calculate(engine, airframe, AircraftCategory.MilitaryTactical);
+        var cap = WrightTycoonTuning.AircraftPerformance.JetSpeedEnvelopeMediumBypassLimitMetersPerSecond
+            * WrightTycoonTuning.AircraftPerformance.JetSpeedEnvelopeCategoryMilitaryTacticalFactor;
+
+        var maxSpeed = 0d;
+        for (var index = 0; index < performance.MaxSpeedByAltitude.Count; index++)
+        {
+            maxSpeed = System.Math.Max(maxSpeed, performance.MaxSpeedByAltitude[index].MaxSpeedMetersPerSecond);
+        }
+
+        var seaLevelSpeed = performance.MaxSpeedByAltitude[0].MaxSpeedMetersPerSecond;
+        var fiveKilometerSpeed = performance.MaxSpeedByAltitude[1].MaxSpeedMetersPerSecond;
+        var tenKilometerSpeed = performance.MaxSpeedByAltitude[2].MaxSpeedMetersPerSecond;
+        var hasAltitudeVariation = System.Math.Abs(seaLevelSpeed - fiveKilometerSpeed) > 0.5d
+            || System.Math.Abs(fiveKilometerSpeed - tenKilometerSpeed) > 0.5d
+            || System.Math.Abs(seaLevelSpeed - tenKilometerSpeed) > 0.5d;
+
+        Assert.That(maxSpeed, Is.LessThanOrEqualTo(cap + 1e-6));
+        Assert.That(hasAltitudeVariation, Is.True);
+    }
+
+    [Test]
     public void LargeWingAndWeight_AirframeLengthScalesIntoLargeAircraftRange()
     {
         var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());

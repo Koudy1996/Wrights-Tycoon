@@ -85,9 +85,9 @@ public sealed class AircraftPerformanceCalculator
                 hasDeltaWingDragModifier,
                 wingProfile);
             maxSpeed += categoryProfile.SpeedModifierMetersPerSecond;
-            maxSpeed = ApplyJetSpeedEnvelope(maxSpeed, engine, category);
             speedPoints[index] = new AircraftPerformancePoint(altitude, System.Math.Max(0d, maxSpeed));
         }
+        ApplyJetSpeedEnvelope(speedPoints, engine, category);
 
         var maximumSpeedKilometersPerHour = GetMaximumSpeedKilometersPerHour(speedPoints);
         var speedWeightFactor = CalculateSpeedWeightFactor(maximumSpeedKilometersPerHour);
@@ -492,15 +492,52 @@ public sealed class AircraftPerformanceCalculator
     private static double ClampSpeedWeightFactor(double factor) =>
         Numeric.Clamp(factor, 0.05d, 5d);
 
-    private static double ApplyJetSpeedEnvelope(double speedMetersPerSecond, Engine engine, AircraftCategory category)
+    private static void ApplyJetSpeedEnvelope(
+        AircraftPerformancePoint[] speedPoints,
+        Engine engine,
+        AircraftCategory category)
     {
+        if (speedPoints is null || speedPoints.Length == 0)
+        {
+            return;
+        }
+
         if (engine.Performance.OutputKind != EngineOutputKind.ThrustNewtons)
         {
-            return speedMetersPerSecond;
+            return;
         }
 
         var envelopeLimit = GetJetSpeedEnvelopeLimitMetersPerSecond(engine.Parameters.BypassRatio);
-        var categoryFactor = category switch
+        var categoryFactor = GetJetSpeedEnvelopeCategoryFactor(category);
+        var cappedMaximum = envelopeLimit * categoryFactor;
+        if (cappedMaximum <= Numeric.Epsilon)
+        {
+            return;
+        }
+
+        var highestSpeed = 0d;
+        for (var index = 0; index < speedPoints.Length; index++)
+        {
+            highestSpeed = System.Math.Max(highestSpeed, speedPoints[index].MaxSpeedMetersPerSecond);
+        }
+
+        if (highestSpeed <= cappedMaximum + Numeric.Epsilon)
+        {
+            return;
+        }
+
+        var scale = cappedMaximum / highestSpeed;
+        for (var index = 0; index < speedPoints.Length; index++)
+        {
+            var point = speedPoints[index];
+            speedPoints[index] = new AircraftPerformancePoint(
+                point.AltitudeMeters,
+                System.Math.Max(0d, point.MaxSpeedMetersPerSecond * scale));
+        }
+    }
+
+    private static double GetJetSpeedEnvelopeCategoryFactor(AircraftCategory category) =>
+        category switch
         {
             AircraftCategory.RegionalJet => PlaneDesignerBalance.Performance.JetSpeedEnvelopeCategoryRegionalJetFactor,
             AircraftCategory.BusinessVipJet => PlaneDesignerBalance.Performance.JetSpeedEnvelopeCategoryBusinessJetFactor,
@@ -511,9 +548,6 @@ public sealed class AircraftPerformanceCalculator
             AircraftCategory.MilitaryTactical => PlaneDesignerBalance.Performance.JetSpeedEnvelopeCategoryMilitaryTacticalFactor,
             _ => PlaneDesignerBalance.Performance.JetSpeedEnvelopeCategoryDefaultFactor,
         };
-
-        return System.Math.Min(speedMetersPerSecond, envelopeLimit * categoryFactor);
-    }
 
     private static double GetJetSpeedEnvelopeLimitMetersPerSecond(double bypassRatio)
     {
