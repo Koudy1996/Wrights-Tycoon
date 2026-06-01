@@ -52,6 +52,12 @@ public sealed class DevelopmentCostCalculator
 
         AddNumericChange(baseAirframe.WingAreaSquareMeters, variantAirframe.WingAreaSquareMeters, 70d, ref changedCount, ref magnitude);
         AddNumericChange(baseAirframe.FuelAmountLiters, variantAirframe.FuelAmountLiters, 2500d, ref changedCount, ref magnitude);
+        AddNumericChange(
+            baseAirframe.PayloadLimitKilograms ?? 0d,
+            variantAirframe.PayloadLimitKilograms ?? 0d,
+            10000d,
+            ref changedCount,
+            ref magnitude);
         AddNumericChange(baseAirframe.CrewCount, variantAirframe.CrewCount, 6d, ref changedCount, ref magnitude);
         AddNumericChange(baseAirframe.EngineCowling, variantAirframe.EngineCowling, 1d, ref changedCount, ref magnitude);
         AddNumericChange(baseAirframe.EngineCount, variantAirframe.EngineCount, 6d, ref changedCount, ref magnitude);

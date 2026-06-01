@@ -109,6 +109,14 @@ public sealed class AircraftPerformanceCalculator
             takeoffLiftCoefficient);
         maximumWeightKilograms = System.Math.Max(maximumWeightKilograms, wetWeightKilograms);
         var usefulWeightKilograms = System.Math.Max(0d, maximumWeightKilograms - wetWeightKilograms);
+        var payloadLimitKilograms = airframe.Parameters.PayloadLimitKilograms.HasValue
+            ? System.Math.Max(0d, airframe.Parameters.PayloadLimitKilograms.Value)
+            : (double?)null;
+        if (payloadLimitKilograms.HasValue)
+        {
+            usefulWeightKilograms = System.Math.Min(usefulWeightKilograms, payloadLimitKilograms.Value);
+            maximumWeightKilograms = wetWeightKilograms + usefulWeightKilograms;
+        }
 
         var cruiseAltitudeMeters = engine.Definition.EngineType is EngineType.Jet or EngineType.Turbojet or EngineType.Turbofan
             ? PlaneDesignerBalance.Performance.JetCruiseAltitudeMeters

@@ -125,6 +125,7 @@ public sealed class AircraftFactory
         var result = baseline.Clone();
         result.WingAreaSquareMeters += delta.WingAreaSquareMetersDelta;
         result.FuelAmountLiters += delta.FuelAmountLitersDelta;
+        result.PayloadLimitKilograms = delta.PayloadLimitKilogramsOverride;
         result.CrewCount += delta.CrewCountDelta;
         result.EngineCowling = Numeric.Clamp(result.EngineCowling + delta.EngineCowlingDelta, 0.1d, 0.9d);
         result.AerodynamicCleanlinessPercent = Numeric.Clamp(

@@ -367,6 +367,39 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    public void PayloadLimitCapsUsefulWeightAndReducesMaximumTakeoffWeight()
+    {
+        var factory = CreateFactory();
+        var family = CreateFamily("fam.payload.limit", engineCount: 2, category: AircraftCategory.BusinessVipJet);
+
+        var baselineType = new AircraftTypeDefinition
+        {
+            Id = "type.payload.limit.baseline",
+            FamilyId = family.Id,
+            DisplayName = "No Payload Limit",
+        };
+
+        var limitedType = new AircraftTypeDefinition
+        {
+            Id = "type.payload.limit.capped",
+            FamilyId = family.Id,
+            DisplayName = "Payload Limited",
+            AirframeDelta = new AirframeParameterDelta
+            {
+                PayloadLimitKilogramsOverride = 1000d,
+            },
+        };
+
+        var baselineAircraft = factory.CreateAircraft(family, baselineType);
+        var limitedAircraft = factory.CreateAircraft(family, limitedType);
+
+        Assert.That(limitedAircraft.Performance.PayloadCapacity.Kilograms, Is.EqualTo(1000d).Within(0.05d));
+        Assert.That(
+            limitedAircraft.Performance.MaximumTakeoffWeightKilograms,
+            Is.LessThan(baselineAircraft.Performance.MaximumTakeoffWeightKilograms));
+    }
+
+    [Test]
     public void OptimalCruiseSpeed_IsPositiveAndWithinMaxSpeedEnvelope()
     {
         var factory = CreateFactory();

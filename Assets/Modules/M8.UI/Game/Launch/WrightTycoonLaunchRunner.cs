@@ -39,6 +39,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const double ExponentialSliderPower = 2d;
     private const double TypeWingAreaMinSquareMeters = 1d;
     private const double TypeWingAreaMaxSquareMeters = 1000d;
+    private const double TypePayloadLimitMinKilograms = 0d;
+    private const double TypePayloadLimitMaxKilograms = 250000d;
     private const string AircraftPicturesResourcePath = "WT04/AircraftPictures";
     private const float ModifierTooltipHoverDelaySeconds = 0.5f;
     private const float ModifierTooltipHoverRadiusPixels = 26f;
@@ -150,6 +152,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private WingShape _typeWingShape = WingShape.Straight;
     private WingProfileType _typeWingProfile = WingProfileType.Laminar6SeriesAerodynamic;
     private double _typeWingAreaSquareMeters = 36d;
+    private bool _typePayloadLimitEnabled;
+    private double _typePayloadLimitKilograms = 1000d;
     private FlapType _typeFlapType = FlapType.Fowler;
     private bool _typeHasLeadingEdgeFlaps;
     private bool _typeHasBackupSystems;
@@ -205,7 +209,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const string SaveFileName = "saves.json";
     private const int AutosaveIntervalMonths = 6;
     private const int AutosaveRetentionCount = 4;
-    private const int SavePayloadVersion = 2;
+    private const int SavePayloadVersion = 3;
 
     private readonly JsonSerializerSettings _saveJsonSettings = CreateSaveJsonSettings();
     private static readonly ResolutionOption[] CommonResolutionOptions =
@@ -1569,6 +1573,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             TypeWingShape = _typeWingShape,
             TypeWingProfile = _typeWingProfile,
             TypeWingAreaSquareMeters = _typeWingAreaSquareMeters,
+            TypePayloadLimitEnabled = _typePayloadLimitEnabled,
+            TypePayloadLimitKilograms = _typePayloadLimitKilograms,
             TypeFlapType = _typeFlapType,
             TypeHasLeadingEdgeFlaps = _typeHasLeadingEdgeFlaps,
             TypeHasBackupSystems = _typeHasBackupSystems,
@@ -1794,6 +1800,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             ? WingProfileType.Laminar6SeriesAerodynamic
             : loadedWingProfile;
         _typeWingAreaSquareMeters = data.TypeWingAreaSquareMeters <= 0d ? _baseAirframeParameters.WingAreaSquareMeters : data.TypeWingAreaSquareMeters;
+        _typePayloadLimitEnabled = data.TypePayloadLimitEnabled;
+        _typePayloadLimitKilograms = Math.Clamp(
+            data.TypePayloadLimitKilograms,
+            TypePayloadLimitMinKilograms,
+            TypePayloadLimitMaxKilograms);
         _typeFlapType = data.TypeFlapType;
         _typeHasLeadingEdgeFlaps = data.TypeHasLeadingEdgeFlaps;
         _typeHasBackupSystems = data.TypeHasBackupSystems;
@@ -2701,7 +2712,24 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _typeWingAreaSquareMeters,
             TypeWingAreaMinSquareMeters,
             TypeWingAreaMaxSquareMeters,
-            "0.0");
+            "0.0",
+            _typePayloadLimitEnabled);
+
+        _typePayloadLimitEnabled = GUILayout.Toggle(_typePayloadLimitEnabled, "Use Payload Limit");
+        if (_typePayloadLimitEnabled)
+        {
+            _typePayloadLimitKilograms = DrawSlider(
+                "Payload Limit (kg)",
+                _typePayloadLimitKilograms,
+                TypePayloadLimitMinKilograms,
+                TypePayloadLimitMaxKilograms,
+                "0.0",
+                useLinearScale: true);
+        }
+        else
+        {
+            GUILayout.Label("Payload Limit: Off");
+        }
 
         DrawSection("Type Engine");
         if (isTypeVersionDevelopment)
@@ -3311,6 +3339,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "Fuel (L)",
             FormatUiNumber(originalAirframe.FuelAmountLiters, "0"),
             FormatUiNumber(newAirframe.FuelAmountLiters, "0"));
+        DrawVersionComparisonRow(
+            "Payload Limit (kg)",
+            originalAirframe.PayloadLimitKilograms.HasValue
+                ? FormatUiNumber(originalAirframe.PayloadLimitKilograms.Value, "0.0")
+                : "Off",
+            newAirframe.PayloadLimitKilograms.HasValue
+                ? FormatUiNumber(newAirframe.PayloadLimitKilograms.Value, "0.0")
+                : "Off");
     }
 
     private static void DrawTypePerformanceComparisonRows(Aircraft originalAircraft, Aircraft newAircraft)
@@ -3437,6 +3473,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         current.EngineCowling = _typeCowling;
         current.AerodynamicCleanlinessPercent = _typeAerodynamicCleanlinessPercent;
         current.FuelAmountLiters = _typeFuelLiters;
+        current.PayloadLimitKilograms = _typePayloadLimitEnabled
+            ? Math.Clamp(_typePayloadLimitKilograms, TypePayloadLimitMinKilograms, TypePayloadLimitMaxKilograms)
+            : null;
         return current;
     }
 
@@ -3554,6 +3593,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawMetric("Range (km)", perf.RangeKilometers, "0.0");
         DrawMetric("Optimal Cruise Speed (km/h)", perf.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0");
         DrawMetric("Cruise Fuel Burn Avg (kg/h)", perf.AverageCruiseFuelBurnKilogramsPerHour, "0.0");
+        if (_aircraftPreview.Airframe.Parameters.PayloadLimitKilograms.HasValue)
+        {
+            DrawMetric("Payload Limit (kg)", _aircraftPreview.Airframe.Parameters.PayloadLimitKilograms.Value, "0.0");
+        }
+
         DrawMetric("Useful Weight (kg)", perf.PayloadCapacity.Kilograms, "0.0");
         DrawMetric("Maximum Takeoff Weight (kg)", perf.MaximumTakeoffWeightKilograms, "0.0");
         DrawMetric("Aircraft Weight With Fuel (kg)", perf.AircraftWeightWithFuelKilograms, "0.0");
@@ -6764,6 +6808,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             PlaneDesignerBalance.Airframe.CrewMax);
         _typeWingAreaSquareMeters = baseAirframe.WingAreaSquareMeters + typeDelta.WingAreaSquareMetersDelta;
         _typeFuelLiters = baseAirframe.FuelAmountLiters + typeDelta.FuelAmountLitersDelta;
+        _typePayloadLimitEnabled = typeDelta.PayloadLimitKilogramsOverride.HasValue;
+        _typePayloadLimitKilograms = _typePayloadLimitEnabled
+            ? Math.Clamp(
+                typeDelta.PayloadLimitKilogramsOverride!.Value,
+                TypePayloadLimitMinKilograms,
+                TypePayloadLimitMaxKilograms)
+            : TypePayloadLimitMinKilograms;
         _typeCowling = Math.Clamp(baseAirframe.EngineCowling + typeDelta.EngineCowlingDelta, 0.1d, 0.9d);
         _typeAerodynamicCleanlinessPercent = Math.Clamp(
             baseAirframe.AerodynamicCleanlinessPercent + typeDelta.AerodynamicCleanlinessPercentDelta,
@@ -8700,11 +8751,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var cowlingDelta = _typeCowling - _baseAirframeParameters.EngineCowling;
         var aerodynamicCleanlinessDelta = _typeAerodynamicCleanlinessPercent - _baseAirframeParameters.AerodynamicCleanlinessPercent;
         var crewDelta = _typeCrewCount - _baseAirframeParameters.CrewCount;
+        var payloadLimitOverride = _typePayloadLimitEnabled
+            ? Math.Clamp(
+                Math.Round(_typePayloadLimitKilograms, 4, MidpointRounding.AwayFromZero),
+                TypePayloadLimitMinKilograms,
+                TypePayloadLimitMaxKilograms)
+            : (double?)null;
 
         return new AirframeParameterDelta
         {
             WingAreaSquareMetersDelta = wingAreaDelta,
             FuelAmountLitersDelta = fuelDelta,
+            PayloadLimitKilogramsOverride = payloadLimitOverride,
             CrewCountDelta = crewDelta,
             EngineCowlingDelta = cowlingDelta,
             AerodynamicCleanlinessPercentDelta = aerodynamicCleanlinessDelta,
@@ -9837,7 +9895,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return GUILayout.TextField(value ?? string.Empty);
     }
 
-    private double DrawWingAreaSliderWithOptimizationButton(string label, double value, double min, double max, string format)
+    private double DrawWingAreaSliderWithOptimizationButton(
+        string label,
+        double value,
+        double min,
+        double max,
+        string format,
+        bool optimizeForPayloadLimit)
     {
         var currentValue = Math.Clamp(value, min, max);
         var key = BuildNumericFieldKey("double", label, min, max);
@@ -9859,7 +9923,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label(
             $"[{FormatUiNumber(min, format)} - {FormatUiNumber(max, format)}]",
             GUILayout.Width(185f));
-        var optimizeClicked = GUILayout.Button("Best Payload", GUILayout.Width(120f), GUILayout.Height(24f));
+        var optimizeButtonLabel = optimizeForPayloadLimit ? "Smallest Wing Area Possible" : "Best Payload";
+        var optimizeButtonWidth = optimizeForPayloadLimit ? 190f : 120f;
+        var optimizeClicked = GUILayout.Button(optimizeButtonLabel, GUILayout.Width(optimizeButtonWidth), GUILayout.Height(24f));
         GUILayout.EndHorizontal();
 
         var hasFocus = GUI.GetNameOfFocusedControl() == controlName;
@@ -9896,7 +9962,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (optimizeClicked)
         {
-            FindBestWingAreaForMaximumPayloadCapacity(min, max);
+            if (optimizeForPayloadLimit)
+            {
+                FindSmallestWingAreaForPayloadLimit(min, max);
+            }
+            else
+            {
+                FindBestWingAreaForMaximumPayloadCapacity(min, max);
+            }
+
             _doubleSliderInputBuffer[key] = FormatUiNumber(_typeWingAreaSquareMeters, format);
             _doubleSliderHadFocus[key] = false;
             return _typeWingAreaSquareMeters;
@@ -10125,6 +10199,113 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _factoryActionMessage =
             $"Best wing area for maximum useful load: {FormatUiNumber(_typeWingAreaSquareMeters, "0.0")} m2 " +
             $"(payload {FormatUiNumber(bestPayloadKilograms, "0.0")} kg).";
+    }
+
+    private void FindSmallestWingAreaForPayloadLimit(double minWingArea, double maxWingArea)
+    {
+        var originalWingArea = Math.Clamp(_typeWingAreaSquareMeters, minWingArea, maxWingArea);
+        var targetPayloadKilograms = Math.Clamp(
+            _typePayloadLimitKilograms,
+            TypePayloadLimitMinKilograms,
+            TypePayloadLimitMaxKilograms);
+        _typePayloadLimitKilograms = targetPayloadKilograms;
+
+        var bestWingArea = maxWingArea;
+        var hasBestCandidate = false;
+        var lastError = string.Empty;
+
+        ScanWingAreaRangeForMinimumSizeMeetingPayload(
+            minWingArea,
+            maxWingArea,
+            step: 5d,
+            targetPayloadKilograms,
+            ref hasBestCandidate,
+            ref bestWingArea,
+            ref lastError);
+
+        if (hasBestCandidate)
+        {
+            ScanWingAreaRangeForMinimumSizeMeetingPayload(
+                minWingArea,
+                Math.Min(maxWingArea, bestWingArea + 5d),
+                step: 1d,
+                targetPayloadKilograms,
+                ref hasBestCandidate,
+                ref bestWingArea,
+                ref lastError);
+
+            ScanWingAreaRangeForMinimumSizeMeetingPayload(
+                minWingArea,
+                Math.Min(maxWingArea, bestWingArea + 1d),
+                step: 0.1d,
+                targetPayloadKilograms,
+                ref hasBestCandidate,
+                ref bestWingArea,
+                ref lastError);
+        }
+
+        if (!hasBestCandidate)
+        {
+            _typeWingAreaSquareMeters = originalWingArea;
+            RebuildAircraftPreview();
+            _factoryActionMessage = string.IsNullOrWhiteSpace(lastError)
+                ? $"Wing area optimization failed: payload limit {FormatUiNumber(targetPayloadKilograms, "0.0")} kg is not reachable."
+                : $"Wing area optimization failed: {lastError}";
+            return;
+        }
+
+        _typeWingAreaSquareMeters = Math.Round(bestWingArea, 4, MidpointRounding.AwayFromZero);
+        RebuildAircraftPreview();
+        _factoryActionMessage =
+            $"Smallest wing area for payload limit {FormatUiNumber(targetPayloadKilograms, "0.0")} kg: " +
+            $"{FormatUiNumber(_typeWingAreaSquareMeters, "0.0")} m2.";
+    }
+
+    private void ScanWingAreaRangeForMinimumSizeMeetingPayload(
+        double minWingArea,
+        double maxWingArea,
+        double step,
+        double targetPayloadKilograms,
+        ref bool hasBestCandidate,
+        ref double bestWingArea,
+        ref string lastError)
+    {
+        if (step <= 0d || minWingArea > maxWingArea)
+        {
+            return;
+        }
+
+        var candidateWingArea = minWingArea;
+        var guard = 0;
+        while (candidateWingArea <= maxWingArea + 1e-9d && guard < 20000)
+        {
+            var normalizedWingArea = Math.Clamp(
+                Math.Round(candidateWingArea, 4, MidpointRounding.AwayFromZero),
+                minWingArea,
+                maxWingArea);
+
+            if (TryBuildAircraftSnapshotForWingArea(normalizedWingArea, out var candidateAircraft, out var errorMessage))
+            {
+                var payloadCapacityKilograms = candidateAircraft.Performance.PayloadCapacity.Kilograms;
+                var canCarryTarget = !double.IsNaN(payloadCapacityKilograms)
+                    && !double.IsInfinity(payloadCapacityKilograms)
+                    && payloadCapacityKilograms + 1e-6d >= targetPayloadKilograms;
+
+                if (canCarryTarget
+                    && (!hasBestCandidate || normalizedWingArea < bestWingArea - 1e-6d))
+                {
+                    hasBestCandidate = true;
+                    bestWingArea = normalizedWingArea;
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                lastError = errorMessage;
+            }
+
+            candidateWingArea += step;
+            guard++;
+        }
     }
 
     private void ScanWingAreaRangeForPayload(
@@ -11302,6 +11483,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeCowling = _baseAirframeParameters.EngineCowling;
         _typeAerodynamicCleanlinessPercent = _baseAirframeParameters.AerodynamicCleanlinessPercent;
         _typeFuelLiters = _baseAirframeParameters.FuelAmountLiters;
+        _typePayloadLimitEnabled = _baseAirframeParameters.PayloadLimitKilograms.HasValue;
+        _typePayloadLimitKilograms = _typePayloadLimitEnabled
+            ? Math.Clamp(
+                _baseAirframeParameters.PayloadLimitKilograms!.Value,
+                TypePayloadLimitMinKilograms,
+                TypePayloadLimitMaxKilograms)
+            : TypePayloadLimitMinKilograms;
     }
 
     private static EngineParameters CreateDefaultEngineParameters(EngineDefinition definition)
@@ -12119,6 +12307,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public WingProfileType TypeWingProfile { get; set; }
 
         public double TypeWingAreaSquareMeters { get; set; }
+
+        public bool TypePayloadLimitEnabled { get; set; }
+
+        public double TypePayloadLimitKilograms { get; set; }
 
         public FlapType TypeFlapType { get; set; }
 

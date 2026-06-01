@@ -34,6 +34,8 @@ public sealed class AirframeParameters
 
     public double FuelAmountLiters { get; set; } = 800d;
 
+    public double? PayloadLimitKilograms { get; set; }
+
     public int CrewCount { get; set; } = 2;
 
     public double AerodynamicCleanlinessPercent { get; set; }
@@ -57,6 +59,7 @@ public sealed class AirframeParameters
             LandingGearType = LandingGearType,
             EngineCowling = EngineCowling,
             FuelAmountLiters = FuelAmountLiters,
+            PayloadLimitKilograms = PayloadLimitKilograms,
             CrewCount = CrewCount,
             AerodynamicCleanlinessPercent = AerodynamicCleanlinessPercent,
             RunwayType = RunwayType,
@@ -80,6 +83,11 @@ public sealed class AirframeParameters
             throw new ArgumentOutOfRangeException(
                 nameof(FuelAmountLiters),
                 $"Fuel amount must be within [{PlaneDesignerBalance.Airframe.FuelMinLiters}, {PlaneDesignerBalance.Airframe.FuelMaxLiters}] liters.");
+        }
+
+        if (PayloadLimitKilograms.HasValue && PayloadLimitKilograms.Value < 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(PayloadLimitKilograms), "Payload limit must be greater than or equal to zero.");
         }
 
         if (CrewCount < PlaneDesignerBalance.Airframe.CrewMin || CrewCount > PlaneDesignerBalance.Airframe.CrewMax)
