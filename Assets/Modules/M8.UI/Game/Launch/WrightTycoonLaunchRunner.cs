@@ -39,6 +39,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const double ExponentialSliderPower = 2d;
     private const double TypeWingAreaMinSquareMeters = 1d;
     private const double TypeWingAreaMaxSquareMeters = 1000d;
+    private const string AircraftPicturesResourcePath = "WT04/AircraftPictures";
     private const float ModifierTooltipHoverDelaySeconds = 0.5f;
     private const float ModifierTooltipHoverRadiusPixels = 26f;
     private const float ModifierTooltipIconSize = 18f;
@@ -63,6 +64,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly List<SavedEngineDesign> _savedEngines = new();
     private readonly List<SavedFamilyDesign> _savedFamilies = new();
     private readonly List<SavedAircraftDesign> _savedAircraftDesigns = new();
+    private readonly List<AircraftPictureOption> _aircraftPictureOptions = new();
     private readonly List<Contract> _lastGeneratedContracts = new();
     private readonly Dictionary<string, string> _selectedWarehouseDesignByContractId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _excludedWarehouseDesignByContractId = new(StringComparer.Ordinal);
@@ -142,6 +144,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private string _aircraftDesignName = "Prototype Aircraft";
     private string _familyName = "Player Family";
     private string _typeName = "Player Variant";
+    private string _selectedAircraftPictureId = string.Empty;
     private int _typeCrewCount = 2;
     private TailType _typeTailType = TailType.Classic;
     private WingShape _typeWingShape = WingShape.Straight;
@@ -757,6 +760,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             && _engineDefinitions.Count > 0
             && _airframeDefinitions.Count > 0)
         {
+            EnsureAircraftPictureOptionsLoaded();
             return;
         }
 
@@ -812,6 +816,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             new DevelopmentCostCalculator(),
             _engineRepo,
             _airframeRepo);
+
+        EnsureAircraftPictureOptionsLoaded();
     }
 
     private void ResetRuntimeStateForNewGame(SimulationDate? startDate = null)
@@ -827,6 +833,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _engineParameters = CreateDefaultEngineParameters(_engineDefinitions[_selectedEngineDefinitionIndex]);
         _baseAirframeParameters = CreateDefaultAirframeParameters(_lockedEngineCount);
+        _selectedAircraftPictureId = ResolveValidAircraftPictureId(_selectedAircraftPictureId);
         SyncTypeAirframeFromBase();
         RebuildEnginePreview();
 
@@ -1555,6 +1562,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             AircraftDesignName = _aircraftDesignName,
             FamilyName = _familyName,
             TypeName = _typeName,
+            SelectedAircraftPictureId = _selectedAircraftPictureId,
             RequiredLineToolLevel = 1,
             TypeCrewCount = _typeCrewCount,
             TypeTailType = _typeTailType,
@@ -1653,6 +1661,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     ? saved.DevelopmentStartedYear
                     : null,
                 SourceTypeResearchId = saved.SourceTypeResearchId,
+                AircraftPictureId = saved.AircraftPictureId,
             });
         }
 
@@ -1773,6 +1782,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _aircraftDesignName = string.IsNullOrWhiteSpace(data.AircraftDesignName) ? _aircraftDesignName : data.AircraftDesignName;
         _familyName = string.IsNullOrWhiteSpace(data.FamilyName) ? _familyName : data.FamilyName;
         _typeName = string.IsNullOrWhiteSpace(data.TypeName) ? _typeName : data.TypeName;
+        _selectedAircraftPictureId = ResolveValidAircraftPictureId(data.SelectedAircraftPictureId);
 
         _typeCrewCount = Mathf.Clamp(data.TypeCrewCount, PlaneDesignerBalance.Airframe.CrewMin, PlaneDesignerBalance.Airframe.CrewMax);
         _typeTailType = data.TypeTailType;
@@ -1954,6 +1964,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         string.IsNullOrWhiteSpace(state.EngineResearchId) ? "engine:unknown" : state.EngineResearchId,
                         string.IsNullOrWhiteSpace(state.FamilyResearchId) ? "family:unknown" : state.FamilyResearchId,
                         string.IsNullOrWhiteSpace(state.TypeResearchId) ? "type:unknown" : state.TypeResearchId,
+                        ResolveValidAircraftPictureId(state.AircraftPictureId),
                         developmentStartedYear,
                         variantDevelopmentStartedYear,
                         legacyBaselineYear,
@@ -2068,6 +2079,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _selectedSavedAircraftDesignIndex = _savedAircraftDesigns.Count == 0
             ? -1
             : Mathf.Clamp(data.SelectedSavedAircraftDesignIndex, 0, _savedAircraftDesigns.Count - 1);
+        if (string.IsNullOrWhiteSpace(_selectedAircraftPictureId)
+            && _selectedSavedAircraftDesignIndex >= 0
+            && _selectedSavedAircraftDesignIndex < _savedAircraftDesigns.Count)
+        {
+            _selectedAircraftPictureId = ResolveValidAircraftPictureId(
+                _savedAircraftDesigns[_selectedSavedAircraftDesignIndex].AircraftPictureId);
+        }
 
         _contractActionMessage = data.ContractActionMessage ?? string.Empty;
         _factoryActionMessage = data.FactoryActionMessage ?? string.Empty;
@@ -3461,6 +3479,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         DrawSection("Aircraft Visual");
+        EnsureAircraftPictureOptionsLoaded();
+        _selectedAircraftPictureId = ResolveValidAircraftPictureId(_selectedAircraftPictureId);
+
+        GUILayout.BeginHorizontal();
+        GUILayout.BeginVertical(GUILayout.ExpandWidth(true));
         var aircraftVisualRect = GUILayoutUtility.GetRect(140f, 290f, GUILayout.ExpandWidth(true));
         var rendered3d = _aircraftPreview3DRenderer.Draw(
             aircraftVisualRect,
@@ -3478,6 +3501,50 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         GUILayout.Label("3D visual reacts to wing shape/position, tail, landing gear, engine count, material and engine type.");
+        GUILayout.EndVertical();
+
+        GUILayout.Space(8f);
+        GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(280f));
+        GUILayout.Label("Picture For This Aircraft");
+        if (_aircraftPictureOptions.Count == 0)
+        {
+            DrawError($"No aircraft pictures found in Resources/{AircraftPicturesResourcePath}.");
+        }
+        else
+        {
+            TryDrawAircraftPictureById(_selectedAircraftPictureId, 250f, 160f);
+            var selectedPictureIndex = ResolveAircraftPictureOptionIndex(_selectedAircraftPictureId);
+            var pictureNumber = DrawIntSlider(
+                "Picture Number",
+                selectedPictureIndex + 1,
+                1,
+                _aircraftPictureOptions.Count,
+                useLinearScale: true);
+            selectedPictureIndex = Mathf.Clamp(pictureNumber - 1, 0, _aircraftPictureOptions.Count - 1);
+            _selectedAircraftPictureId = _aircraftPictureOptions[selectedPictureIndex].Id;
+            GUILayout.Label($"Selected ID: {_aircraftPictureOptions[selectedPictureIndex].DisplayName}");
+
+            GUILayout.BeginHorizontal();
+            GUI.enabled = selectedPictureIndex > 0;
+            if (GUILayout.Button("Previous", GUILayout.Height(24f)))
+            {
+                selectedPictureIndex = Mathf.Max(0, selectedPictureIndex - 1);
+                _selectedAircraftPictureId = _aircraftPictureOptions[selectedPictureIndex].Id;
+            }
+
+            GUI.enabled = selectedPictureIndex < _aircraftPictureOptions.Count - 1;
+            if (GUILayout.Button("Next", GUILayout.Height(24f)))
+            {
+                selectedPictureIndex = Mathf.Min(_aircraftPictureOptions.Count - 1, selectedPictureIndex + 1);
+                _selectedAircraftPictureId = _aircraftPictureOptions[selectedPictureIndex].Id;
+            }
+
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+        }
+
+        GUILayout.EndVertical();
+        GUILayout.EndHorizontal();
 
         foreach (var p in perf.MaxSpeedByAltitude)
         {
@@ -3649,6 +3716,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 var displayName = ResolveAircraftDesignName(warehouseEntry.Key);
                 var categoryName = ResolveAircraftCategoryName(warehouseEntry.Key);
                 GUILayout.BeginHorizontal(GUI.skin.box);
+                TryDrawAircraftPictureByDesignId(warehouseEntry.Key, 96f, 60f);
                 GUILayout.Label($"{displayName} ({categoryName})", GUILayout.Width(360f));
                 GUILayout.Label($"{FormatUiInteger(warehouseEntry.Value)} units");
                 GUILayout.EndHorizontal();
@@ -3753,6 +3821,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         var isIncluded = excludedDesignIds is null || !excludedDesignIds.Contains(candidate.DesignId);
                         GUILayout.BeginHorizontal(GUI.skin.box);
                         var nextIncluded = GUILayout.Toggle(isIncluded, string.Empty, GUILayout.Width(22f));
+                        TryDrawAircraftPictureByDesignId(candidate.DesignId, 96f, 60f);
                         GUILayout.Label(candidate.CatalogItem.DisplayName, GUILayout.Width(260f));
                         GUILayout.Label($"stock {FormatUiInteger(candidate.StockUnits)}", GUILayout.Width(110f));
                         GUILayout.Label($"unit cost {FormatCurrency(candidate.UnitFulfillmentCost)}");
@@ -4289,6 +4358,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             if (activeContract.AcceptedSubmission is not null)
             {
                 GUILayout.Label($"Selected Aircraft: {activeContract.AcceptedSubmission.DisplayName} ({activeContract.AcceptedSubmission.DesignId})");
+                TryDrawAircraftPictureByDesignId(activeContract.AcceptedSubmission.DesignId, 220f, 130f);
             }
 
             if (activeContract.UpfrontFundingGranted > 0d)
@@ -4328,6 +4398,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
                         GUILayout.BeginVertical(GUI.skin.box);
                         GUILayout.Label($"{candidate.DisplayName} ({candidate.DesignId})");
+                        TryDrawAircraftPictureByDesignId(candidate.DesignId, 220f, 130f);
                         GUILayout.Label($"Lifecycle: {candidate.LifecycleStage}");
                         DrawMetric("Reliability", candidate.Metrics.Reliability, "0.000");
                         DrawMetric("Maneuverability", candidate.Metrics.Maneuverability, "0.0");
@@ -4442,6 +4513,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 var activeDelivery = activeDeliveries[index];
                 GUILayout.BeginVertical(GUI.skin.box);
                 GUILayout.Label($"{activeDelivery.DeliveryId} | Source: {ResolveAircraftDesignName(activeDelivery.AircraftDesignId)}");
+                TryDrawAircraftPictureByDesignId(activeDelivery.AircraftDesignId, 220f, 130f);
                 GUILayout.Label($"Status: {activeDelivery.Status}");
                 GUILayout.Label($"Active Window: {FormatSimulationDate(activeDelivery.StartedOn)} -> {FormatSimulationDate(activeDelivery.EndsOn)}");
                 DrawMetric("Required Units", activeDelivery.TotalUnitsRequired, "0");
@@ -4862,6 +4934,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     GUILayout.Label($"ID: {project.SubjectId}");
                 }
 
+                if (project.SubjectType == ResearchSubjectType.AircraftType
+                    && TryGetSavedAircraftDesignByTypeResearchId(project.SubjectId, out var ongoingTypeDesign))
+                {
+                    TryDrawAircraftPictureById(ongoingTypeDesign.AircraftPictureId, 220f, 130f);
+                }
+
                 GUILayout.EndVertical();
             }
         }
@@ -4879,6 +4957,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             var project = completed[index];
             var displayName = ResolveResearchProjectDisplayName(project);
             GUILayout.BeginHorizontal(GUI.skin.box);
+            if (project.SubjectType == ResearchSubjectType.AircraftType
+                && TryGetSavedAircraftDesignByTypeResearchId(project.SubjectId, out var completedTypeDesign))
+            {
+                TryDrawAircraftPictureById(completedTypeDesign.AircraftPictureId, 80f, 52f);
+            }
+
             GUILayout.Label(GetResearchSubjectLabel(project.SubjectType), GUILayout.Width(120f));
             GUILayout.Label(displayName, GUILayout.Width(260f));
             GUILayout.Label($"Done ({FormatUiInteger(project.ResearchTimeMonths)} m)");
@@ -4918,6 +5002,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label($"{GetResearchNameFieldLabel(project.SubjectType)}: {displayName}");
             DrawMetric("Engineering Cost", project.ResearchCost, "0.00");
             DrawMetric("Engineering Time (months)", project.ResearchTimeMonths, "0");
+            if (project.SubjectType == ResearchSubjectType.AircraftType
+                && TryGetSavedAircraftDesignByTypeResearchId(project.SubjectId, out var proposalTypeDesign))
+            {
+                TryDrawAircraftPictureById(proposalTypeDesign.AircraftPictureId, 220f, 130f);
+            }
+
             if (IsFirstYearResearchApprovalWindow())
             {
                 GUILayout.Label(BuildResearchTimeBonusFormula(project.ResearchTimeMonths));
@@ -5623,6 +5713,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 savedDesign.EngineResearchId,
                 savedDesign.FamilyResearchId,
                 savedDesign.TypeResearchId,
+                savedDesign.AircraftPictureId,
                 savedDesign.DevelopmentStartedYear,
                 savedDesign.VariantDevelopmentStartedYear,
                 savedDesign.TypeVersionDevelopmentBaselineYear,
@@ -5984,6 +6075,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     savedDesign.EngineResearchId,
                     savedDesign.FamilyResearchId,
                     savedDesign.TypeResearchId,
+                    savedDesign.AircraftPictureId,
                     savedDesign.DevelopmentStartedYear,
                     savedDesign.VariantDevelopmentStartedYear,
                     savedDesign.TypeVersionDevelopmentBaselineYear,
@@ -6349,14 +6441,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
                 hasType = true;
                 GUILayout.BeginHorizontal(GUI.skin.box);
+                TryDrawAircraftPictureById(savedDesign.AircraftPictureId, 96f, 60f);
                 var category = AircraftCategoryCatalog.GetProfile(savedDesign.CatalogItem.Category).DisplayName;
+                GUILayout.BeginVertical();
                 GUILayout.Label(
                     $"{savedDesign.Name} | {category} | {GetAircraftDesignResearchStatus(savedDesign)} | " +
                     $"Approved Year: {FormatApprovedYear(savedDesign.ApprovedYear)}");
+                GUILayout.Label($"Picture: {savedDesign.AircraftPictureId}");
+                GUILayout.EndVertical();
 
                 if (GUILayout.Button("Select", GUILayout.Width(90f), GUILayout.Height(24f)))
                 {
                     _selectedSavedAircraftDesignIndex = typeIndex;
+                    _selectedAircraftPictureId = ResolveValidAircraftPictureId(savedDesign.AircraftPictureId);
                 }
 
                 if (GUILayout.Button("Type Designer", GUILayout.Width(150f), GUILayout.Height(24f)))
@@ -6468,8 +6565,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         var selected = _savedAircraftDesigns[_selectedSavedAircraftDesignIndex];
+        _selectedAircraftPictureId = ResolveValidAircraftPictureId(selected.AircraftPictureId);
         var aircraft = selected.CatalogItem.Aircraft;
         var category = AircraftCategoryCatalog.GetProfile(selected.CatalogItem.Category).DisplayName;
+        DrawSection("Selected Type Picture");
+        TryDrawAircraftPictureById(selected.AircraftPictureId, 320f, 200f);
         DrawParameterValueRow("Name", selected.Name);
         DrawParameterValueRow("Development Start Year", FormatUiInteger(selected.DevelopmentStartedYear));
         DrawParameterValueRow("Current Variant Start Year", FormatUiInteger(selected.VariantDevelopmentStartedYear));
@@ -6636,6 +6736,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var familyDefinition = aircraft.FamilyDefinition;
         var typeDefinition = aircraft.TypeDefinition;
         var baseAirframe = familyDefinition.BaseAirframeParameters.Clone();
+        _selectedAircraftPictureId = ResolveValidAircraftPictureId(savedDesign.AircraftPictureId);
 
         _selectedSavedAircraftDesignIndex = designIndex;
         _familyName = familyDefinition.Id;
@@ -7262,6 +7363,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 if (!string.IsNullOrWhiteSpace(line.AssignedDesignId))
                 {
                     GUILayout.Label($"Category: {ResolveAircraftCategoryName(line.AssignedDesignId)}");
+                    TryDrawAircraftPictureByDesignId(line.AssignedDesignId, 220f, 130f);
                 }
 
                 GUILayout.Label($"Produced: {FormatUiInteger(line.ProducedUnits)}");
@@ -7310,6 +7412,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 {
                     GUILayout.BeginVertical(GUI.skin.box);
                     GUILayout.Label($"{designName} ({categoryName})");
+                    TryDrawAircraftPictureByDesignId(entry.Key, 200f, 120f);
                     GUILayout.Label($"{FormatUiInteger(availableUnits)} units");
                     DrawError("Scrap unavailable: saved aircraft definition was not found.");
                     GUILayout.EndVertical();
@@ -7327,6 +7430,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
                 GUILayout.BeginVertical(GUI.skin.box);
                 GUILayout.Label($"{designName} ({categoryName})");
+                TryDrawAircraftPictureByDesignId(entry.Key, 200f, 120f);
                 GUILayout.BeginHorizontal();
                 GUILayout.Label($"{FormatUiInteger(availableUnits)} units", GUILayout.Width(120f));
                 GUILayout.Label($"Scrap value / unit: {FormatCurrency(unitScrapIncome)}", GUILayout.Width(230f));
@@ -7487,6 +7591,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             selectedSavedEngine.ResearchId,
             familyResearchId,
             typeResearchId,
+            ResolveValidAircraftPictureId(_selectedAircraftPictureId),
             activeTypeVersionDevelopment?.SourceDevelopmentStartedYear ?? _currentDate.Year,
             activeTypeVersionDevelopment?.VariantDevelopmentStartedYear ?? _currentDate.Year,
             activeTypeVersionDevelopment?.SourceDevelopmentStartedYear,
@@ -7779,6 +7884,167 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return missing.Count == 0
             ? "Ready"
             : $"Pending: {string.Join(", ", missing)}";
+    }
+
+    private void EnsureAircraftPictureOptionsLoaded()
+    {
+        if (_aircraftPictureOptions.Count > 0)
+        {
+            _selectedAircraftPictureId = ResolveValidAircraftPictureId(_selectedAircraftPictureId);
+            return;
+        }
+
+        _aircraftPictureOptions.Clear();
+        var textures = Resources.LoadAll<Texture2D>(AircraftPicturesResourcePath);
+        var orderedTextures = textures
+            .Where(texture => texture is not null)
+            .OrderBy(texture => texture.name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        for (var index = 0; index < orderedTextures.Length; index++)
+        {
+            var texture = orderedTextures[index];
+            var id = string.IsNullOrWhiteSpace(texture.name)
+                ? $"picture_{index + 1:000}"
+                : texture.name.Trim();
+            _aircraftPictureOptions.Add(new AircraftPictureOption(
+                id,
+                BuildAircraftPictureDisplayName(id, index + 1),
+                texture));
+        }
+
+        if (_aircraftPictureOptions.Count == 0)
+        {
+            Debug.LogWarning($"[AircraftPictures] No pictures found at Resources path '{AircraftPicturesResourcePath}'.");
+        }
+
+        _selectedAircraftPictureId = ResolveValidAircraftPictureId(_selectedAircraftPictureId);
+    }
+
+    private static string BuildAircraftPictureDisplayName(string pictureId, int fallbackIndex)
+    {
+        if (string.IsNullOrWhiteSpace(pictureId))
+        {
+            return $"Picture {fallbackIndex:00}";
+        }
+
+        var trimmed = pictureId.Trim().Replace('_', ' ');
+        if (trimmed.Length == 0)
+        {
+            return $"Picture {fallbackIndex:00}";
+        }
+
+        return trimmed;
+    }
+
+    private string ResolveValidAircraftPictureId(string pictureId)
+    {
+        if (_aircraftPictureOptions.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        if (!string.IsNullOrWhiteSpace(pictureId))
+        {
+            for (var index = 0; index < _aircraftPictureOptions.Count; index++)
+            {
+                if (string.Equals(_aircraftPictureOptions[index].Id, pictureId, StringComparison.Ordinal))
+                {
+                    return _aircraftPictureOptions[index].Id;
+                }
+            }
+        }
+
+        return _aircraftPictureOptions[0].Id;
+    }
+
+    private int ResolveAircraftPictureOptionIndex(string pictureId)
+    {
+        if (_aircraftPictureOptions.Count == 0)
+        {
+            return -1;
+        }
+
+        for (var index = 0; index < _aircraftPictureOptions.Count; index++)
+        {
+            if (string.Equals(_aircraftPictureOptions[index].Id, pictureId, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return 0;
+    }
+
+    private bool TryGetAircraftPictureTextureById(string pictureId, out Texture2D texture)
+    {
+        if (_aircraftPictureOptions.Count == 0 || string.IsNullOrWhiteSpace(pictureId))
+        {
+            texture = null!;
+            return false;
+        }
+
+        for (var index = 0; index < _aircraftPictureOptions.Count; index++)
+        {
+            var option = _aircraftPictureOptions[index];
+            if (string.Equals(option.Id, pictureId, StringComparison.Ordinal))
+            {
+                texture = option.Texture;
+                return true;
+            }
+        }
+
+        texture = null!;
+        return false;
+    }
+
+    private bool TryGetSavedAircraftDesignByDesignId(string designId, out SavedAircraftDesign savedDesign)
+    {
+        if (string.IsNullOrWhiteSpace(designId))
+        {
+            savedDesign = null!;
+            return false;
+        }
+
+        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+        {
+            var design = _savedAircraftDesigns[index];
+            if (string.Equals(design.CatalogItem.DesignId, designId, StringComparison.Ordinal))
+            {
+                savedDesign = design;
+                return true;
+            }
+        }
+
+        savedDesign = null!;
+        return false;
+    }
+
+    private bool TryDrawAircraftPictureById(string pictureId, float width, float height)
+    {
+        var rect = GUILayoutUtility.GetRect(width, height, GUILayout.Width(width), GUILayout.Height(height));
+        DrawRect(rect, new Color(0.12f, 0.16f, 0.22f, 1f));
+        if (!TryGetAircraftPictureTextureById(pictureId, out var texture))
+        {
+            GUI.Label(rect, "No picture");
+            return false;
+        }
+
+        GUI.DrawTexture(rect, texture, ScaleMode.ScaleToFit, true);
+        return true;
+    }
+
+    private bool TryDrawAircraftPictureByDesignId(string designId, float width, float height)
+    {
+        if (!TryGetSavedAircraftDesignByDesignId(designId, out var savedDesign))
+        {
+            var rect = GUILayoutUtility.GetRect(width, height, GUILayout.Width(width), GUILayout.Height(height));
+            DrawRect(rect, new Color(0.12f, 0.16f, 0.22f, 1f));
+            GUI.Label(rect, "No picture");
+            return false;
+        }
+
+        return TryDrawAircraftPictureById(savedDesign.AircraftPictureId, width, height);
     }
 
     private string ResolveAircraftDesignName(string designId)
@@ -11355,6 +11621,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public int UnitsToDeliver { get; }
     }
 
+    private readonly struct AircraftPictureOption
+    {
+        public AircraftPictureOption(string id, string displayName, Texture2D texture)
+        {
+            Id = id ?? string.Empty;
+            DisplayName = displayName ?? string.Empty;
+            Texture = texture;
+        }
+
+        public string Id { get; }
+
+        public string DisplayName { get; }
+
+        public Texture2D Texture { get; }
+    }
+
     private readonly struct ModifierTooltipDefinition
     {
         public ModifierTooltipDefinition(
@@ -11627,6 +11909,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             string engineResearchId,
             string familyResearchId,
             string typeResearchId,
+            string aircraftPictureId,
             int developmentStartedYear,
             int variantDevelopmentStartedYear,
             int? typeVersionDevelopmentBaselineYear = null,
@@ -11640,6 +11923,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             EngineResearchId = engineResearchId;
             FamilyResearchId = familyResearchId;
             TypeResearchId = typeResearchId;
+            AircraftPictureId = aircraftPictureId ?? string.Empty;
             DevelopmentStartedYear = NormalizeRequiredYear(
                 developmentStartedYear,
                 NormalizeOptionalBaselineYear(typeVersionDevelopmentBaselineYear) ?? SimulationDate.WrightTycoonStart.Year);
@@ -11659,6 +11943,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public string FamilyResearchId { get; }
 
         public string TypeResearchId { get; }
+
+        public string AircraftPictureId { get; }
 
         public int DevelopmentStartedYear { get; }
 
@@ -11819,6 +12105,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public string FamilyName { get; set; } = string.Empty;
 
         public string TypeName { get; set; } = string.Empty;
+
+        public string SelectedAircraftPictureId { get; set; } = string.Empty;
 
         public int RequiredLineToolLevel { get; set; }
 
@@ -12007,6 +12295,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public int? TypeVersionDevelopmentBaselineYear { get; set; }
 
         public string SourceTypeResearchId { get; set; } = string.Empty;
+
+        public string AircraftPictureId { get; set; } = string.Empty;
     }
 
     private sealed class ResearchModifierStateEntry
