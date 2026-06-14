@@ -117,7 +117,7 @@ public sealed class EngineCalculator : IEngineCalculator
             : GetEfficiencyFuelSpecificConsumptionFactor(parameters);
         var compressionFuelFactor = isJet
             ? 1d + (System.Math.Max(0d, parameters.CompressionRatio - JetCompressionMin) * 0.015d)
-            : 1d + (System.Math.Max(0d, parameters.CompressionRatio - PistonCompressionMin) * 0.03d);
+            : GetPistonCompressionFuelSpecificConsumptionFactor(parameters);
         var speedFuelFactor = isJet
             ? Numeric.Clamp(System.Math.Pow(parameters.MaximumSpeed / 50000d, 0.24d), 0.75d, 1.65d)
             : Numeric.Clamp(System.Math.Pow(parameters.MaximumSpeed / 2500d, 0.2d), 0.8d, 1.55d);
@@ -209,7 +209,7 @@ public sealed class EngineCalculator : IEngineCalculator
         // Piston family: output scales with displacement and volumetric efficiency.
         var effectiveCoolingEfficiency = GetCoolingEfficiencyWithOptimizations(parameters);
         var outputRetentionFactor = GetEfficiencyPowerRetentionFactor(parameters);
-        var compressionPowerFactor = 1d + (System.Math.Max(0d, parameters.CompressionRatio - PistonCompressionMin) * 0.032d);
+        var compressionPowerFactor = GetPistonCompressionPowerFactor(parameters);
         // Better cooling hardware adds thermal headroom reliability, but costs output.
         var coolingPowerFactor = 1.1d - (effectiveCoolingEfficiency * 0.2d);
         var boostPowerFactor = GetBoostPowerFactor(parameters.BoostType);
@@ -231,8 +231,8 @@ public sealed class EngineCalculator : IEngineCalculator
             : 1d;
         var volumetricEfficiency = Numeric.Clamp(
             definition.BaseVolumetricEfficiency * compressionPowerFactor * coolingPowerFactor,
-            0.52d,
-            1.55d);
+            EngineDesignerBalance.Engine.PistonVolumetricEfficiencyMin,
+            EngineDesignerBalance.Engine.PistonVolumetricEfficiencyMax);
 
         return parameters.DisplacementLiters
             * definition.BasePowerPerLiterKilowatts
@@ -714,6 +714,32 @@ public sealed class EngineCalculator : IEngineCalculator
             1d - (normalized * EngineDesignerBalance.Engine.EfficiencyOptimizationFuelBurnReductionAtMax),
             0.05d,
             1d);
+    }
+
+    private static double GetPistonCompressionNormalized(EngineParameters parameters)
+    {
+        var range = PistonCompressionMax - PistonCompressionMin;
+        if (range <= Numeric.Epsilon)
+        {
+            return 0d;
+        }
+
+        return Numeric.Clamp(
+            (parameters.CompressionRatio - PistonCompressionMin) / range,
+            0d,
+            1d);
+    }
+
+    private static double GetPistonCompressionPowerFactor(EngineParameters parameters)
+    {
+        var normalized = GetPistonCompressionNormalized(parameters);
+        return 1d + (normalized * (EngineDesignerBalance.Engine.PistonCompressionPowerFactorAtMax - 1d));
+    }
+
+    private static double GetPistonCompressionFuelSpecificConsumptionFactor(EngineParameters parameters)
+    {
+        var normalized = GetPistonCompressionNormalized(parameters);
+        return 1d - (normalized * (1d - EngineDesignerBalance.Engine.PistonCompressionFuelSpecificConsumptionFactorAtMax));
     }
 
     private static double ApplyJetAfterburnerOutputFactor(

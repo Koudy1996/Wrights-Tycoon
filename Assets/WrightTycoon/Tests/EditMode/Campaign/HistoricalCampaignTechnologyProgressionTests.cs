@@ -34,9 +34,9 @@ public sealed class HistoricalCampaignTechnologyProgressionTests
 
         Assert.That(first, Is.EqualTo(second));
         Assert.That(first.EnginePerformanceMultiplier, Is.EqualTo(0.72d).Within(1e-9d));
-        Assert.That(first.PistonEnginePerformanceMultiplier, Is.EqualTo(0.845d).Within(1e-9d));
-        Assert.That(first.AirframeEfficiencyMultiplier, Is.EqualTo(0.74d).Within(1e-9d));
-        Assert.That(first.AerodynamicsEfficiencyMultiplier, Is.EqualTo(0.69d).Within(1e-9d));
+        Assert.That(first.PistonEnginePerformanceMultiplier, Is.EqualTo(0.895d).Within(1e-9d));
+        Assert.That(first.AirframeEfficiencyMultiplier, Is.EqualTo(0.825d).Within(1e-9d));
+        Assert.That(first.AerodynamicsEfficiencyMultiplier, Is.EqualTo(0.825d).Within(1e-9d));
         Assert.That(first.FuelEfficiencyMultiplier, Is.EqualTo(0.63d).Within(1e-9d));
         Assert.That(first.PistonFuelEfficiencyMultiplier, Is.EqualTo(0.845d).Within(1e-9d));
     }
@@ -50,9 +50,9 @@ public sealed class HistoricalCampaignTechnologyProgressionTests
         var afterRange = progression.ResolveForYear(2100);
 
         Assert.That(beforeRange.EnginePerformanceMultiplier, Is.EqualTo(0.60d).Within(1e-9d));
-        Assert.That(beforeRange.PistonEnginePerformanceMultiplier, Is.EqualTo(0.80d).Within(1e-9d));
-        Assert.That(beforeRange.AirframeEfficiencyMultiplier, Is.EqualTo(0.62d).Within(1e-9d));
-        Assert.That(beforeRange.AerodynamicsEfficiencyMultiplier, Is.EqualTo(0.56d).Within(1e-9d));
+        Assert.That(beforeRange.PistonEnginePerformanceMultiplier, Is.EqualTo(0.85d).Within(1e-9d));
+        Assert.That(beforeRange.AirframeEfficiencyMultiplier, Is.EqualTo(0.78d).Within(1e-9d));
+        Assert.That(beforeRange.AerodynamicsEfficiencyMultiplier, Is.EqualTo(0.78d).Within(1e-9d));
         Assert.That(beforeRange.FuelEfficiencyMultiplier, Is.EqualTo(0.50d).Within(1e-9d));
         Assert.That(beforeRange.PistonFuelEfficiencyMultiplier, Is.EqualTo(0.80d).Within(1e-9d));
 
@@ -121,7 +121,7 @@ public sealed class HistoricalCampaignTechnologyProgressionTests
         };
 
         var neutral = new HistoricalCampaignTechnologyModifiers(1d, 1d, 1d, 1d, 1d, 1d);
-        var split = new HistoricalCampaignTechnologyModifiers(1d, 1d, 1d, 1d, 0.6d, 0.6d);
+        var split = new HistoricalCampaignTechnologyModifiers(1d, 1d, 1d, 1d, 0.8d, 0.6d);
 
         var baselinePiston = calculator.Calculate(pistonDefinition, pistonParameters, atmosphere, neutral).GetPerformanceAtAltitude(0d);
         var splitPiston = calculator.Calculate(pistonDefinition, pistonParameters, atmosphere, split).GetPerformanceAtAltitude(0d);

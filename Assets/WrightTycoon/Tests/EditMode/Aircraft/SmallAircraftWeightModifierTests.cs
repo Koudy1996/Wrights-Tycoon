@@ -13,7 +13,7 @@ namespace WrightTycoon.Core.Tests.Aircraft;
 public sealed class SmallAircraftWeightModifierTests
 {
     [Test]
-    public void LightSportWoodTrussWithAbout50KilowattPiston_MatchesAluminumWeightWhenBelow800Kilograms()
+    public void LightSportWoodTrussWithMidPowerPiston_MatchesAluminumWeightWhenBelow800Kilograms()
     {
         var atmosphere = new IsaAtmosphereModel();
         var aerodynamics = new AerodynamicsCalculator();
@@ -92,14 +92,14 @@ public sealed class SmallAircraftWeightModifierTests
         var seaLevelPowerKilowatts = engine.Performance.GetPerformanceAtAltitude(0d).Output;
 
         Assert.That(engine.Performance.OutputKind, Is.EqualTo(EngineOutputKind.PowerKilowatts));
-        Assert.That(seaLevelPowerKilowatts, Is.InRange(45d, 50d));
+        Assert.That(seaLevelPowerKilowatts, Is.InRange(54d, 57d));
         Assert.That(woodPerformance.TotalWeight.Kilograms, Is.LessThan(800d));
         Assert.That(aluminumPerformance.TotalWeight.Kilograms, Is.LessThan(800d));
         Assert.That(woodPerformance.TotalWeight.Kilograms, Is.EqualTo(aluminumPerformance.TotalWeight.Kilograms).Within(1.5d));
     }
 
     [Test]
-    public void LightSport1946_Under60KilowattsAndUnder10SquareMeters_StaysNear600KilogramsAnd150KilometersPerHour()
+    public void LightSport1946_Under60KilowattsAndUnder10SquareMeters_StaysLightAndBelow180KilometersPerHour()
     {
         var atmosphere = new IsaAtmosphereModel();
         var aerodynamics = new AerodynamicsCalculator();
@@ -181,6 +181,6 @@ public sealed class SmallAircraftWeightModifierTests
         Assert.That(seaLevelPower, Is.GreaterThan(35d).And.LessThan(60d));
         Assert.That(airframe.Parameters.WingAreaSquareMeters, Is.LessThan(10d));
         Assert.That(report.AircraftWeightWithFuelKilograms, Is.InRange(560d, 680d));
-        Assert.That(seaLevelSpeedKilometersPerHour, Is.InRange(140d, 165d));
+        Assert.That(seaLevelSpeedKilometersPerHour, Is.InRange(160d, 180d));
     }
 }

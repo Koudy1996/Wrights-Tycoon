@@ -4352,6 +4352,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label(_governmentDeliveryActionMessage);
         }
 
+        DrawSuccessfulGovernmentContractsSummary();
+
         GUILayout.BeginHorizontal();
         GUI.enabled = activeContract is not null;
         if (GUILayout.Button("Notebook", GUILayout.Width(140f), GUILayout.Height(30f)))
@@ -4366,6 +4368,54 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         GUILayout.EndHorizontal();
+    }
+
+    private void DrawSuccessfulGovernmentContractsSummary()
+    {
+        if (_governmentContractBoard is null)
+        {
+            return;
+        }
+
+        var successfulCount = 0;
+        for (var index = 0; index < _governmentContractBoard.EvaluatedContracts.Count; index++)
+        {
+            var evaluated = _governmentContractBoard.EvaluatedContracts[index];
+            if (evaluated.EvaluationResult?.IsSuccess == true)
+            {
+                successfulCount++;
+            }
+        }
+
+        if (successfulCount == 0)
+        {
+            return;
+        }
+
+        DrawSection("Successful Government Contracts");
+        for (var index = _governmentContractBoard.EvaluatedContracts.Count - 1; index >= 0; index--)
+        {
+            var evaluated = _governmentContractBoard.EvaluatedContracts[index];
+            var evaluation = evaluated.EvaluationResult;
+            if (evaluation is null || !evaluation.IsSuccess)
+            {
+                continue;
+            }
+
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label($"{evaluated.ContractId} | SUCCESS");
+            GUILayout.Label($"Evaluated: {FormatSimulationDate(evaluation.EvaluatedOn)}");
+            if (evaluated.AcceptedSubmission is not null)
+            {
+                GUILayout.Label($"Aircraft: {evaluated.AcceptedSubmission.DisplayName}");
+                TryDrawAircraftPictureByDesignId(evaluated.AcceptedSubmission.DesignId, 140f, 84f);
+            }
+
+            DrawMetric("Final Probability", evaluation.FinalProbability * 100d, "0.00");
+            DrawMetric("Random Roll", evaluation.RandomRoll * 100d, "0.00");
+            DrawMetric("Bonus Probability", evaluation.BonusProbability * 100d, "0.00");
+            GUILayout.EndVertical();
+        }
     }
 
     private void DrawGovernmentContractsReport()
@@ -4515,33 +4565,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        DrawSection("Latest Evaluation");
-        if (_governmentContractBoard.EvaluatedContracts.Count == 0)
+        DrawSection("Latest Failed Evaluation");
+        var latestFailedEvaluation = FindLatestFailedGovernmentContractEvaluation();
+        if (latestFailedEvaluation is null)
         {
-            GUILayout.Label("No evaluated government contracts yet.");
+            GUILayout.Label("No failed government evaluations yet.");
         }
         else
         {
-            var latest = _governmentContractBoard.EvaluatedContracts[^1];
-            var evaluation = latest.EvaluationResult;
-            if (evaluation is not null)
-            {
-                GUILayout.BeginVertical(GUI.skin.box);
-                GUILayout.Label($"{latest.ContractId} | {(evaluation.IsSuccess ? "SUCCESS" : "FAILED")}");
-                DrawMetric("Final Probability", evaluation.FinalProbability * 100d, "0.00");
-                DrawMetric("Random Roll", evaluation.RandomRoll * 100d, "0.00");
-                DrawMetric("Bonus Probability", evaluation.BonusProbability * 100d, "0.00");
-                for (var index = 0; index < evaluation.ParameterBonuses.Count; index++)
-                {
-                    var parameterBonus = evaluation.ParameterBonuses[index];
-                    GUILayout.Label(
-                        $"{parameterBonus.Parameter}: required {FormatUiNumber(parameterBonus.RequiredValue, "0.###")}, " +
-                        $"actual {FormatUiNumber(parameterBonus.ActualValue, "0.###")}, " +
-                        $"bonus +{FormatUiNumber(parameterBonus.BonusValue * 100d, "0.00")}%");
-                }
-
-                GUILayout.EndVertical();
-            }
+            DrawGovernmentEvaluationDetails(latestFailedEvaluation);
         }
 
         DrawSection("Delivery Contracts");
@@ -4616,6 +4648,50 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 GUILayout.EndHorizontal();
             }
         }
+    }
+
+    private GovernmentContract? FindLatestFailedGovernmentContractEvaluation()
+    {
+        if (_governmentContractBoard is null)
+        {
+            return null;
+        }
+
+        for (var index = _governmentContractBoard.EvaluatedContracts.Count - 1; index >= 0; index--)
+        {
+            var evaluated = _governmentContractBoard.EvaluatedContracts[index];
+            if (evaluated.EvaluationResult?.IsSuccess == false)
+            {
+                return evaluated;
+            }
+        }
+
+        return null;
+    }
+
+    private void DrawGovernmentEvaluationDetails(GovernmentContract contract)
+    {
+        var evaluation = contract.EvaluationResult;
+        if (evaluation is null)
+        {
+            return;
+        }
+
+        GUILayout.BeginVertical(GUI.skin.box);
+        GUILayout.Label($"{contract.ContractId} | {(evaluation.IsSuccess ? "SUCCESS" : "FAILED")}");
+        DrawMetric("Final Probability", evaluation.FinalProbability * 100d, "0.00");
+        DrawMetric("Random Roll", evaluation.RandomRoll * 100d, "0.00");
+        DrawMetric("Bonus Probability", evaluation.BonusProbability * 100d, "0.00");
+        for (var index = 0; index < evaluation.ParameterBonuses.Count; index++)
+        {
+            var parameterBonus = evaluation.ParameterBonuses[index];
+            GUILayout.Label(
+                $"{parameterBonus.Parameter}: required {FormatUiNumber(parameterBonus.RequiredValue, "0.###")}, " +
+                $"actual {FormatUiNumber(parameterBonus.ActualValue, "0.###")}, " +
+                $"bonus +{FormatUiNumber(parameterBonus.BonusValue * 100d, "0.00")}%");
+        }
+
+        GUILayout.EndVertical();
     }
 
     private void ProcessGovernmentDelivery(string deliveryId, int requestedUnits)
@@ -4978,11 +5054,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     GUILayout.Label($"ID: {project.SubjectId}");
                 }
 
-                if (project.SubjectType == ResearchSubjectType.AircraftType
-                    && TryGetSavedAircraftDesignByTypeResearchId(project.SubjectId, out var ongoingTypeDesign))
-                {
-                    TryDrawAircraftPictureById(ongoingTypeDesign.AircraftPictureId, 220f, 130f);
-                }
+                TryDrawResearchProjectPreview(project, 220f, 130f);
 
                 GUILayout.EndVertical();
             }
@@ -5001,11 +5073,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             var project = completed[index];
             var displayName = ResolveResearchProjectDisplayName(project);
             GUILayout.BeginHorizontal(GUI.skin.box);
-            if (project.SubjectType == ResearchSubjectType.AircraftType
-                && TryGetSavedAircraftDesignByTypeResearchId(project.SubjectId, out var completedTypeDesign))
-            {
-                TryDrawAircraftPictureById(completedTypeDesign.AircraftPictureId, 80f, 52f);
-            }
+            TryDrawResearchProjectPreview(project, 80f, 52f);
 
             GUILayout.Label(GetResearchSubjectLabel(project.SubjectType), GUILayout.Width(120f));
             GUILayout.Label(displayName, GUILayout.Width(260f));
@@ -5046,11 +5114,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label($"{GetResearchNameFieldLabel(project.SubjectType)}: {displayName}");
             DrawMetric("Engineering Cost", project.ResearchCost, "0.00");
             DrawMetric("Engineering Time (months)", project.ResearchTimeMonths, "0");
-            if (project.SubjectType == ResearchSubjectType.AircraftType
-                && TryGetSavedAircraftDesignByTypeResearchId(project.SubjectId, out var proposalTypeDesign))
-            {
-                TryDrawAircraftPictureById(proposalTypeDesign.AircraftPictureId, 220f, 130f);
-            }
+            TryDrawResearchProjectPreview(project, 220f, 130f);
 
             if (IsFirstYearResearchApprovalWindow())
             {
@@ -6864,6 +6928,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return -1;
     }
 
+    private bool TryGetSavedEngineDesignByResearchId(string researchId, out SavedEngineDesign savedEngine)
+    {
+        var index = FindSavedEngineIndexByResearchId(researchId);
+        if (index >= 0 && index < _savedEngines.Count)
+        {
+            savedEngine = _savedEngines[index];
+            return true;
+        }
+
+        savedEngine = null!;
+        return false;
+    }
+
     private string ResolveSavedEngineDisplayNameForAircraftDesign(SavedAircraftDesign design)
     {
         if (design is null)
@@ -8047,6 +8124,36 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         texture = null!;
         return false;
+    }
+
+    private bool TryDrawResearchProjectPreview(ResearchProject project, float width, float height)
+    {
+        if (project.SubjectType == ResearchSubjectType.Engine
+            && TryGetSavedEngineDesignByResearchId(project.SubjectId, out var savedEngine))
+        {
+            return TryDrawEnginePreview(savedEngine, width, height);
+        }
+
+        if (project.SubjectType == ResearchSubjectType.AircraftType
+            && TryGetSavedAircraftDesignByTypeResearchId(project.SubjectId, out var savedDesign))
+        {
+            return TryDrawAircraftPictureById(savedDesign.AircraftPictureId, width, height);
+        }
+
+        return false;
+    }
+
+    private bool TryDrawEnginePreview(SavedEngineDesign savedEngine, float width, float height)
+    {
+        if (savedEngine is null)
+        {
+            return false;
+        }
+
+        var rect = GUILayoutUtility.GetRect(width, height, GUILayout.Width(width), GUILayout.Height(height));
+        var previewKind = GetEnginePreviewKind(savedEngine.Definition.EngineType, savedEngine.Parameters.BypassRatio);
+        EnginePreviewPainter.Draw(rect, previewKind);
+        return true;
     }
 
     private bool TryGetSavedAircraftDesignByDesignId(string designId, out SavedAircraftDesign savedDesign)

@@ -16,6 +16,10 @@ public static class EngineDesignerBalance
         public const int InlineCylinderMax = 8;
         public const double PistonCompressionMin = 3d;
         public const double PistonCompressionMax = 12d;
+        public const double PistonCompressionPowerFactorAtMax = 2d;
+        public const double PistonCompressionFuelSpecificConsumptionFactorAtMax = 0.80d;
+        public const double PistonVolumetricEfficiencyMin = 0.52d;
+        public const double PistonVolumetricEfficiencyMax = 2.2d;
         public const double PistonOptimizationMin = 0d;
         public const double PistonOptimizationMax = 10000d;
         public const double PistonSpeedMinRpm = 500d;

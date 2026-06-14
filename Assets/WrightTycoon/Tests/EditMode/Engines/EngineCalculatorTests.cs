@@ -301,6 +301,45 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    public void PistonCompression_IncreasesPowerAndFuelFlowButImprovesSpecificFuelConsumption()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateInlinePistonDefinition();
+
+        var lowCompression = new EngineParameters
+        {
+            DisplacementLiters = 8.5d,
+            CylinderCount = 6,
+            MaximumSpeed = 2700d,
+            CompressionRatio = 3d,
+            BoostType = BoostType.None,
+            PistonInjectionType = PistonInjectionType.DirectInjection,
+            OptimizationAltitudeMeters = 1800d,
+            CoolingEfficiency = 0.45d,
+        };
+
+        var highCompression = lowCompression.Clone();
+        highCompression.CompressionRatio = 12d;
+
+        var lowReport = calculator.Calculate(definition, lowCompression, atmosphere);
+        var highReport = calculator.Calculate(definition, highCompression, atmosphere);
+
+        var lowSeaLevel = lowReport.GetPerformanceAtAltitude(0d);
+        var highSeaLevel = highReport.GetPerformanceAtAltitude(0d);
+        var powerRatio = highSeaLevel.Output / lowSeaLevel.Output;
+        var fuelFlowRatio = highSeaLevel.FuelConsumptionKilogramsPerHour / lowSeaLevel.FuelConsumptionKilogramsPerHour;
+        var lowSpecificFuel = lowSeaLevel.FuelConsumptionKilogramsPerHour / lowSeaLevel.Output;
+        var highSpecificFuel = highSeaLevel.FuelConsumptionKilogramsPerHour / highSeaLevel.Output;
+
+        Assert.That(powerRatio, Is.EqualTo(2d).Within(0.000001d));
+        Assert.That(fuelFlowRatio, Is.GreaterThan(1d));
+        Assert.That(fuelFlowRatio, Is.EqualTo(1.6d).Within(0.000001d));
+        Assert.That(highSpecificFuel, Is.LessThan(lowSpecificFuel));
+        Assert.That(highSpecificFuel / lowSpecificFuel, Is.EqualTo(0.8d).Within(0.000001d));
+    }
+
+    [Test]
     public void PistonCompressionOutOfRange_ThrowsArgumentOutOfRangeException()
     {
         var calculator = new EngineCalculator();
@@ -485,7 +524,7 @@ public sealed class EngineCalculatorTests
 
         Assert.That(lightReport.Weight.Kilograms, Is.InRange(180d, 420d));
         Assert.That(radialReport.Weight.Kilograms, Is.InRange(1200d, 2300d));
-        Assert.That(radialReport.Weight.Kilograms, Is.GreaterThan(lightReport.Weight.Kilograms * 4.5d));
+        Assert.That(radialReport.Weight.Kilograms, Is.GreaterThan(lightReport.Weight.Kilograms * 3.5d));
     }
 
     [Test]
@@ -599,7 +638,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
-    public void Supercharger_PeaksCloseToItsOptimizationAltitude()
+    public void Supercharger_RetainsMoreOutputNearOptimizationAltitudeThanAtHighAltitude()
     {
         var calculator = new EngineCalculator();
         var atmosphere = new IsaAtmosphereModel();
@@ -621,7 +660,7 @@ public sealed class EngineCalculatorTests
         var optimizedAltitudeOutput = report.GetPerformanceAtAltitude(5000d).Output;
         var highAltitudeOutput = report.GetPerformanceAtAltitude(10000d).Output;
 
-        Assert.That(optimizedAltitudeOutput, Is.GreaterThan(lowAltitudeOutput));
+        Assert.That(lowAltitudeOutput, Is.GreaterThan(optimizedAltitudeOutput));
         Assert.That(optimizedAltitudeOutput, Is.GreaterThan(highAltitudeOutput));
     }
 

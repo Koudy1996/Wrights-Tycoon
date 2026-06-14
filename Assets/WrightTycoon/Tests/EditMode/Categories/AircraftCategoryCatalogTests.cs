@@ -37,16 +37,16 @@ public sealed class AircraftCategoryCatalogTests
     [Test]
     public void Profiles_ExposeRequestedGameplayModifiers()
     {
-        AssertModifier(AircraftCategory.LightSportAndRecreational, weight: 50d, speed: -20d, reliability: 0d, fuelMultiplier: 1d);
-        AssertModifier(AircraftCategory.LightMultiRolePiston, weight: 75d, speed: -10d, reliability: 0d, fuelMultiplier: 1d);
-        AssertModifier(AircraftCategory.TurbopropRegional, weight: 250d, speed: 0d, reliability: 0d, fuelMultiplier: 1d);
-        AssertModifier(AircraftCategory.RegionalJet, weight: 500d, speed: 0d, reliability: 0d, fuelMultiplier: 1d);
-        AssertModifier(AircraftCategory.MediumTransportNarrowBody, weight: 1000d, speed: 10d, reliability: 0.1d, fuelMultiplier: 0.97d);
-        AssertModifier(AircraftCategory.HeavyTransportWideBody, weight: 2500d, speed: 15d, reliability: 0.12d, fuelMultiplier: 0.95d);
-        AssertModifier(AircraftCategory.SpecialCivil, weight: 500d, speed: -20d, reliability: 0d, fuelMultiplier: 1d);
-        AssertModifier(AircraftCategory.BusinessVipJet, weight: 500d, speed: 5d, reliability: 0.1d, fuelMultiplier: 1d);
-        AssertModifier(AircraftCategory.MilitaryTactical, weight: 2000d, speed: 20d, reliability: -0.1d, fuelMultiplier: 1d);
-        AssertModifier(AircraftCategory.MilitaryStrategicSupport, weight: 4000d, speed: -15d, reliability: 0.12d, fuelMultiplier: 0.95d);
+        AssertModifier(AircraftCategory.LightSportAndRecreational, weight: -350d, speed: 0d, reliability: 0d, fuelMultiplier: 1.02d);
+        AssertModifier(AircraftCategory.LightMultiRolePiston, weight: 75d, speed: -6d, reliability: 0d, fuelMultiplier: 0.98d);
+        AssertModifier(AircraftCategory.TurbopropRegional, weight: 500d, speed: 0d, reliability: 0d, fuelMultiplier: 0.9d);
+        AssertModifier(AircraftCategory.RegionalJet, weight: 1500d, speed: 0d, reliability: 0d, fuelMultiplier: 0.88d);
+        AssertModifier(AircraftCategory.MediumTransportNarrowBody, weight: 3000d, speed: 6d, reliability: 0.1d, fuelMultiplier: 0.84d);
+        AssertModifier(AircraftCategory.HeavyTransportWideBody, weight: 5000d, speed: 8d, reliability: 0.12d, fuelMultiplier: 0.72d);
+        AssertModifier(AircraftCategory.SpecialCivil, weight: 2000d, speed: -8d, reliability: 0d, fuelMultiplier: 0.92d);
+        AssertModifier(AircraftCategory.BusinessVipJet, weight: 1500d, speed: 3d, reliability: 0.1d, fuelMultiplier: 0.8d);
+        AssertModifier(AircraftCategory.MilitaryTactical, weight: 3000d, speed: 45d, reliability: -0.1d, fuelMultiplier: 1.08d);
+        AssertModifier(AircraftCategory.MilitaryStrategicSupport, weight: 4000d, speed: -5d, reliability: 0.12d, fuelMultiplier: 0.78d);
     }
 
     private static void AssertModifier(

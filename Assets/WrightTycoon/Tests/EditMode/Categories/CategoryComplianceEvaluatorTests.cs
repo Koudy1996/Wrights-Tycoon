@@ -40,7 +40,7 @@ public sealed class CategoryComplianceEvaluatorTests
             crewCount: 4,
             speedAtSeaLevelMetersPerSecond: 50d,
             rangeKilometers: 1200d,
-            payloadKilograms: 100d,
+            payloadKilograms: 25d,
             totalWeightKilograms: 2000d);
 
         var result = evaluator.Evaluate(aircraft);

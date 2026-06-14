@@ -45,7 +45,8 @@ public sealed class GovernmentContractModuleTests
 
         var generator = new GovernmentContractGenerator(random, options);
         var generated = generator.Generate(new SimulationDate(2000, 1), contractSequence: 0);
-        var profile = AircraftCategoryCatalog.GetProfile(AircraftCategory.RegionalJet);
+        var generationYear = generated.GeneratedOn.Year;
+        var profile = AircraftCategoryCatalog.GetProfileForYear(AircraftCategory.RegionalJet, generationYear);
         var requirements = generated.Requirements;
 
         AssertThatWithinTopThird(
@@ -70,8 +71,8 @@ public sealed class GovernmentContractModuleTests
             tolerance: 0.1d);
         AssertThatWithinTopThird(
             requirements.MinimumReliability,
-            options.MinReliability,
-            options.MaxReliability,
+            TypeRequirementBalance.ScaleMinimumReliability(options.MinReliability, generationYear),
+            TypeRequirementBalance.ScaleMaximumReliability(options.MaxReliability, generationYear),
             tolerance: 0.001d);
         Assert.That(requirements.MinimumCrewSize, Is.InRange(
             (int)System.Math.Ceiling(LowerTopThird(profile.MinCrew, profile.MaxCrew)),
@@ -84,7 +85,7 @@ public sealed class GovernmentContractModuleTests
     public void Generator_CanSelectSecondRunwayOption_ForMultiTierCategories()
     {
         var random = new DeterministicRandomProvider();
-        random.EnqueueDoubles(0d, 0d, 0d, 0d, 0.75d);
+        random.EnqueueDoubles(0d, 0d, 0d, 0d, 0d, 0.75d);
 
         var generator = new GovernmentContractGenerator(
             random,

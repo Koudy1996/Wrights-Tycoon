@@ -329,7 +329,8 @@ public sealed class HistoricalCampaignServiceTests
         if (effects is null || effects.Length == 0)
         {
             return "        {\n" +
-                   "          \"type\": \"test_marker\"\n" +
+                   "          \"type\": \"technology_shift\",\n" +
+                   "          \"target\": \"test_marker\"\n" +
                    "        }";
         }
 

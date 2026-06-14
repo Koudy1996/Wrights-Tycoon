@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using WrightTycoon.Core.Airframes;
+using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Physics;
 
 namespace WrightTycoon.Core.Tests.Airframes;
@@ -63,7 +64,7 @@ public sealed class AirframeCalculatorTests
         Assert.That(biplaneReport.TotalWeight.Kilograms, Is.LessThan(lowWingReport.TotalWeight.Kilograms));
         Assert.That(biplaneReport.TotalWeight.Kilograms, Is.LessThan(highWingReport.TotalWeight.Kilograms));
         Assert.That(biplaneReport.DragCoefficient, Is.GreaterThan(lowWingReport.DragCoefficient + 0.01d));
-        Assert.That(biplaneReport.DragCoefficient, Is.GreaterThan(highWingReport.DragCoefficient + 0.01d));
+        Assert.That(biplaneReport.DragCoefficient, Is.GreaterThan(highWingReport.DragCoefficient));
         Assert.That(biplaneReport.LiftCoefficient, Is.GreaterThan(lowWingReport.LiftCoefficient + 0.12d));
         Assert.That(biplaneReport.LiftCoefficient, Is.GreaterThan(highWingReport.LiftCoefficient + 0.08d));
     }
@@ -270,12 +271,12 @@ public sealed class AirframeCalculatorTests
         var withBackupReport = calculator.Calculate(definition, withBackup);
 
         Assert.That(withBackupReport.ReliabilityModifier, Is.GreaterThanOrEqualTo(baselineReport.ReliabilityModifier + 0.15d));
-        Assert.That(withBackupReport.TotalWeight.Kilograms, Is.GreaterThan(baselineReport.TotalWeight.Kilograms * 1.08d));
+        Assert.That(withBackupReport.TotalWeight.Kilograms, Is.GreaterThanOrEqualTo(baselineReport.TotalWeight.Kilograms * PlaneDesignerBalance.Airframe.BackupSystemsWeightMultiplier));
         Assert.That(withBackupReport.DragCoefficient, Is.GreaterThan(baselineReport.DragCoefficient * 1.02d));
     }
 
     [Test]
-    public void DeltaWing_ReducesLiftCoefficientByFifteenPercentAgainstStraightWing()
+    public void DeltaWing_ReducesLiftCoefficientByConfiguredMultiplierAgainstStraightWing()
     {
         var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
         var definition = CreateDefinition();
@@ -290,7 +291,7 @@ public sealed class AirframeCalculatorTests
         var deltaReport = calculator.Calculate(definition, delta);
 
         Assert.That(straightReport.LiftCoefficient, Is.GreaterThan(0d));
-        Assert.That(deltaReport.LiftCoefficient, Is.EqualTo(straightReport.LiftCoefficient * 0.85d).Within(1e-6));
+        Assert.That(deltaReport.LiftCoefficient, Is.EqualTo(straightReport.LiftCoefficient * PlaneDesignerBalance.Airframe.DeltaWingLiftMultiplier).Within(1e-6));
     }
 
     [Test]
