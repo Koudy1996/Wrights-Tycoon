@@ -8730,7 +8730,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         };
     }
 
-    private AircraftTypeDefinition BuildType(string familyId, TypeResearchModifierPoints? researchModifiers = null)
+    private AircraftTypeDefinition BuildType(
+        string familyId,
+        TypeResearchModifierPoints? researchModifiers = null,
+        double? wingAreaSquareMetersOverride = null)
     {
         return new AircraftTypeDefinition
         {
@@ -8739,14 +8742,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DisplayName = BuildTypeDisplayName(),
             RequiredLineToolLevel = 1,
             EngineDelta = new EngineParameterDelta(),
-            AirframeDelta = BuildAirframeDeltaFromType(),
+            AirframeDelta = BuildAirframeDeltaFromType(wingAreaSquareMetersOverride),
             ResearchModifiers = (researchModifiers ?? new TypeResearchModifierPoints()).Clone(),
         };
     }
 
-    private AirframeParameterDelta BuildAirframeDeltaFromType()
+    private AirframeParameterDelta BuildAirframeDeltaFromType(double? wingAreaSquareMetersOverride = null)
     {
-        var wingAreaDelta = _typeWingAreaSquareMeters - _baseAirframeParameters.WingAreaSquareMeters;
+        var wingAreaSquareMeters = wingAreaSquareMetersOverride ?? _typeWingAreaSquareMeters;
+        var wingAreaDelta = wingAreaSquareMeters - _baseAirframeParameters.WingAreaSquareMeters;
         var fuelDelta = _typeFuelLiters - _baseAirframeParameters.FuelAmountLiters;
         var cowlingDelta = _typeCowling - _baseAirframeParameters.EngineCowling;
         var aerodynamicCleanlinessDelta = _typeAerodynamicCleanlinessPercent - _baseAirframeParameters.AerodynamicCleanlinessPercent;
@@ -9962,6 +9966,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (optimizeClicked)
         {
+            _typeWingAreaSquareMeters = currentValue;
             if (optimizeForPayloadLimit)
             {
                 FindSmallestWingAreaForPayloadLimit(min, max);
@@ -10397,21 +10402,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 return false;
             }
 
-            var previousWingArea = _typeWingAreaSquareMeters;
-            _typeWingAreaSquareMeters = wingAreaSquareMeters;
-            try
-            {
-                var family = _typeVersionDevelopment is not null
-                    ? _typeVersionDevelopment.SourceFamilyDefinition
-                    : BuildFamily(savedEngine);
-                var type = BuildType(family.Id);
-                aircraft = _aircraftFactory.CreateAircraft(family, type);
-                return true;
-            }
-            finally
-            {
-                _typeWingAreaSquareMeters = previousWingArea;
-            }
+            var family = _typeVersionDevelopment is not null
+                ? _typeVersionDevelopment.SourceFamilyDefinition
+                : BuildFamily(savedEngine);
+            var type = BuildType(family.Id, wingAreaSquareMetersOverride: wingAreaSquareMeters);
+            aircraft = _aircraftFactory.CreateAircraft(family, type);
+            return true;
         }
         catch (Exception ex)
         {
