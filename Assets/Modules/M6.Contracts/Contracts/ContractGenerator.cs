@@ -209,7 +209,7 @@ public sealed class ContractGenerator : IContractGenerator
             }
         }
 
-        return new ContractRequirements
+        return ApplyCategoryMinimumFallbacks(new ContractRequirements
         {
             RequiredCategory = category,
             MinimumReliability = reliability,
@@ -221,6 +221,26 @@ public sealed class ContractGenerator : IContractGenerator
             MinimumCrew = crew,
             MaximumRequiredRunwayLengthMeters = maximumRunwayLengthMeters,
             MaximumFuelConsumptionKilogramsPerHour = maximumFuelConsumption,
+        }, categoryProfile);
+    }
+
+    private static ContractRequirements ApplyCategoryMinimumFallbacks(
+        ContractRequirements requirements,
+        AircraftCategoryProfile categoryProfile)
+    {
+        return new ContractRequirements
+        {
+            RequiredCategory = requirements.RequiredCategory,
+            MinimumReliability = requirements.MinimumReliability,
+            MaximumTotalWeightKilograms = requirements.MaximumTotalWeightKilograms,
+            MinimumRangeKilometers = requirements.MinimumRangeKilometers ?? categoryProfile.MinRequiredRangeKilometers,
+            MinimumSpeed = requirements.MinimumSpeed
+                ?? new ContractSpeedRequirement(0d, categoryProfile.MinRequiredSpeedMetersPerSecond),
+            MinimumPayloadKilograms = requirements.MinimumPayloadKilograms ?? categoryProfile.MinRequiredPayloadKilograms,
+            MinimumManeuverability = requirements.MinimumManeuverability ?? categoryProfile.MinRequiredManeuverability,
+            MinimumCrew = requirements.MinimumCrew ?? categoryProfile.MinCrew,
+            MaximumRequiredRunwayLengthMeters = requirements.MaximumRequiredRunwayLengthMeters,
+            MaximumFuelConsumptionKilogramsPerHour = requirements.MaximumFuelConsumptionKilogramsPerHour,
         };
     }
 

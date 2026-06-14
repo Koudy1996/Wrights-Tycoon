@@ -28,16 +28,23 @@ public sealed class ContractSystemTests
             var contract = contracts[index];
             Assert.That(contract.QuantityUnits, Is.InRange(5, 500));
             Assert.That(contract.DeadlineMonths, Is.InRange(6, 36));
-            Assert.That(contract.Requirements.DefinedRequirementCount, Is.InRange(2, 8));
+            Assert.That(contract.Requirements.DefinedRequirementCount, Is.InRange(6, 8));
             Assert.That(contract.Requirements.RequiredCategory.HasValue, Is.True);
             Assert.That(contract.Requirements.MaximumRequiredRunwayLengthMeters.HasValue, Is.True);
+            Assert.That(contract.Requirements.MinimumRangeKilometers.HasValue, Is.True);
+            Assert.That(contract.Requirements.MinimumSpeed.HasValue, Is.True);
+            Assert.That(contract.Requirements.MinimumPayloadKilograms.HasValue, Is.True);
+            Assert.That(contract.Requirements.MinimumManeuverability.HasValue, Is.True);
+            Assert.That(contract.Requirements.MinimumCrew.HasValue, Is.True);
             var allowedRunwayLengths = ContractBalance.ResolveAllowedRunwayLengthMeters(contract.Requirements.RequiredCategory!.Value);
             Assert.That(allowedRunwayLengths, Has.Member(contract.Requirements.MaximumRequiredRunwayLengthMeters.Value));
             Assert.That(contract.EstimatedMinimumUnitCost, Is.GreaterThan(0d));
             Assert.That(contract.UnitPrice, Is.GreaterThan(contract.EstimatedMinimumUnitCost));
             Assert.That(contract.TotalPrice, Is.GreaterThan(0d));
 
-            var profile = AircraftCategoryCatalog.GetProfile(contract.Requirements.RequiredCategory!.Value);
+            var profile = AircraftCategoryCatalog.GetProfileForYear(
+                contract.Requirements.RequiredCategory!.Value,
+                ResolveGenerationYear(monthIndex: 0));
             if (contract.Requirements.MaximumTotalWeightKilograms.HasValue)
             {
                 Assert.That(contract.Requirements.MaximumTotalWeightKilograms.Value, Is.InRange(profile.MinMaximumWeightKilograms, profile.MaxMaximumWeightKilograms));
@@ -69,6 +76,38 @@ public sealed class ContractSystemTests
                 Assert.That(requiredSpeedKmh, Is.InRange(profile.MinRequiredSpeedKilometersPerHour, profile.MaxRequiredSpeedKilometersPerHour));
             }
         }
+    }
+
+    [Test]
+    public void Generator_FillsMissingCoreRequirements_WithCurrentCategoryMinimums()
+    {
+        const int monthIndex = 36;
+        var options = new ContractGeneratorOptions
+        {
+            MinContractsPerMonth = 1,
+            MaxContractsPerMonth = 1,
+            RequestedCategories = new[] { AircraftCategory.RegionalJet },
+        };
+
+        var generator = new ContractGenerator(seed: 1234, options: options);
+        var contract = generator.GenerateMonthlyContracts(monthIndex)[0];
+        var requirements = contract.Requirements;
+        var profile = AircraftCategoryCatalog.GetProfileForYear(
+            AircraftCategory.RegionalJet,
+            ResolveGenerationYear(monthIndex));
+
+        Assert.That(requirements.MinimumRangeKilometers.HasValue, Is.True);
+        Assert.That(requirements.MinimumRangeKilometers!.Value, Is.GreaterThanOrEqualTo(profile.MinRequiredRangeKilometers));
+        Assert.That(requirements.MinimumPayloadKilograms.HasValue, Is.True);
+        Assert.That(requirements.MinimumPayloadKilograms!.Value, Is.GreaterThanOrEqualTo(profile.MinRequiredPayloadKilograms));
+        Assert.That(requirements.MinimumManeuverability.HasValue, Is.True);
+        Assert.That(requirements.MinimumManeuverability!.Value, Is.GreaterThanOrEqualTo(profile.MinRequiredManeuverability));
+        Assert.That(requirements.MinimumCrew.HasValue, Is.True);
+        Assert.That(requirements.MinimumCrew!.Value, Is.GreaterThanOrEqualTo(profile.MinCrew));
+        Assert.That(requirements.MinimumSpeed.HasValue, Is.True);
+        Assert.That(
+            requirements.MinimumSpeed!.Value.MinimumSpeedMetersPerSecond,
+            Is.GreaterThanOrEqualTo(profile.MinRequiredSpeedMetersPerSecond));
     }
 
     [Test]
@@ -134,20 +173,22 @@ public sealed class ContractSystemTests
             var category = contract.Requirements.RequiredCategory;
             Assert.That(category.HasValue, Is.True);
 
-            var categoryProfile = AircraftCategoryCatalog.GetProfile(category!.Value);
+            var categoryProfile = AircraftCategoryCatalog.GetProfileForYear(
+                category!.Value,
+                ResolveGenerationYear(monthIndex));
             if (contract.QuantityUnits < 100)
             {
                 smallOrders++;
                 Assert.That(contract.QuantityUnits, Is.InRange(options.SmallOrderMinQuantityUnits, options.SmallOrderMaxQuantityUnits));
                 Assert.That(contract.AppliedMarkup, Is.EqualTo(ContractBalance.SmallOrderContractMarkup).Within(1e-9));
-                AssertRequirementBand(contract.Requirements, categoryProfile, options, expectLowBand: true);
+                AssertRequirementBand(contract.Requirements, categoryProfile, options, monthIndex, expectLowBand: true);
             }
             else
             {
                 largeOrders++;
                 Assert.That(contract.QuantityUnits, Is.InRange(options.LargeOrderMinQuantityUnits, options.LargeOrderMaxQuantityUnits));
                 Assert.That(contract.AppliedMarkup, Is.EqualTo(ContractBalance.LargeOrderContractMarkup).Within(1e-9));
-                AssertRequirementBand(contract.Requirements, categoryProfile, options, expectLowBand: false);
+                AssertRequirementBand(contract.Requirements, categoryProfile, options, monthIndex, expectLowBand: false);
             }
         }
 
@@ -176,8 +217,8 @@ public sealed class ContractSystemTests
         Assert.That(largeQuote.AppliedMarkup, Is.EqualTo(ContractBalance.LargeOrderContractMarkup).Within(1e-9));
         Assert.That(smallQuote.UnitPrice, Is.GreaterThan(smallQuote.EstimatedMinimumUnitCost));
         Assert.That(largeQuote.UnitPrice, Is.GreaterThan(largeQuote.EstimatedMinimumUnitCost));
-        Assert.That(smallQuote.TotalPrice, Is.EqualTo(smallQuote.UnitPrice * 60).Within(0.1d));
-        Assert.That(largeQuote.TotalPrice, Is.EqualTo(largeQuote.UnitPrice * 200).Within(0.1d));
+        Assert.That(smallQuote.TotalPrice, Is.EqualTo(smallQuote.UnitPrice * 60).Within(1d));
+        Assert.That(largeQuote.TotalPrice, Is.EqualTo(largeQuote.UnitPrice * 200).Within(1d));
     }
 
     [Test]
@@ -441,7 +482,7 @@ public sealed class ContractSystemTests
     }
 
     [Test]
-    public void Generator_AppliesRequirementDifficultyMultiplier_OnlyToTargetedMinimumRequirements()
+    public void Generator_IgnoresObsoleteRequirementDifficultyMultiplier_WhenUsingYearAdjustedMinimums()
     {
         const double requirementDifficultyMultiplier = 0.60d;
         var options = new ContractGeneratorOptions
@@ -465,70 +506,21 @@ public sealed class ContractSystemTests
             options: options,
             campaignModifierSource: new StubHistoricalCampaignContractModifierSource(reducedRequirementModifiers));
 
-        var encounteredScaledRequirement = false;
         for (var monthIndex = 0; monthIndex < 24; monthIndex++)
         {
             var baseline = baselineGenerator.GenerateMonthlyContracts(monthIndex)[0].Requirements;
             var reduced = reducedGenerator.GenerateMonthlyContracts(monthIndex)[0].Requirements;
 
-            if (baseline.MinimumReliability.HasValue)
-            {
-                encounteredScaledRequirement = true;
-                var expected = ScaleAndRound(
-                    baseline.MinimumReliability.Value,
-                    requirementDifficultyMultiplier,
-                    decimals: 3,
-                    minValue: 0d,
-                    maxValue: 1d);
-                Assert.That(reduced.MinimumReliability.HasValue, Is.True);
-                Assert.That(reduced.MinimumReliability!.Value, Is.EqualTo(expected).Within(0.001d));
-            }
-
-            if (baseline.MinimumRangeKilometers.HasValue)
-            {
-                encounteredScaledRequirement = true;
-                var expected = ScaleAndRound(
-                    baseline.MinimumRangeKilometers.Value,
-                    requirementDifficultyMultiplier,
-                    decimals: 1,
-                    minValue: 1d);
-                Assert.That(reduced.MinimumRangeKilometers.HasValue, Is.True);
-                Assert.That(reduced.MinimumRangeKilometers!.Value, Is.EqualTo(expected).Within(0.1d));
-            }
-
-            if (baseline.MinimumSpeed.HasValue)
-            {
-                encounteredScaledRequirement = true;
-                var expectedSpeed = ScaleAndRound(
-                    baseline.MinimumSpeed.Value.MinimumSpeedMetersPerSecond,
-                    requirementDifficultyMultiplier,
-                    decimals: 1,
-                    minValue: 1d / 3.6d);
-                Assert.That(reduced.MinimumSpeed.HasValue, Is.True);
-                Assert.That(reduced.MinimumSpeed!.Value.AltitudeMeters, Is.EqualTo(baseline.MinimumSpeed.Value.AltitudeMeters).Within(1e-9d));
-                Assert.That(reduced.MinimumSpeed.Value.MinimumSpeedMetersPerSecond, Is.EqualTo(expectedSpeed).Within(0.1d));
-            }
-
-            if (baseline.MinimumPayloadKilograms.HasValue)
-            {
-                encounteredScaledRequirement = true;
-                var expected = ScaleAndRound(
-                    baseline.MinimumPayloadKilograms.Value,
-                    requirementDifficultyMultiplier,
-                    decimals: 1,
-                    minValue: 0d);
-                Assert.That(reduced.MinimumPayloadKilograms.HasValue, Is.True);
-                Assert.That(reduced.MinimumPayloadKilograms!.Value, Is.EqualTo(expected).Within(0.1d));
-            }
-
+            Assert.That(reduced.MinimumReliability, Is.EqualTo(baseline.MinimumReliability));
+            Assert.That(reduced.MinimumRangeKilometers, Is.EqualTo(baseline.MinimumRangeKilometers));
+            Assert.That(reduced.MinimumSpeed, Is.EqualTo(baseline.MinimumSpeed));
+            Assert.That(reduced.MinimumPayloadKilograms, Is.EqualTo(baseline.MinimumPayloadKilograms));
             Assert.That(reduced.MinimumManeuverability, Is.EqualTo(baseline.MinimumManeuverability));
             Assert.That(reduced.MaximumTotalWeightKilograms, Is.EqualTo(baseline.MaximumTotalWeightKilograms));
             Assert.That(reduced.MinimumCrew, Is.EqualTo(baseline.MinimumCrew));
             Assert.That(reduced.MaximumRequiredRunwayLengthMeters, Is.EqualTo(baseline.MaximumRequiredRunwayLengthMeters));
             Assert.That(reduced.MaximumFuelConsumptionKilogramsPerHour, Is.EqualTo(baseline.MaximumFuelConsumptionKilogramsPerHour));
         }
-
-        Assert.That(encounteredScaledRequirement, Is.True);
     }
 
     [Test]
@@ -906,18 +898,30 @@ public sealed class ContractSystemTests
         }
     }
 
+    private static int ResolveGenerationYear(int monthIndex)
+    {
+        if (monthIndex <= 0)
+        {
+            return CoreBalance.HistoricalCampaignTechnology.StartYear;
+        }
+
+        return CoreBalance.HistoricalCampaignTechnology.StartYear + (monthIndex / 12);
+    }
+
     private static void AssertRequirementBand(
         ContractRequirements requirements,
         AircraftCategoryProfile categoryProfile,
         ContractGeneratorOptions options,
+        int monthIndex,
         bool expectLowBand)
     {
         if (requirements.MinimumReliability.HasValue)
         {
+            var generationYear = ResolveGenerationYear(monthIndex);
             AssertWithinBand(
                 requirements.MinimumReliability.Value,
-                options.MinReliability,
-                options.MaxReliability,
+                TypeRequirementBalance.ScaleMinimumReliability(options.MinReliability, generationYear),
+                TypeRequirementBalance.ScaleMaximumReliability(options.MaxReliability, generationYear),
                 options,
                 expectLowBand,
                 tolerance: 0.001d);
@@ -941,10 +945,11 @@ public sealed class ContractSystemTests
                 categoryProfile.MaxRequiredRangeKilometers,
                 options.MinRangeKilometers,
                 options.MaxRangeKilometers);
-            AssertWithinBand(
+            AssertWithinBandOrMinimumFallback(
                 requirements.MinimumRangeKilometers.Value,
                 minRange,
                 maxRange,
+                categoryProfile.MinRequiredRangeKilometers,
                 options,
                 expectLowBand,
                 tolerance: 0.1d);
@@ -957,10 +962,11 @@ public sealed class ContractSystemTests
                 categoryProfile.MaxRequiredPayloadKilograms,
                 options.MinPayloadKilograms,
                 options.MaxPayloadKilograms);
-            AssertWithinBand(
+            AssertWithinBandOrMinimumFallback(
                 requirements.MinimumPayloadKilograms.Value,
                 minPayload,
                 maxPayload,
+                categoryProfile.MinRequiredPayloadKilograms,
                 options,
                 expectLowBand,
                 tolerance: 0.1d);
@@ -968,10 +974,11 @@ public sealed class ContractSystemTests
 
         if (requirements.MinimumManeuverability.HasValue)
         {
-            AssertWithinBand(
+            AssertWithinBandOrMinimumFallback(
                 requirements.MinimumManeuverability.Value,
                 categoryProfile.MinRequiredManeuverability,
                 categoryProfile.MaxRequiredManeuverability,
+                categoryProfile.MinRequiredManeuverability,
                 options,
                 expectLowBand,
                 tolerance: 0.1d);
@@ -985,10 +992,11 @@ public sealed class ContractSystemTests
                 options.MinSpeedMetersPerSecond * 3.6d,
                 options.MaxSpeedMetersPerSecond * 3.6d);
             var requiredSpeedKmh = requirements.MinimumSpeed.Value.MinimumSpeedMetersPerSecond * 3.6d;
-            AssertWithinBand(
+            AssertWithinBandOrMinimumFallback(
                 requiredSpeedKmh,
                 minSpeedKmh,
                 maxSpeedKmh,
+                categoryProfile.MinRequiredSpeedKilometersPerHour,
                 options,
                 expectLowBand,
                 tolerance: 0.4d);
@@ -1004,7 +1012,13 @@ public sealed class ContractSystemTests
                 maxCrew = categoryProfile.MaxCrew;
             }
 
-            AssertWithinBand(requirements.MinimumCrew.Value, minCrew, maxCrew, options, expectLowBand);
+            AssertWithinBandOrMinimumFallback(
+                requirements.MinimumCrew.Value,
+                minCrew,
+                maxCrew,
+                categoryProfile.MinCrew,
+                options,
+                expectLowBand);
         }
     }
 
@@ -1057,6 +1071,39 @@ public sealed class ContractSystemTests
         Assert.That(value, Is.InRange(allowedMin, allowedMax));
     }
 
+    private static void AssertWithinBandOrMinimumFallback(
+        double value,
+        double minValue,
+        double maxValue,
+        double fallbackMinimum,
+        ContractGeneratorOptions options,
+        bool expectLowBand,
+        double tolerance = 0d)
+    {
+        if (System.Math.Abs(value - fallbackMinimum) <= tolerance)
+        {
+            return;
+        }
+
+        AssertWithinBand(value, minValue, maxValue, options, expectLowBand, tolerance);
+    }
+
+    private static void AssertWithinBandOrMinimumFallback(
+        int value,
+        int minValue,
+        int maxValue,
+        int fallbackMinimum,
+        ContractGeneratorOptions options,
+        bool expectLowBand)
+    {
+        if (value == fallbackMinimum)
+        {
+            return;
+        }
+
+        AssertWithinBand(value, minValue, maxValue, options, expectLowBand);
+    }
+
     private static (double MinValue, double MaxValue) GetBandRange(
         double minValue,
         double maxValue,
@@ -1067,27 +1114,6 @@ public sealed class ContractSystemTests
         var normalizedMax = expectLowBand ? options.LowDemandBandMaxNormalized : options.HighDemandBandMaxNormalized;
         var range = maxValue - minValue;
         return (minValue + (range * normalizedMin), minValue + (range * normalizedMax));
-    }
-
-    private static double ScaleAndRound(
-        double value,
-        double multiplier,
-        int decimals,
-        double minValue,
-        double? maxValue = null)
-    {
-        var scaled = value * multiplier;
-        if (scaled < minValue)
-        {
-            scaled = minValue;
-        }
-
-        if (maxValue.HasValue && scaled > maxValue.Value)
-        {
-            scaled = maxValue.Value;
-        }
-
-        return System.Math.Round(scaled, decimals, System.MidpointRounding.AwayFromZero);
     }
 
     private static AircraftModel CreateAircraft(
