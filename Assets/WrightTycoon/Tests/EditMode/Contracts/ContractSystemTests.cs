@@ -222,6 +222,31 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    public void PricingCalculator_AppliesCommercialRunwayPriceMultiplier_ExceptLightSport()
+    {
+        Assert.That(
+            ContractBalance.ResolveCommercialRunwayPriceMultiplier(
+                AircraftCategory.RegionalJet,
+                PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters),
+            Is.EqualTo(ContractBalance.MediumRunwayContractPriceMultiplier).Within(1e-9d));
+        Assert.That(
+            ContractBalance.ResolveCommercialRunwayPriceMultiplier(
+                AircraftCategory.RegionalJet,
+                PlaneDesignerBalance.Airframe.RunwayShortLengthMeters),
+            Is.EqualTo(ContractBalance.ShortRunwayContractPriceMultiplier).Within(1e-9d));
+        Assert.That(
+            ContractBalance.ResolveCommercialRunwayPriceMultiplier(
+                AircraftCategory.RegionalJet,
+                PlaneDesignerBalance.Airframe.RunwayLongLengthMeters),
+            Is.EqualTo(1d).Within(1e-9d));
+        Assert.That(
+            ContractBalance.ResolveCommercialRunwayPriceMultiplier(
+                AircraftCategory.LightSportAndRecreational,
+                PlaneDesignerBalance.Airframe.RunwayShortLengthMeters),
+            Is.EqualTo(1d).Within(1e-9d));
+    }
+
+    [Test]
     public void PricingCalculator_AppliesCampaignPriceMultiplierToMilitaryContracts()
     {
         var boostedModifiers = new HistoricalCampaignContractModifiers();

@@ -102,6 +102,31 @@ public sealed class GovernmentContractModuleTests
     }
 
     [Test]
+    public void PricingService_AppliesGovernmentRunwayPriceMultiplier_ExceptLightSport()
+    {
+        Assert.That(
+            GovernmentContractBalance.ResolveRunwayPriceMultiplier(
+                AircraftCategory.RegionalJet,
+                PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters),
+            Is.EqualTo(GovernmentContractBalance.MediumRunwayPriceMultiplier).Within(1e-9d));
+        Assert.That(
+            GovernmentContractBalance.ResolveRunwayPriceMultiplier(
+                AircraftCategory.RegionalJet,
+                PlaneDesignerBalance.Airframe.RunwayShortLengthMeters),
+            Is.EqualTo(GovernmentContractBalance.ShortRunwayPriceMultiplier).Within(1e-9d));
+        Assert.That(
+            GovernmentContractBalance.ResolveRunwayPriceMultiplier(
+                AircraftCategory.RegionalJet,
+                PlaneDesignerBalance.Airframe.RunwayLongLengthMeters),
+            Is.EqualTo(1d).Within(1e-9d));
+        Assert.That(
+            GovernmentContractBalance.ResolveRunwayPriceMultiplier(
+                AircraftCategory.LightSportAndRecreational,
+                PlaneDesignerBalance.Airframe.RunwayShortLengthMeters),
+            Is.EqualTo(1d).Within(1e-9d));
+    }
+
+    [Test]
     public void Generator_BlocksWideBodyBeforeIntroductionYear_AndAllowsItAfterward()
     {
         var random = new DeterministicRandomProvider();

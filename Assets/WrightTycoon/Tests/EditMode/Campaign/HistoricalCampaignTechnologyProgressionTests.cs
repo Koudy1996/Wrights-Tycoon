@@ -37,7 +37,7 @@ public sealed class HistoricalCampaignTechnologyProgressionTests
         Assert.That(first.PistonEnginePerformanceMultiplier, Is.EqualTo(0.895d).Within(1e-9d));
         Assert.That(first.AirframeEfficiencyMultiplier, Is.EqualTo(0.825d).Within(1e-9d));
         Assert.That(first.AerodynamicsEfficiencyMultiplier, Is.EqualTo(0.825d).Within(1e-9d));
-        Assert.That(first.FuelEfficiencyMultiplier, Is.EqualTo(0.63d).Within(1e-9d));
+        Assert.That(first.FuelEfficiencyMultiplier, Is.EqualTo(0.704d).Within(1e-9d));
         Assert.That(first.PistonFuelEfficiencyMultiplier, Is.EqualTo(0.845d).Within(1e-9d));
     }
 
@@ -53,7 +53,7 @@ public sealed class HistoricalCampaignTechnologyProgressionTests
         Assert.That(beforeRange.PistonEnginePerformanceMultiplier, Is.EqualTo(0.85d).Within(1e-9d));
         Assert.That(beforeRange.AirframeEfficiencyMultiplier, Is.EqualTo(0.78d).Within(1e-9d));
         Assert.That(beforeRange.AerodynamicsEfficiencyMultiplier, Is.EqualTo(0.78d).Within(1e-9d));
-        Assert.That(beforeRange.FuelEfficiencyMultiplier, Is.EqualTo(0.50d).Within(1e-9d));
+        Assert.That(beforeRange.FuelEfficiencyMultiplier, Is.EqualTo(0.60d).Within(1e-9d));
         Assert.That(beforeRange.PistonFuelEfficiencyMultiplier, Is.EqualTo(0.80d).Within(1e-9d));
 
         Assert.That(afterRange.EnginePerformanceMultiplier, Is.EqualTo(1d).Within(1e-9d));

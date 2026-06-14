@@ -31,7 +31,10 @@ public sealed class ContractPricingCalculator
 
         requirements.Validate();
 
-        var estimatedMinimumUnitCost = EstimateMinimumUnitProductionCost(requirements);
+        var runwayPriceMultiplier = ContractBalance.ResolveCommercialRunwayPriceMultiplier(
+            requirements.RequiredCategory,
+            requirements.MaximumRequiredRunwayLengthMeters);
+        var estimatedMinimumUnitCost = EstimateMinimumUnitProductionCost(requirements) * runwayPriceMultiplier;
         var markup = quantityUnits < ContractBalance.LargeOrderMinQuantityUnits
             ? ContractBalance.SmallOrderContractMarkup
             : ContractBalance.LargeOrderContractMarkup;

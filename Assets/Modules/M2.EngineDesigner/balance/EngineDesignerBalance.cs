@@ -202,14 +202,14 @@ public static class EngineDesignerBalance
 
         public static readonly IReadOnlyList<YearlyBalancePoint> FuelEfficiencyCurve = Array.AsReadOnly(new[]
         {
-            new YearlyBalancePoint(1946, 0.50d),
-            new YearlyBalancePoint(1955, 0.58d),
-            new YearlyBalancePoint(1965, 0.68d),
-            new YearlyBalancePoint(1975, 0.77d),
-            new YearlyBalancePoint(1985, 0.85d),
-            new YearlyBalancePoint(1995, 0.91d),
-            new YearlyBalancePoint(2005, 0.96d),
-            new YearlyBalancePoint(2015, 0.99d),
+            new YearlyBalancePoint(1946, 0.60d),
+            new YearlyBalancePoint(1955, 0.664d),
+            new YearlyBalancePoint(1965, 0.744d),
+            new YearlyBalancePoint(1975, 0.816d),
+            new YearlyBalancePoint(1985, 0.88d),
+            new YearlyBalancePoint(1995, 0.928d),
+            new YearlyBalancePoint(2005, 0.968d),
+            new YearlyBalancePoint(2015, 0.992d),
             new YearlyBalancePoint(2020, 1.0d),
         });
     }

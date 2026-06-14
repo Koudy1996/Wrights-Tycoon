@@ -77,6 +77,8 @@ public static class ContractBalance
     public const double SmallOrderContractMarkup = 0.30d;
     public const double LargeOrderContractMarkup = 0.25d;
     public const double CampaignAdjustedMarkupFloor = 0.02d;
+    public const double MediumRunwayContractPriceMultiplier = 1.05d;
+    public const double ShortRunwayContractPriceMultiplier = 1.10d;
     public const int CampaignWeightedCategoryPoolBaseCopies = 4;
     public const int CampaignWeightedCategoryPoolMinimumCopies = 1;
     public const int CampaignWeightedCategoryPoolMaximumCopies = 12;
@@ -236,6 +238,30 @@ public static class ContractBalance
 
     public static double ResolveRequiredRunwayLengthMeters(AircraftCategory category) =>
         ResolveRequiredRunwayLengthMeters(category, runwayOptionRoll: 0d);
+
+    public static double ResolveCommercialRunwayPriceMultiplier(
+        AircraftCategory? category,
+        double? maximumRequiredRunwayLengthMeters)
+    {
+        if (!maximumRequiredRunwayLengthMeters.HasValue
+            || category == AircraftCategory.LightSportAndRecreational)
+        {
+            return 1d;
+        }
+
+        var runwayLength = maximumRequiredRunwayLengthMeters.Value;
+        if (runwayLength <= PlaneDesignerBalance.Airframe.RunwayShortLengthMeters)
+        {
+            return ShortRunwayContractPriceMultiplier;
+        }
+
+        if (runwayLength <= PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters)
+        {
+            return MediumRunwayContractPriceMultiplier;
+        }
+
+        return 1d;
+    }
 
     public static double ResolveRequiredRunwayLengthMeters(AircraftCategory category, double runwayOptionRoll)
     {

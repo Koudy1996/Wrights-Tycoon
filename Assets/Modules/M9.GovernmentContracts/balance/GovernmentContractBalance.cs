@@ -1,3 +1,5 @@
+using WrightTycoon.Core.Categories;
+
 namespace WrightTycoon.Core.Balance;
 
 // M9 tuning surface for annual government contracts.
@@ -19,9 +21,33 @@ public static class GovernmentContractBalance
     public const double DeliveryCompletionBonusShare = 0.10d;
 
     public const double PricingMargin = 0.35d;
+    public const double MediumRunwayPriceMultiplier = 1.10d;
+    public const double ShortRunwayPriceMultiplier = 1.25d;
     public const double TopThirdLowerBoundFactor = 0.66d;
 
     public const double SpeedAltitudeLowMeters = 0d;
     public const double SpeedAltitudeMediumMeters = 5000d;
     public const double SpeedAltitudeHighMeters = 10000d;
+
+    public static double ResolveRunwayPriceMultiplier(
+        AircraftCategory category,
+        double maximumRequiredRunwayLengthMeters)
+    {
+        if (category == AircraftCategory.LightSportAndRecreational)
+        {
+            return 1d;
+        }
+
+        if (maximumRequiredRunwayLengthMeters <= PlaneDesignerBalance.Airframe.RunwayShortLengthMeters)
+        {
+            return ShortRunwayPriceMultiplier;
+        }
+
+        if (maximumRequiredRunwayLengthMeters <= PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters)
+        {
+            return MediumRunwayPriceMultiplier;
+        }
+
+        return 1d;
+    }
 }

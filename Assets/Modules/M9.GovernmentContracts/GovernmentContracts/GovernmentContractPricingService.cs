@@ -33,9 +33,14 @@ public sealed class GovernmentContractPricingService : IGovernmentContractPricin
             MinimumPayloadKilograms = requirements.MinimumPayloadKilograms,
             MinimumManeuverability = requirements.MinimumManeuverability,
             MinimumCrew = requirements.MinimumCrewSize,
+            MaximumRequiredRunwayLengthMeters = requirements.MaximumRequiredRunwayLengthMeters,
         };
 
-        var estimatedMinimumUnitCost = _pricingCalculator.EstimateMinimumUnitProductionCost(bridgeRequirements);
+        var runwayPriceMultiplier = GovernmentContractBalance.ResolveRunwayPriceMultiplier(
+            requirements.RequiredAircraftType,
+            requirements.MaximumRequiredRunwayLengthMeters);
+        var estimatedMinimumUnitCost = _pricingCalculator.EstimateMinimumUnitProductionCost(bridgeRequirements)
+            * runwayPriceMultiplier;
         var unitPrice = estimatedMinimumUnitCost * (1d + GovernmentContractBalance.PricingMargin);
         var totalContractValue = unitPrice * quantityUnits;
 

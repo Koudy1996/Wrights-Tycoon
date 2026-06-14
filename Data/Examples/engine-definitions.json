@@ -155,7 +155,7 @@
       "basePowerPerLiterKilowatts": 35.0,
       "baseJetThrustPerSquareMeterNewtons": 102000.0,
       "propFuelConsumptionPerKilowattHour": 0.24,
-      "jetFuelConsumptionPerKiloNewtonHour": 77.0,
+      "jetFuelConsumptionPerKiloNewtonHour": 61.6,
       "baseReliability": 0.79,
       "baseWeightKilograms": 390.0,
       "weightPerDisplacementLiter": 10.0,
