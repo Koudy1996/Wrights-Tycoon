@@ -650,7 +650,7 @@ public sealed class ContractSystemTests
     }
 
     [Test]
-    public void Evaluator_BlocksDelivery_WhenCategoryDoesNotMatch()
+    public void Evaluator_BlocksDelivery_WhenAircraftDoesNotQualifyForRequiredCategory()
     {
 
         var evaluator = new ContractEvaluator();
@@ -678,7 +678,43 @@ public sealed class ContractSystemTests
         var evaluation = evaluator.Evaluate(contract, aircraft);
 
         Assert.That(evaluation.CanDeliver, Is.False);
-        Assert.That(evaluation.UnmetRequirements, Has.Some.Contains("Category"));
+        Assert.That(evaluation.UnmetRequirements, Has.Some.Contains("qualify"));
+    }
+
+    [Test]
+    public void Evaluator_AllowsDelivery_WhenAircraftQualifiesForRequiredCategory()
+    {
+        var evaluator = new ContractEvaluator();
+        var aircraft = CreateAircraft(
+            reliability: 0.9d,
+            rangeKilometers: 3000d,
+            speedAtSeaLevel: 195d,
+            speedAtFiveKilometers: 190d,
+            speedAtTenKilometers: 180d,
+            payloadKilograms: 5000d,
+            crewCount: 2,
+            category: AircraftCategory.RegionalJet,
+            navigationEquipment: AircraftNavigationEquipment.BasicNavigationSuite,
+            hasPassengerCabin: true,
+            totalWeightKilograms: 6000d,
+            maneuverability: 40d);
+
+        var contract = new Contract(
+            "ctr.test.qualified.category",
+            "VIP Shuttle",
+            quantityUnits: 20,
+            deadlineMonths: 12,
+            new ContractRequirements
+            {
+                RequiredCategory = AircraftCategory.BusinessVipJet,
+                MinimumReliability = 0.8d,
+                MinimumRangeKilometers = 2500d,
+            },
+            createdMonthIndex: 0);
+
+        var evaluation = evaluator.Evaluate(contract, aircraft);
+
+        Assert.That(evaluation.CanDeliver, Is.True);
     }
 
     [Test]
@@ -1149,7 +1185,17 @@ public sealed class ContractSystemTests
         double speedAtTenKilometers,
         double payloadKilograms,
         int crewCount,
-        double averageCruiseFuelBurnKilogramsPerHour = 0d)
+        double averageCruiseFuelBurnKilogramsPerHour = 0d,
+        AircraftCategory category = AircraftCategory.LightMultiRolePiston,
+        AircraftConstructionStandard constructionStandard = AircraftConstructionStandard.Civil,
+        AircraftNavigationEquipment navigationEquipment = AircraftNavigationEquipment.BasicNavigationSuite,
+        bool hasPassengerCabin = false,
+        bool hasCargoSpace = false,
+        double weaponPayloadKilograms = 0d,
+        bool hasSpecialEquipment = false,
+        bool hasCombatEquipment = false,
+        double totalWeightKilograms = 4200d,
+        double maneuverability = 75d)
     {
         var engineDefinition = new EngineDefinition
         {
@@ -1217,7 +1263,7 @@ public sealed class ContractSystemTests
                 Mass.FromKilograms(3000d),
                 0.05d,
                 1.2d,
-                75d,
+                maneuverability,
                 100000d,
                 190d,
                 1.0d,
@@ -1231,9 +1277,11 @@ public sealed class ContractSystemTests
             EngineDefinitionId = "eng.test",
             AirframeDefinitionId = "air.test",
             LockedEngineType = EngineType.Radial,
+            ConstructionStandard = constructionStandard,
             LockedStructureType = StructureType.Monocoque,
             LockedMaterialType = MaterialType.Aluminum,
             LockedEngineCount = 2,
+            Category = category,
             BaseEngineParameters = engineParameters.Clone(),
             BaseAirframeParameters = airframeParameters.Clone(),
             BaseDevelopmentCost = 90000d,
@@ -1245,6 +1293,12 @@ public sealed class ContractSystemTests
             Id = "type.test",
             FamilyId = "fam.test",
             DisplayName = "Test Type",
+            NavigationEquipment = navigationEquipment,
+            HasPassengerCabin = hasPassengerCabin,
+            HasCargoSpace = hasCargoSpace,
+            WeaponPayloadKilograms = weaponPayloadKilograms,
+            HasSpecialEquipment = hasSpecialEquipment,
+            HasCombatEquipment = hasCombatEquipment,
         };
 
         var performance = new AircraftPerformanceReport(
@@ -1259,7 +1313,7 @@ public sealed class ContractSystemTests
             220000d,
             320d,
             reliability,
-            Mass.FromKilograms(4200d),
+            Mass.FromKilograms(totalWeightKilograms),
             AverageCruiseFuelBurnKilogramsPerHour: averageCruiseFuelBurnKilogramsPerHour);
 
         return new AircraftModel(

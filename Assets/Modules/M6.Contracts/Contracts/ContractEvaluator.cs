@@ -5,6 +5,7 @@ using System.Linq;
 using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Math;
 
 namespace WrightTycoon.Core.Contracts;
@@ -30,10 +31,15 @@ public sealed class ContractEvaluator : IContractEvaluator
         if (requirements.RequiredCategory.HasValue)
         {
             var requiredCategory = requirements.RequiredCategory.Value;
-            var actualCategory = aircraft.FamilyDefinition.Category;
-            if (actualCategory != requiredCategory)
+            var profile = AircraftCategoryCatalog.GetProfile(requiredCategory);
+            var categoryCompliance = new CategoryComplianceEvaluator().Evaluate(aircraft, profile);
+            if (!categoryCompliance.IsCompliant)
             {
-                unmetRequirements.Add($"Category {actualCategory} != {requiredCategory}");
+                unmetRequirements.Add($"Aircraft does not qualify as {profile.DisplayName}.");
+                for (var index = 0; index < categoryCompliance.UnmetRequirements.Count; index++)
+                {
+                    unmetRequirements.Add(categoryCompliance.UnmetRequirements[index]);
+                }
             }
         }
 
@@ -60,7 +66,9 @@ public sealed class ContractEvaluator : IContractEvaluator
         if (requirements.MinimumRangeKilometers.HasValue)
         {
             var minimumRange = requirements.MinimumRangeKilometers.Value;
-            var actualRange = aircraft.Performance.RangeKilometers;
+            var actualRange = AircraftNavigationRangePolicy.GetCertifiedRangeKilometers(
+                aircraft.TypeDefinition.NavigationEquipment,
+                aircraft.Performance.RangeKilometers);
             if (actualRange + Numeric.Epsilon < minimumRange)
             {
                 unmetRequirements.Add($"Range {FormatUiNumber(actualRange, "0.0")} km < {FormatUiNumber(minimumRange, "0.0")} km");

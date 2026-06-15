@@ -31,9 +31,9 @@ public sealed class GovernmentContractComplianceEvaluator
         }
 
         var metrics = candidate.Metrics;
-        if (metrics.AircraftType != requirements.RequiredAircraftType)
+        if (!metrics.QualifiesAs(requirements.RequiredAircraftType))
         {
-            unmetRequirements.Add($"Aircraft type {metrics.AircraftType} does not match required type {requirements.RequiredAircraftType}.");
+            unmetRequirements.Add($"Aircraft type {metrics.AircraftType} does not qualify as required type {requirements.RequiredAircraftType}.");
         }
 
         var actualSpeed = metrics.GetMaximumSpeedForBand(requirements.SpeedAltitudeBand);

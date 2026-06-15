@@ -2,6 +2,7 @@ using System;
 using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Factories;
 
 namespace WrightTycoon.Core.GovernmentContracts;
@@ -55,19 +56,24 @@ public static class GovernmentContractSubmissionCandidateFactory
         var mediumSpeed = GetSpeedAtAltitude(aircraft.Performance, GovernmentContractBalance.SpeedAltitudeMediumMeters);
         var highSpeed = GetSpeedAtAltitude(aircraft.Performance, GovernmentContractBalance.SpeedAltitudeHighMeters);
         var runwayLength = ResolveRunwayLengthMeters(aircraft.Airframe.Parameters.RunwayType);
+        var certifiedRangeKilometers = AircraftNavigationRangePolicy.GetCertifiedRangeKilometers(
+            aircraft.TypeDefinition.NavigationEquipment,
+            aircraft.Performance.RangeKilometers);
+        var qualifiedCategories = new AircraftCategoryQualificationEvaluator().GetQualifiedCategories(aircraft);
 
         return new GovernmentContractAircraftMetrics(
             aircraft.FamilyDefinition.Category,
             lowSpeed,
             mediumSpeed,
             highSpeed,
-            aircraft.Performance.RangeKilometers,
+            certifiedRangeKilometers,
             aircraft.Performance.PayloadCapacity.Kilograms,
             aircraft.Performance.OverallReliability,
             aircraft.Airframe.Performance.Maneuverability,
             aircraft.Airframe.Parameters.CrewCount,
             runwayLength,
-            aircraft.Development.DevelopmentCost);
+            aircraft.Development.DevelopmentCost,
+            qualifiedCategories);
     }
 
     private static double GetSpeedAtAltitude(

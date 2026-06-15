@@ -127,6 +127,35 @@ public sealed class GovernmentContractModuleTests
     }
 
     [Test]
+    public void ComplianceEvaluator_AllowsCandidateQualifiedForRequiredAircraftType()
+    {
+        var requirements = CreateRequirements();
+        var metrics = new GovernmentContractAircraftMetrics(
+            AircraftCategory.BusinessVipJet,
+            MaximumSpeedLowAltitudeMetersPerSecond: requirements.MinimumMaximumSpeedMetersPerSecond,
+            MaximumSpeedMediumAltitudeMetersPerSecond: requirements.MinimumMaximumSpeedMetersPerSecond * 1.1d,
+            MaximumSpeedHighAltitudeMetersPerSecond: requirements.MinimumMaximumSpeedMetersPerSecond,
+            RangeKilometers: requirements.MinimumRangeKilometers * 1.1d,
+            PayloadKilograms: requirements.MinimumPayloadKilograms * 1.1d,
+            Reliability: requirements.MinimumReliability,
+            Maneuverability: requirements.MinimumManeuverability,
+            CrewSize: requirements.MinimumCrewSize,
+            RequiredRunwayLengthMeters: requirements.MaximumRequiredRunwayLengthMeters,
+            DevelopmentCost: 200000d,
+            QualifiedAircraftTypes: new[] { AircraftCategory.BusinessVipJet, requirements.RequiredAircraftType });
+        var candidate = new GovernmentContractSubmissionCandidate(
+            "design.gov.qualified",
+            "Qualified Candidate",
+            AircraftLifecycleStage.Completed,
+            metrics);
+
+        var report = new GovernmentContractComplianceEvaluator().Evaluate(requirements, candidate);
+
+        Assert.That(report.MeetsAllRequirements, Is.True);
+        Assert.That(report.IsSelectableInUi, Is.True);
+    }
+
+    [Test]
     public void Generator_BlocksWideBodyBeforeIntroductionYear_AndAllowsItAfterward()
     {
         var random = new DeterministicRandomProvider();

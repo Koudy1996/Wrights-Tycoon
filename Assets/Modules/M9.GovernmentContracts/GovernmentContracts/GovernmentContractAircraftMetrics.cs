@@ -1,22 +1,98 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Math;
 
 namespace WrightTycoon.Core.GovernmentContracts;
 
-public readonly record struct GovernmentContractAircraftMetrics(
-    AircraftCategory AircraftType,
-    double MaximumSpeedLowAltitudeMetersPerSecond,
-    double MaximumSpeedMediumAltitudeMetersPerSecond,
-    double MaximumSpeedHighAltitudeMetersPerSecond,
-    double RangeKilometers,
-    double PayloadKilograms,
-    double Reliability,
-    double Maneuverability,
-    int CrewSize,
-    double RequiredRunwayLengthMeters,
-    double DevelopmentCost)
+public readonly struct GovernmentContractAircraftMetrics
 {
+    public GovernmentContractAircraftMetrics(
+        AircraftCategory AircraftType,
+        double MaximumSpeedLowAltitudeMetersPerSecond,
+        double MaximumSpeedMediumAltitudeMetersPerSecond,
+        double MaximumSpeedHighAltitudeMetersPerSecond,
+        double RangeKilometers,
+        double PayloadKilograms,
+        double Reliability,
+        double Maneuverability,
+        int CrewSize,
+        double RequiredRunwayLengthMeters,
+        double DevelopmentCost)
+        : this(
+            AircraftType,
+            MaximumSpeedLowAltitudeMetersPerSecond,
+            MaximumSpeedMediumAltitudeMetersPerSecond,
+            MaximumSpeedHighAltitudeMetersPerSecond,
+            RangeKilometers,
+            PayloadKilograms,
+            Reliability,
+            Maneuverability,
+            CrewSize,
+            RequiredRunwayLengthMeters,
+            DevelopmentCost,
+            new[] { AircraftType })
+    {
+    }
+
+    public GovernmentContractAircraftMetrics(
+        AircraftCategory AircraftType,
+        double MaximumSpeedLowAltitudeMetersPerSecond,
+        double MaximumSpeedMediumAltitudeMetersPerSecond,
+        double MaximumSpeedHighAltitudeMetersPerSecond,
+        double RangeKilometers,
+        double PayloadKilograms,
+        double Reliability,
+        double Maneuverability,
+        int CrewSize,
+        double RequiredRunwayLengthMeters,
+        double DevelopmentCost,
+        IReadOnlyList<AircraftCategory>? QualifiedAircraftTypes)
+    {
+        this.AircraftType = AircraftType;
+        this.MaximumSpeedLowAltitudeMetersPerSecond = MaximumSpeedLowAltitudeMetersPerSecond;
+        this.MaximumSpeedMediumAltitudeMetersPerSecond = MaximumSpeedMediumAltitudeMetersPerSecond;
+        this.MaximumSpeedHighAltitudeMetersPerSecond = MaximumSpeedHighAltitudeMetersPerSecond;
+        this.RangeKilometers = RangeKilometers;
+        this.PayloadKilograms = PayloadKilograms;
+        this.Reliability = Reliability;
+        this.Maneuverability = Maneuverability;
+        this.CrewSize = CrewSize;
+        this.RequiredRunwayLengthMeters = RequiredRunwayLengthMeters;
+        this.DevelopmentCost = DevelopmentCost;
+        this.QualifiedAircraftTypes = QualifiedAircraftTypes is null || QualifiedAircraftTypes.Count == 0
+            ? new[] { AircraftType }
+            : QualifiedAircraftTypes.Distinct().ToArray();
+    }
+
+    public AircraftCategory AircraftType { get; }
+
+    public double MaximumSpeedLowAltitudeMetersPerSecond { get; }
+
+    public double MaximumSpeedMediumAltitudeMetersPerSecond { get; }
+
+    public double MaximumSpeedHighAltitudeMetersPerSecond { get; }
+
+    public double RangeKilometers { get; }
+
+    public double PayloadKilograms { get; }
+
+    public double Reliability { get; }
+
+    public double Maneuverability { get; }
+
+    public int CrewSize { get; }
+
+    public double RequiredRunwayLengthMeters { get; }
+
+    public double DevelopmentCost { get; }
+
+    public IReadOnlyList<AircraftCategory> QualifiedAircraftTypes { get; }
+
+    public bool QualifiesAs(AircraftCategory category) =>
+        QualifiedAircraftTypes is not null && QualifiedAircraftTypes.Contains(category);
+
     public double GetMaximumSpeedForBand(GovernmentContractSpeedAltitudeBand band)
     {
         return band switch
@@ -82,6 +158,16 @@ public readonly record struct GovernmentContractAircraftMetrics(
         if (DevelopmentCost < 0d)
         {
             throw new ArgumentOutOfRangeException(nameof(DevelopmentCost), "Development cost must be >= 0.");
+        }
+
+        if (QualifiedAircraftTypes is null || QualifiedAircraftTypes.Count == 0)
+        {
+            throw new ArgumentException("At least one qualified aircraft type must be provided.", nameof(QualifiedAircraftTypes));
+        }
+
+        for (var index = 0; index < QualifiedAircraftTypes.Count; index++)
+        {
+            _ = AircraftCategoryCatalog.GetProfile(QualifiedAircraftTypes[index]);
         }
     }
 }
