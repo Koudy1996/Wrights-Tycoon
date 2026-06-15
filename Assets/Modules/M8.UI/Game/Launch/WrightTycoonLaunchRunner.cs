@@ -5892,6 +5892,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DisplayName = existingType.DisplayName,
             EngineDelta = existingType.EngineDelta,
             AirframeDelta = existingType.AirframeDelta,
+            NavigationEquipment = existingType.NavigationEquipment,
+            HasPassengerCabin = existingType.HasPassengerCabin,
+            HasCargoSpace = existingType.HasCargoSpace,
+            WeaponPayloadKilograms = existingType.WeaponPayloadKilograms,
+            HasSpecialEquipment = existingType.HasSpecialEquipment,
+            HasCombatEquipment = existingType.HasCombatEquipment,
             ResearchModifiers = new TypeResearchModifierPoints(),
             RequiredLineToolLevel = 1,
         };
@@ -6163,6 +6169,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 DisplayName = existingType.DisplayName,
                 EngineDelta = existingType.EngineDelta,
                 AirframeDelta = existingType.AirframeDelta,
+                NavigationEquipment = existingType.NavigationEquipment,
+                HasPassengerCabin = existingType.HasPassengerCabin,
+                HasCargoSpace = existingType.HasCargoSpace,
+                WeaponPayloadKilograms = existingType.WeaponPayloadKilograms,
+                HasSpecialEquipment = existingType.HasSpecialEquipment,
+                HasCombatEquipment = existingType.HasCombatEquipment,
                 ResearchModifiers = points.Clone(),
                 RequiredLineToolLevel = 1,
             };
@@ -8825,6 +8837,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             AirframeDefinitionId = _airframeDefinitions[_selectedAirframeDefinitionIndex].Id,
             LockedEngineType = saved.Definition.EngineType,
             AllowedEngineFamily = _familyAllowedEngineFamily,
+            ConstructionStandard = ResolveDefaultConstructionStandard(_selectedAircraftCategory),
             LockedStructureType = _lockedStructure,
             LockedMaterialType = _lockedMaterial,
             LockedEngineCount = _lockedEngineCount,
@@ -8842,6 +8855,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         TypeResearchModifierPoints? researchModifiers = null,
         double? wingAreaSquareMetersOverride = null)
     {
+        var roleDefaults = ResolveDefaultTypeRoleConfiguration(_selectedAircraftCategory);
         return new AircraftTypeDefinition
         {
             Id = BuildTypeId(),
@@ -8850,8 +8864,99 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             RequiredLineToolLevel = 1,
             EngineDelta = new EngineParameterDelta(),
             AirframeDelta = BuildAirframeDeltaFromType(wingAreaSquareMetersOverride),
+            NavigationEquipment = roleDefaults.NavigationEquipment,
+            HasPassengerCabin = roleDefaults.HasPassengerCabin,
+            HasCargoSpace = roleDefaults.HasCargoSpace,
+            WeaponPayloadKilograms = roleDefaults.WeaponPayloadKilograms,
+            HasSpecialEquipment = roleDefaults.HasSpecialEquipment,
+            HasCombatEquipment = roleDefaults.HasCombatEquipment,
             ResearchModifiers = (researchModifiers ?? new TypeResearchModifierPoints()).Clone(),
         };
+    }
+
+    private static AircraftConstructionStandard ResolveDefaultConstructionStandard(AircraftCategory category)
+    {
+        return category switch
+        {
+            AircraftCategory.LightSportAndRecreational => AircraftConstructionStandard.Ultralight,
+            AircraftCategory.MilitaryTactical => AircraftConstructionStandard.ArmyGrade,
+            AircraftCategory.MilitaryStrategicSupport => AircraftConstructionStandard.ArmyGrade,
+            AircraftCategory.Bomber => AircraftConstructionStandard.ArmyGrade,
+            _ => AircraftConstructionStandard.Civil,
+        };
+    }
+
+    private static AircraftTypeRoleConfiguration ResolveDefaultTypeRoleConfiguration(AircraftCategory category)
+    {
+        var profile = AircraftCategoryCatalog.GetProfile(category);
+        return new AircraftTypeRoleConfiguration(
+            ResolveDefaultNavigationEquipment(profile),
+            profile.HasPassengerCapacityRequirement,
+            IsCargoCategory(category),
+            ResolveDefaultWeaponPayloadKilograms(profile),
+            category == AircraftCategory.SpecialCivil,
+            category is AircraftCategory.MilitaryTactical or AircraftCategory.Bomber);
+    }
+
+    private static AircraftNavigationEquipment ResolveDefaultNavigationEquipment(AircraftCategoryProfile profile)
+    {
+        if (profile.MaxRequiredRangeKilometers > AircraftNavigationRangePolicy.BasicNavigationMaximumCertifiedRangeKilometers)
+        {
+            return AircraftNavigationEquipment.AdvancedNavigationSuite;
+        }
+
+        if (profile.MaxRequiredRangeKilometers > AircraftNavigationRangePolicy.NoNavigationMaximumCertifiedRangeKilometers)
+        {
+            return AircraftNavigationEquipment.BasicNavigationSuite;
+        }
+
+        return AircraftNavigationEquipment.None;
+    }
+
+    private static double ResolveDefaultWeaponPayloadKilograms(AircraftCategoryProfile profile)
+    {
+        return profile.Category is AircraftCategory.MilitaryTactical or AircraftCategory.Bomber
+            ? profile.MinRequiredPayloadKilograms
+            : 0d;
+    }
+
+    private static bool IsCargoCategory(AircraftCategory category)
+    {
+        return category is AircraftCategory.LightCargo
+            or AircraftCategory.MediumCargo
+            or AircraftCategory.HeavyCargo
+            or AircraftCategory.LongRangeCargo;
+    }
+
+    private readonly struct AircraftTypeRoleConfiguration
+    {
+        public AircraftTypeRoleConfiguration(
+            AircraftNavigationEquipment navigationEquipment,
+            bool hasPassengerCabin,
+            bool hasCargoSpace,
+            double weaponPayloadKilograms,
+            bool hasSpecialEquipment,
+            bool hasCombatEquipment)
+        {
+            NavigationEquipment = navigationEquipment;
+            HasPassengerCabin = hasPassengerCabin;
+            HasCargoSpace = hasCargoSpace;
+            WeaponPayloadKilograms = weaponPayloadKilograms;
+            HasSpecialEquipment = hasSpecialEquipment;
+            HasCombatEquipment = hasCombatEquipment;
+        }
+
+        public AircraftNavigationEquipment NavigationEquipment { get; }
+
+        public bool HasPassengerCabin { get; }
+
+        public bool HasCargoSpace { get; }
+
+        public double WeaponPayloadKilograms { get; }
+
+        public bool HasSpecialEquipment { get; }
+
+        public bool HasCombatEquipment { get; }
     }
 
     private AirframeParameterDelta BuildAirframeDeltaFromType(double? wingAreaSquareMetersOverride = null)

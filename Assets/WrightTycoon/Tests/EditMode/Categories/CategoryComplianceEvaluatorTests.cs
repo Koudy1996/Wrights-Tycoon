@@ -22,7 +22,8 @@ public sealed class CategoryComplianceEvaluatorTests
             speedAtSeaLevelMetersPerSecond: 24d,
             rangeKilometers: 520d,
             payloadKilograms: 260d,
-            totalWeightKilograms: 900d);
+            totalWeightKilograms: 900d,
+            constructionStandard: AircraftConstructionStandard.Ultralight);
 
         var result = evaluator.Evaluate(aircraft);
 
@@ -72,6 +73,110 @@ public sealed class CategoryComplianceEvaluatorTests
         Assert.That(result.UnmetRequirements, Has.Some.Contains("Wood/Fabric limit exceeded"));
     }
 
+    [Test]
+    public void Evaluate_UsesCertifiedRangeLimitedByNavigationEquipment()
+    {
+        var evaluator = new CategoryComplianceEvaluator();
+        var aircraft = CreateAircraft(
+            AircraftCategory.HeavyTransportWideBody,
+            crewCount: 4,
+            speedAtSeaLevelMetersPerSecond: 220d,
+            rangeKilometers: 9000d,
+            payloadKilograms: 50000d,
+            totalWeightKilograms: 90000d,
+            maneuverability: 10d,
+            navigationEquipment: AircraftNavigationEquipment.BasicNavigationSuite,
+            hasPassengerCabin: true);
+
+        var result = evaluator.Evaluate(aircraft);
+
+        Assert.That(result.IsCompliant, Is.False);
+        Assert.That(result.UnmetRequirements, Has.Some.Contains("Certified range"));
+    }
+
+    [Test]
+    public void Evaluate_AllowsLongRangeCategoryWithAdvancedNavigation()
+    {
+        var evaluator = new CategoryComplianceEvaluator();
+        var aircraft = CreateAircraft(
+            AircraftCategory.HeavyTransportWideBody,
+            crewCount: 4,
+            speedAtSeaLevelMetersPerSecond: 220d,
+            rangeKilometers: 9000d,
+            payloadKilograms: 50000d,
+            totalWeightKilograms: 90000d,
+            maneuverability: 10d,
+            navigationEquipment: AircraftNavigationEquipment.AdvancedNavigationSuite,
+            hasPassengerCabin: true);
+
+        var result = evaluator.Evaluate(aircraft);
+
+        Assert.That(result.IsCompliant, Is.True);
+    }
+
+    [Test]
+    public void Evaluate_RequiresPassengerCabinForPassengerCategories()
+    {
+        var evaluator = new CategoryComplianceEvaluator();
+        var aircraft = CreateAircraft(
+            AircraftCategory.RegionalJet,
+            crewCount: 2,
+            speedAtSeaLevelMetersPerSecond: 195d,
+            rangeKilometers: 3000d,
+            payloadKilograms: 10000d,
+            totalWeightKilograms: 20000d,
+            maneuverability: 40d,
+            navigationEquipment: AircraftNavigationEquipment.BasicNavigationSuite);
+
+        var result = evaluator.Evaluate(aircraft);
+
+        Assert.That(result.IsCompliant, Is.False);
+        Assert.That(result.UnmetRequirements, Has.Some.EqualTo("Passenger cabin required"));
+    }
+
+    [Test]
+    public void QualificationEvaluator_ReturnsEveryCategorySatisfiedByCargoType()
+    {
+        var evaluator = new AircraftCategoryQualificationEvaluator();
+        var aircraft = CreateAircraft(
+            AircraftCategory.LightMultiRolePiston,
+            crewCount: 3,
+            speedAtSeaLevelMetersPerSecond: 112d,
+            rangeKilometers: 2000d,
+            payloadKilograms: 10000d,
+            totalWeightKilograms: 20000d,
+            maneuverability: 30d,
+            navigationEquipment: AircraftNavigationEquipment.BasicNavigationSuite,
+            hasCargoSpace: true);
+
+        var categories = evaluator.GetQualifiedCategories(aircraft);
+
+        Assert.That(categories, Has.Member(AircraftCategory.MediumCargo));
+        Assert.That(categories, Has.No.Member(AircraftCategory.RegionalJet));
+    }
+
+    [Test]
+    public void QualificationEvaluator_RequiresArmyGradeCombatEquipmentAndWeaponPayloadForBomber()
+    {
+        var evaluator = new AircraftCategoryQualificationEvaluator();
+        var aircraft = CreateAircraft(
+            AircraftCategory.Bomber,
+            crewCount: 4,
+            speedAtSeaLevelMetersPerSecond: 225d,
+            rangeKilometers: 5000d,
+            payloadKilograms: 20000d,
+            totalWeightKilograms: 80000d,
+            maneuverability: 30d,
+            constructionStandard: AircraftConstructionStandard.ArmyGrade,
+            navigationEquipment: AircraftNavigationEquipment.AdvancedNavigationSuite,
+            weaponPayloadKilograms: 10000d,
+            hasCombatEquipment: true);
+
+        var categories = evaluator.GetQualifiedCategories(aircraft);
+
+        Assert.That(categories, Has.Member(AircraftCategory.Bomber));
+    }
+
     private static AircraftModel CreateAircraft(
         AircraftCategory category,
         int crewCount,
@@ -79,7 +184,15 @@ public sealed class CategoryComplianceEvaluatorTests
         double rangeKilometers,
         double payloadKilograms,
         double totalWeightKilograms,
-        MaterialType materialType = MaterialType.Aluminum)
+        MaterialType materialType = MaterialType.Aluminum,
+        double maneuverability = 70d,
+        AircraftConstructionStandard constructionStandard = AircraftConstructionStandard.Civil,
+        AircraftNavigationEquipment navigationEquipment = AircraftNavigationEquipment.None,
+        bool hasPassengerCabin = false,
+        bool hasCargoSpace = false,
+        double weaponPayloadKilograms = 0d,
+        bool hasSpecialEquipment = false,
+        bool hasCombatEquipment = false)
     {
         var family = new AircraftFamilyDefinition
         {
@@ -89,6 +202,7 @@ public sealed class CategoryComplianceEvaluatorTests
             AirframeDefinitionId = "air.test",
             Category = category,
             LockedEngineType = EngineType.Radial,
+            ConstructionStandard = constructionStandard,
             LockedStructureType = StructureType.Monocoque,
             LockedMaterialType = materialType,
             LockedEngineCount = 1,
@@ -101,6 +215,12 @@ public sealed class CategoryComplianceEvaluatorTests
             Id = "type.category.check",
             FamilyId = family.Id,
             DisplayName = "Category Check Type",
+            NavigationEquipment = navigationEquipment,
+            HasPassengerCabin = hasPassengerCabin,
+            HasCargoSpace = hasCargoSpace,
+            WeaponPayloadKilograms = weaponPayloadKilograms,
+            HasSpecialEquipment = hasSpecialEquipment,
+            HasCombatEquipment = hasCombatEquipment,
         };
 
         var engineDefinition = new EngineDefinition
@@ -145,7 +265,7 @@ public sealed class CategoryComplianceEvaluatorTests
                 Mass.FromKilograms(700d),
                 DragCoefficient: 0.04d,
                 LiftCoefficient: 1.05d,
-                Maneuverability: 70d,
+                Maneuverability: maneuverability,
                 ProductionCost: 60000d,
                 ProductionManDays: 140d,
                 ReliabilityModifier: 1.0d,

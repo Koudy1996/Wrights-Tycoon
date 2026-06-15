@@ -64,10 +64,18 @@ public sealed class CategoryComplianceEvaluator
                 $"Speed {FormatUiNumber(speedKilometersPerHour, "0.0")} km/h outside [{FormatUiNumber(profile.MinRequiredSpeedKilometersPerHour, "0.0")}, {FormatUiNumber(profile.MaxRequiredSpeedKilometersPerHour, "0.0")}] km/h");
         }
 
-        var range = aircraft.Performance.RangeKilometers;
+        var physicalRange = aircraft.Performance.RangeKilometers;
+        var range = AircraftNavigationRangePolicy.GetCertifiedRangeKilometers(
+            aircraft.TypeDefinition.NavigationEquipment,
+            physicalRange);
         if (range < profile.MinRequiredRangeKilometers || range > profile.MaxRequiredRangeKilometers)
         {
-            unmet.Add($"Range {FormatUiNumber(range, "0.0")} km outside [{FormatUiNumber(profile.MinRequiredRangeKilometers, "0.0")}, {FormatUiNumber(profile.MaxRequiredRangeKilometers, "0.0")}] km");
+            var rangeLabel = AircraftNavigationRangePolicy.IsRangeCapped(
+                aircraft.TypeDefinition.NavigationEquipment,
+                physicalRange)
+                ? "Certified range"
+                : "Range";
+            unmet.Add($"{rangeLabel} {FormatUiNumber(range, "0.0")} km outside [{FormatUiNumber(profile.MinRequiredRangeKilometers, "0.0")}, {FormatUiNumber(profile.MaxRequiredRangeKilometers, "0.0")}] km");
         }
 
         var payload = aircraft.Performance.PayloadCapacity.Kilograms;
@@ -95,7 +103,133 @@ public sealed class CategoryComplianceEvaluator
             }
         }
 
+        AddRoleRequirements(aircraft, profile, unmet);
+
         return new CategoryComplianceResult(unmet.Count == 0, unmet);
+    }
+
+    private static void AddRoleRequirements(
+        Aircraft.Aircraft aircraft,
+        AircraftCategoryProfile profile,
+        List<string> unmet)
+    {
+        var family = aircraft.FamilyDefinition;
+        var type = aircraft.TypeDefinition;
+
+        if (profile.Category == AircraftCategory.LightSportAndRecreational)
+        {
+            Require(
+                family.ConstructionStandard == AircraftConstructionStandard.Ultralight,
+                "Ultralight construction required",
+                unmet);
+            RequireNoHeavyRoleModule(type, profile, unmet);
+            return;
+        }
+
+        if (profile.HasPassengerCapacityRequirement)
+        {
+            Require(type.HasPassengerCabin, "Passenger cabin required", unmet);
+            Require(!type.HasCargoSpace, "Cargo space conflicts with passenger category", unmet);
+            Require(!type.HasSpecialEquipment, "Special equipment conflicts with passenger category", unmet);
+            RequireNoCombatRole(type, "passenger category", unmet);
+            return;
+        }
+
+        if (IsCargoCategory(profile.Category))
+        {
+            Require(type.HasCargoSpace, "Cargo space required", unmet);
+            Require(!type.HasPassengerCabin, "Passenger cabin conflicts with cargo category", unmet);
+            Require(!type.HasSpecialEquipment, "Special equipment conflicts with cargo category", unmet);
+            RequireNoCombatRole(type, "cargo category", unmet);
+            return;
+        }
+
+        if (profile.Category == AircraftCategory.SpecialCivil)
+        {
+            Require(type.HasSpecialEquipment, "Special equipment required", unmet);
+            Require(!type.HasPassengerCabin, "Passenger cabin conflicts with special civil category", unmet);
+            Require(!type.HasCargoSpace, "Cargo space conflicts with special civil category", unmet);
+            RequireNoCombatRole(type, "special civil category", unmet);
+            return;
+        }
+
+        if (profile.Category == AircraftCategory.MilitaryTactical)
+        {
+            Require(family.ConstructionStandard == AircraftConstructionStandard.ArmyGrade, "Army-grade construction required", unmet);
+            Require(type.HasCombatEquipment, "Combat equipment required", unmet);
+            Require(type.WeaponPayloadKilograms > Numeric.Epsilon, "Weapon payload required", unmet);
+            Require(!type.HasPassengerCabin, "Passenger cabin conflicts with combat category", unmet);
+            RequireWeaponPayloadFitsAircraft(type, aircraft, unmet);
+            return;
+        }
+
+        if (profile.Category == AircraftCategory.Bomber)
+        {
+            Require(family.ConstructionStandard == AircraftConstructionStandard.ArmyGrade, "Army-grade construction required", unmet);
+            Require(type.HasCombatEquipment, "Combat equipment required", unmet);
+            Require(!type.HasPassengerCabin, "Passenger cabin conflicts with combat category", unmet);
+            RequireWeaponPayloadFitsAircraft(type, aircraft, unmet);
+            if (type.WeaponPayloadKilograms < profile.MinRequiredPayloadKilograms
+                || type.WeaponPayloadKilograms > profile.MaxRequiredPayloadKilograms)
+            {
+                unmet.Add(
+                    $"Weapon payload {FormatUiNumber(type.WeaponPayloadKilograms, "0.0")} kg outside [{FormatUiNumber(profile.MinRequiredPayloadKilograms, "0.0")}, {FormatUiNumber(profile.MaxRequiredPayloadKilograms, "0.0")}] kg");
+            }
+
+            return;
+        }
+
+        if (profile.Category == AircraftCategory.MilitaryStrategicSupport)
+        {
+            Require(family.ConstructionStandard == AircraftConstructionStandard.ArmyGrade, "Army-grade construction required", unmet);
+            Require(!type.HasPassengerCabin || !type.HasCombatEquipment, "Passenger cabin conflicts with combat equipment", unmet);
+        }
+    }
+
+    private static bool IsCargoCategory(AircraftCategory category) =>
+        category is AircraftCategory.LightCargo
+            or AircraftCategory.MediumCargo
+            or AircraftCategory.HeavyCargo
+            or AircraftCategory.LongRangeCargo;
+
+    private static void RequireNoHeavyRoleModule(
+        AircraftTypeDefinition type,
+        AircraftCategoryProfile profile,
+        List<string> unmet)
+    {
+        Require(!type.HasPassengerCabin, "Passenger cabin conflicts with light sport category", unmet);
+        Require(!type.HasCargoSpace, "Cargo space conflicts with light sport category", unmet);
+        Require(!type.HasSpecialEquipment, "Special equipment conflicts with light sport category", unmet);
+        RequireNoCombatRole(type, profile.DisplayName, unmet);
+    }
+
+    private static void RequireNoCombatRole(
+        AircraftTypeDefinition type,
+        string categoryName,
+        List<string> unmet)
+    {
+        Require(!type.HasCombatEquipment, $"Combat equipment conflicts with {categoryName}", unmet);
+        Require(type.WeaponPayloadKilograms <= Numeric.Epsilon, $"Weapon payload conflicts with {categoryName}", unmet);
+    }
+
+    private static void RequireWeaponPayloadFitsAircraft(
+        AircraftTypeDefinition type,
+        Aircraft.Aircraft aircraft,
+        List<string> unmet)
+    {
+        if (type.WeaponPayloadKilograms > aircraft.Performance.PayloadCapacity.Kilograms + Numeric.Epsilon)
+        {
+            unmet.Add(
+                $"Weapon payload {FormatUiNumber(type.WeaponPayloadKilograms, "0.0")} kg exceeds aircraft payload capacity {FormatUiNumber(aircraft.Performance.PayloadCapacity.Kilograms, "0.0")} kg");
+        }
+    }
+
+    private static void Require(bool condition, string unmetRequirement, List<string> unmet)
+    {
+        if (!condition)
+        {
+            unmet.Add(unmetRequirement);
+        }
     }
 
 
