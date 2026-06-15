@@ -2,6 +2,7 @@ using System;
 using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Engines;
+using WrightTycoon.Core.Math;
 
 namespace WrightTycoon.Core.Aircraft;
 
@@ -19,11 +20,23 @@ public sealed class AircraftFamilyDefinition
 
     public AircraftAllowedEngineFamily AllowedEngineFamily { get; init; } = AircraftAllowedEngineFamily.Any;
 
+    public AircraftConstructionStandard ConstructionStandard { get; init; } = AircraftConstructionStandard.Civil;
+
+    public AircraftEngineClassification EngineClassification { get; init; } = AircraftEngineClassification.Any;
+
     public StructureType LockedStructureType { get; init; } = StructureType.Truss;
 
     public MaterialType LockedMaterialType { get; init; } = MaterialType.WoodFabric;
 
     public int LockedEngineCount { get; init; } = 1;
+
+    public double? ReferenceWingAreaSquareMeters { get; init; }
+
+    public AircraftWingAspectRatio WingAspectRatio { get; init; } = AircraftWingAspectRatio.HighAspectRatio;
+
+    public WingShape? LockedWingShape { get; init; }
+
+    public WingPosition? LockedWingPosition { get; init; }
 
     public AircraftCategory Category { get; init; } = AircraftCategory.LightSportAndRecreational;
 
@@ -69,6 +82,42 @@ public sealed class AircraftFamilyDefinition
             throw new ArgumentOutOfRangeException(nameof(AllowedEngineFamily), "Allowed engine family must be a defined value.");
         }
 
+        if (!Enum.IsDefined(typeof(AircraftConstructionStandard), ConstructionStandard))
+        {
+            throw new ArgumentOutOfRangeException(nameof(ConstructionStandard), "Construction standard must be a defined value.");
+        }
+
+        if (!Enum.IsDefined(typeof(AircraftEngineClassification), EngineClassification))
+        {
+            throw new ArgumentOutOfRangeException(nameof(EngineClassification), "Engine classification must be a defined value.");
+        }
+
+        if (!Enum.IsDefined(typeof(AircraftWingAspectRatio), WingAspectRatio))
+        {
+            throw new ArgumentOutOfRangeException(nameof(WingAspectRatio), "Wing aspect ratio must be a defined value.");
+        }
+
+        if (ReferenceWingAreaSquareMeters.HasValue)
+        {
+            Numeric.ThrowIfNotFinite(ReferenceWingAreaSquareMeters.Value, nameof(ReferenceWingAreaSquareMeters));
+            if (ReferenceWingAreaSquareMeters.Value < 1d || ReferenceWingAreaSquareMeters.Value > 1000d)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(ReferenceWingAreaSquareMeters),
+                    "Reference wing area must be within [1, 1000] m2.");
+            }
+        }
+
+        if (LockedWingShape.HasValue && !Enum.IsDefined(typeof(WingShape), LockedWingShape.Value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(LockedWingShape), "Locked wing shape must be a defined value.");
+        }
+
+        if (LockedWingPosition.HasValue && !Enum.IsDefined(typeof(WingPosition), LockedWingPosition.Value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(LockedWingPosition), "Locked wing position must be a defined value.");
+        }
+
         _ = AircraftCategoryCatalog.GetProfile(Category);
 
         if (RequiredFactoryToolLevel < 1)
@@ -91,11 +140,31 @@ public sealed class AircraftFamilyDefinition
     }
 }
 
+public enum AircraftConstructionStandard
+{
+    Ultralight = 0,
+    Civil = 1,
+    ArmyGrade = 2,
+}
+
 public enum AircraftAllowedEngineFamily
 {
     Any = 0,
     Propeller = 1,
     Jet = 2,
+}
+
+public enum AircraftEngineClassification
+{
+    Any = 0,
+    Piston = 1,
+    Jet = 2,
+}
+
+public enum AircraftWingAspectRatio
+{
+    HighAspectRatio = 0,
+    LowAspectRatio = 1,
 }
 
 public static class AircraftEngineFamilyCompatibility
@@ -115,6 +184,35 @@ public static class AircraftEngineFamilyCompatibility
         IsJetEngine(engineType) ? AircraftAllowedEngineFamily.Jet : AircraftAllowedEngineFamily.Propeller;
 
     private static bool IsPropellerEngine(EngineType engineType)
+    {
+        return engineType == EngineType.Piston
+            || engineType == EngineType.Inline
+            || engineType == EngineType.V
+            || engineType == EngineType.Radial;
+    }
+
+    private static bool IsJetEngine(EngineType engineType)
+    {
+        return engineType == EngineType.Jet
+            || engineType == EngineType.Turbojet
+            || engineType == EngineType.Turbofan;
+    }
+}
+
+public static class AircraftEngineClassificationCompatibility
+{
+    public static bool IsEngineTypeAllowed(AircraftEngineClassification classification, EngineType engineType)
+    {
+        return classification switch
+        {
+            AircraftEngineClassification.Any => true,
+            AircraftEngineClassification.Piston => IsPistonEngine(engineType),
+            AircraftEngineClassification.Jet => IsJetEngine(engineType),
+            _ => false,
+        };
+    }
+
+    private static bool IsPistonEngine(EngineType engineType)
     {
         return engineType == EngineType.Piston
             || engineType == EngineType.Inline

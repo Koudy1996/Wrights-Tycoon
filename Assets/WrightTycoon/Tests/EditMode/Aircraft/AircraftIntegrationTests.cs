@@ -168,6 +168,50 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    public void FamilyEngineClassification_BlocksIncompatibleEngineBranches()
+    {
+        var factory = CreateFactory();
+        var family = CreateFamily(
+            "fam.engine.classification",
+            engineCount: 1,
+            category: AircraftCategory.LightMultiRolePiston,
+            engineClassification: AircraftEngineClassification.Jet);
+        var type = new AircraftTypeDefinition
+        {
+            Id = "type.engine.classification",
+            FamilyId = family.Id,
+            DisplayName = "Engine Classification",
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateAircraft(family, type));
+
+        Assert.That(exception, Is.Not.Null);
+        Assert.That(exception!.Message, Does.Contain("engine classification"));
+    }
+
+    [Test]
+    public void TypeWingArea_MustStayWithinTwentyPercentOfFamilyReference()
+    {
+        var factory = CreateFactory();
+        var family = CreateFamily("fam.wing.envelope", engineCount: 1);
+        var type = new AircraftTypeDefinition
+        {
+            Id = "type.wing.envelope",
+            FamilyId = family.Id,
+            DisplayName = "Wing Envelope",
+            AirframeDelta = new AirframeParameterDelta
+            {
+                WingAreaSquareMetersDelta = family.BaseAirframeParameters.WingAreaSquareMeters * 0.25d,
+            },
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateAircraft(family, type));
+
+        Assert.That(exception, Is.Not.Null);
+        Assert.That(exception!.Message, Does.Contain("wing area"));
+    }
+
+    [Test]
     public void LargerTypeDelta_IncreasesDevelopmentCostAndManDays()
     {
         var factory = CreateFactory();
@@ -203,7 +247,7 @@ public sealed class AircraftIntegrationTests
             },
             AirframeDelta = new AirframeParameterDelta
             {
-                WingAreaSquareMetersDelta = 12d,
+                WingAreaSquareMetersDelta = 7d,
                 FuelAmountLitersDelta = 600d,
                 CrewCountDelta = 2,
                 EngineCowlingDelta = 0.25d,
@@ -1259,7 +1303,8 @@ public sealed class AircraftIntegrationTests
         string id,
         int engineCount,
         AircraftCategory category = AircraftCategory.LightSportAndRecreational,
-        AircraftAllowedEngineFamily allowedEngineFamily = AircraftAllowedEngineFamily.Any) =>
+        AircraftAllowedEngineFamily allowedEngineFamily = AircraftAllowedEngineFamily.Any,
+        AircraftEngineClassification engineClassification = AircraftEngineClassification.Any) =>
         new()
         {
             Id = id,
@@ -1269,6 +1314,7 @@ public sealed class AircraftIntegrationTests
             Category = category,
             LockedEngineType = EngineType.Radial,
             AllowedEngineFamily = allowedEngineFamily,
+            EngineClassification = engineClassification,
             LockedStructureType = StructureType.Monocoque,
             LockedMaterialType = MaterialType.Aluminum,
             LockedEngineCount = engineCount,

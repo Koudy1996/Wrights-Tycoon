@@ -12,4 +12,9 @@ public enum AircraftCategory
     BusinessVipJet = 7,
     MilitaryTactical = 8,
     MilitaryStrategicSupport = 9,
+    LightCargo = 10,
+    MediumCargo = 11,
+    HeavyCargo = 12,
+    LongRangeCargo = 13,
+    Bomber = 14,
 }

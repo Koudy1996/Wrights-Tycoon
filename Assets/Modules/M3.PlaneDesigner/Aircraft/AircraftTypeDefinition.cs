@@ -14,6 +14,18 @@ public sealed class AircraftTypeDefinition
 
     public AirframeParameterDelta AirframeDelta { get; init; } = new();
 
+    public AircraftNavigationEquipment NavigationEquipment { get; init; } = AircraftNavigationEquipment.None;
+
+    public bool HasPassengerCabin { get; init; }
+
+    public bool HasCargoSpace { get; init; }
+
+    public double WeaponPayloadKilograms { get; init; }
+
+    public bool HasSpecialEquipment { get; init; }
+
+    public bool HasCombatEquipment { get; init; }
+
     public TypeResearchModifierPoints ResearchModifiers { get; init; } = new();
 
     public int RequiredLineToolLevel { get; init; } = 1;
@@ -40,6 +52,16 @@ public sealed class AircraftTypeDefinition
             throw new ArgumentOutOfRangeException(nameof(RequiredLineToolLevel), "Required line tool level must be >= 1.");
         }
 
+        if (!Enum.IsDefined(typeof(AircraftNavigationEquipment), NavigationEquipment))
+        {
+            throw new ArgumentOutOfRangeException(nameof(NavigationEquipment), "Navigation equipment must be a defined value.");
+        }
+
+        if (WeaponPayloadKilograms < 0d || double.IsNaN(WeaponPayloadKilograms) || double.IsInfinity(WeaponPayloadKilograms))
+        {
+            throw new ArgumentOutOfRangeException(nameof(WeaponPayloadKilograms), "Weapon payload must be a finite value >= 0.");
+        }
+
         if (ResearchModifiers is null)
         {
             throw new ArgumentNullException(nameof(ResearchModifiers), "Research modifiers cannot be null.");
@@ -47,6 +69,13 @@ public sealed class AircraftTypeDefinition
 
         ResearchModifiers.Validate();
     }
+}
+
+public enum AircraftNavigationEquipment
+{
+    None = 0,
+    BasicNavigationSuite = 1,
+    AdvancedNavigationSuite = 2,
 }
 
 public sealed class TypeResearchModifierPoints

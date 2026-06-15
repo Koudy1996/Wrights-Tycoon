@@ -7,11 +7,11 @@ namespace WrightTycoon.Core.Tests.Categories;
 public sealed class AircraftCategoryCatalogTests
 {
     [Test]
-    public void Catalog_ContainsAllTenProfiles()
+    public void Catalog_ContainsAllFifteenProfiles()
     {
         var profiles = AircraftCategoryCatalog.GetAllProfiles();
 
-        Assert.That(profiles.Count, Is.EqualTo(10));
+        Assert.That(profiles.Count, Is.EqualTo(15));
         for (var index = 0; index < profiles.Count; index++)
         {
             var profile = profiles[index];
@@ -47,6 +47,11 @@ public sealed class AircraftCategoryCatalogTests
         AssertModifier(AircraftCategory.BusinessVipJet, weight: 1500d, speed: 3d, reliability: 0.1d, fuelMultiplier: 0.8d);
         AssertModifier(AircraftCategory.MilitaryTactical, weight: 3000d, speed: 45d, reliability: -0.1d, fuelMultiplier: 1.08d);
         AssertModifier(AircraftCategory.MilitaryStrategicSupport, weight: 4000d, speed: -5d, reliability: 0.12d, fuelMultiplier: 0.78d);
+        AssertModifier(AircraftCategory.LightCargo, weight: 750d, speed: -3d, reliability: 0d, fuelMultiplier: 0.95d);
+        AssertModifier(AircraftCategory.MediumCargo, weight: 2500d, speed: -4d, reliability: 0.05d, fuelMultiplier: 0.88d);
+        AssertModifier(AircraftCategory.HeavyCargo, weight: 5000d, speed: -5d, reliability: 0.1d, fuelMultiplier: 0.76d);
+        AssertModifier(AircraftCategory.LongRangeCargo, weight: 5500d, speed: -3d, reliability: 0.12d, fuelMultiplier: 0.7d);
+        AssertModifier(AircraftCategory.Bomber, weight: 3500d, speed: 30d, reliability: -0.08d, fuelMultiplier: 1.05d);
     }
 
     private static void AssertModifier(

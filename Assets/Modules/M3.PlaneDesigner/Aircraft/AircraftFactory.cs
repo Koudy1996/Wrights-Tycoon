@@ -66,6 +66,12 @@ public sealed class AircraftFactory
                 $"Family engine policy mismatch. Engine definition '{engineDefinition.Id}' is '{engineDefinition.EngineType}' but family allows '{familyDefinition.AllowedEngineFamily}'.");
         }
 
+        if (!AircraftEngineClassificationCompatibility.IsEngineTypeAllowed(familyDefinition.EngineClassification, engineDefinition.EngineType))
+        {
+            throw new InvalidOperationException(
+                $"Family engine classification mismatch. Engine definition '{engineDefinition.Id}' is '{engineDefinition.EngineType}' but family requires '{familyDefinition.EngineClassification}'.");
+        }
+
         var airframeDefinition = _airframeRepository.GetById(familyDefinition.AirframeDefinitionId);
         var baseEngine = familyDefinition.BaseEngineParameters.Clone();
         var baseAirframe = familyDefinition.BaseAirframeParameters.Clone();
@@ -77,6 +83,10 @@ public sealed class AircraftFactory
         variantAirframe.StructureType = familyDefinition.LockedStructureType;
         variantAirframe.MaterialType = familyDefinition.LockedMaterialType;
         variantAirframe.EngineCount = familyDefinition.LockedEngineCount;
+        ValidateTypeWingAreaWithinFamilyEnvelope(
+            familyDefinition,
+            baseAirframe.WingAreaSquareMeters,
+            variantAirframe.WingAreaSquareMeters);
 
         variantEngine.Validate();
         variantAirframe.Validate();
@@ -184,6 +194,22 @@ public sealed class AircraftFactory
         }
 
         return result;
+    }
+
+    private static void ValidateTypeWingAreaWithinFamilyEnvelope(
+        AircraftFamilyDefinition familyDefinition,
+        double baseWingAreaSquareMeters,
+        double variantWingAreaSquareMeters)
+    {
+        var referenceWingArea = familyDefinition.ReferenceWingAreaSquareMeters ?? baseWingAreaSquareMeters;
+        var minimumWingArea = referenceWingArea * 0.8d;
+        var maximumWingArea = referenceWingArea * 1.2d;
+        if (variantWingAreaSquareMeters + Numeric.Epsilon < minimumWingArea
+            || variantWingAreaSquareMeters - Numeric.Epsilon > maximumWingArea)
+        {
+            throw new InvalidOperationException(
+                $"Type wing area {variantWingAreaSquareMeters:0.###} m2 is outside the family envelope [{minimumWingArea:0.###}, {maximumWingArea:0.###}] m2.");
+        }
     }
 
     private static AircraftPerformanceReport ApplyTypeResearchModifierEffects(
