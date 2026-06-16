@@ -24,6 +24,14 @@ public sealed class EngineBuilder
     public Engine Build(EngineDefinition definition, EngineParameters parameters)
     {
         var technologyModifiers = _technologyModifierSource?.GetCurrentModifiers();
+        return Build(definition, parameters, technologyModifiers);
+    }
+
+    public Engine Build(
+        EngineDefinition definition,
+        EngineParameters parameters,
+        HistoricalCampaignTechnologyModifiers? technologyModifiers)
+    {
         var report = _calculator.Calculate(definition, parameters, _atmosphereModel, technologyModifiers);
         return new Engine(definition, parameters, report);
     }

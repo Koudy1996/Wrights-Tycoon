@@ -1,6 +1,7 @@
 using System;
 using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Data;
 using WrightTycoon.Core.Engines;
 using WrightTycoon.Core.Math;
@@ -91,7 +92,12 @@ public sealed class AircraftFactory
         variantEngine.Validate();
         variantAirframe.Validate();
 
-        var engine = _engineBuilder.Build(engineDefinition, variantEngine);
+        var engine = familyDefinition.InstalledEngineTechnologyModifiers.HasValue
+            ? _engineBuilder.Build(
+                engineDefinition,
+                variantEngine,
+                familyDefinition.InstalledEngineTechnologyModifiers.Value)
+            : _engineBuilder.Build(engineDefinition, variantEngine);
         var airframe = _airframeBuilder.Build(airframeDefinition, variantAirframe);
         var performance = _performanceCalculator.Calculate(engine, airframe, familyDefinition.Category);
         var researchModifierEffects = TypeResearchModifierCalculator.Calculate(typeDefinition.ResearchModifiers);

@@ -4,11 +4,13 @@ using NUnit.Framework;
 using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Data;
 using WrightTycoon.Core.Engines;
 using WrightTycoon.Core.Physics;
 using WrightTycoon.Core.Research;
+using WrightTycoon.Core.Simulation;
 using WrightTycoon.Core.Units;
 
 namespace WrightTycoon.Core.Tests.Aircraft;
@@ -64,6 +66,40 @@ public sealed class AircraftIntegrationTests
         Assert.That(
             twinAircraft.Performance.MaxSpeedByAltitude[0].MaxSpeedMetersPerSecond,
             Is.GreaterThan(singleAircraft.Performance.MaxSpeedByAltitude[0].MaxSpeedMetersPerSecond));
+    }
+
+    [Test]
+    public void InstalledEngineTechnologyModifiers_KeepEngineOutputFixedWhenCampaignYearAdvances()
+    {
+        var progression = new HistoricalCampaignTechnologyProgression();
+        var currentDate = new SimulationDate(1946, 1);
+        var technologySource = new HistoricalCampaignRuntimeTechnologyModifierSource(
+            progression,
+            () => currentDate);
+        var factory = CreateFactory(technologySource);
+        var dynamicFamily = CreateFamily("fam.dynamic.engine", engineCount: 1);
+        var fixedFamily = dynamicFamily.WithInstalledEngineTechnologyModifiers(
+            progression.ResolveForDate(currentDate));
+        var type = new AircraftTypeDefinition
+        {
+            Id = "type.fixed.engine",
+            FamilyId = dynamicFamily.Id,
+            DisplayName = "Fixed Engine Variant",
+        };
+
+        var initialFixedAircraft = factory.CreateAircraft(fixedFamily, type);
+        var initialDynamicAircraft = factory.CreateAircraft(dynamicFamily, type);
+        currentDate = new SimulationDate(1990, 1);
+        var laterFixedAircraft = factory.CreateAircraft(fixedFamily, type);
+        var laterDynamicAircraft = factory.CreateAircraft(dynamicFamily, type);
+
+        var initialFixedOutput = initialFixedAircraft.Engine.Performance.GetPerformanceAtAltitude(0d).Output;
+        var laterFixedOutput = laterFixedAircraft.Engine.Performance.GetPerformanceAtAltitude(0d).Output;
+        var initialDynamicOutput = initialDynamicAircraft.Engine.Performance.GetPerformanceAtAltitude(0d).Output;
+        var laterDynamicOutput = laterDynamicAircraft.Engine.Performance.GetPerformanceAtAltitude(0d).Output;
+
+        Assert.That(laterFixedOutput, Is.EqualTo(initialFixedOutput).Within(1e-6));
+        Assert.That(laterDynamicOutput, Is.GreaterThan(initialDynamicOutput));
     }
 
 
@@ -1245,7 +1281,7 @@ public sealed class AircraftIntegrationTests
         return (double)result!;
     }
 
-    private static AircraftFactory CreateFactory()
+    private static AircraftFactory CreateFactory(IHistoricalCampaignTechnologyModifierSource? technologySource = null)
     {
         var engineRepo = new EngineDefinitionRepository(new[]
         {
@@ -1285,8 +1321,8 @@ public sealed class AircraftIntegrationTests
 
         var atmosphere = new IsaAtmosphereModel();
         var aero = new AerodynamicsCalculator();
-        var engineBuilder = new EngineBuilder(new EngineCalculator(), atmosphere);
-        var airframeBuilder = new AirframeBuilder(new AirframeCalculator(aero, atmosphere));
+        var engineBuilder = new EngineBuilder(new EngineCalculator(), atmosphere, technologySource);
+        var airframeBuilder = new AirframeBuilder(new AirframeCalculator(aero, atmosphere), technologySource);
         var performanceCalculator = new AircraftPerformanceCalculator(atmosphere, aero);
         var developmentCalculator = new DevelopmentCostCalculator();
 

@@ -1,5 +1,6 @@
 using System;
 using WrightTycoon.Core.Airframes;
+using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Engines;
 using WrightTycoon.Core.Math;
@@ -41,6 +42,8 @@ public sealed class AircraftFamilyDefinition
     public AircraftCategory Category { get; init; } = AircraftCategory.LightSportAndRecreational;
 
     public int RequiredFactoryToolLevel { get; init; } = 1;
+
+    public HistoricalCampaignTechnologyModifiers? InstalledEngineTechnologyModifiers { get; init; }
 
     public EngineParameters BaseEngineParameters { get; init; } = new();
 
@@ -138,6 +141,36 @@ public sealed class AircraftFamilyDefinition
         BaseEngineParameters.Validate();
         BaseAirframeParameters.Validate();
     }
+
+    public AircraftFamilyDefinition WithInstalledEngineTechnologyModifiers(
+        HistoricalCampaignTechnologyModifiers? modifiers) =>
+        new()
+        {
+            Id = Id,
+            DisplayName = DisplayName,
+            EngineDefinitionId = EngineDefinitionId,
+            AirframeDefinitionId = AirframeDefinitionId,
+            LockedEngineType = LockedEngineType,
+            AllowedEngineFamily = AllowedEngineFamily,
+            ConstructionStandard = ConstructionStandard,
+            EngineClassification = EngineClassification,
+            LockedStructureType = LockedStructureType,
+            LockedMaterialType = LockedMaterialType,
+            LockedEngineCount = LockedEngineCount,
+            ReferenceWingAreaSquareMeters = ReferenceWingAreaSquareMeters,
+            WingAspectRatio = WingAspectRatio,
+            LockedWingShape = LockedWingShape,
+            LockedWingPosition = LockedWingPosition,
+            Category = Category,
+            RequiredFactoryToolLevel = RequiredFactoryToolLevel,
+            InstalledEngineTechnologyModifiers = modifiers.HasValue
+                ? HistoricalCampaignTechnologyModifiers.Sanitize(modifiers.Value)
+                : null,
+            BaseEngineParameters = BaseEngineParameters.Clone(),
+            BaseAirframeParameters = BaseAirframeParameters.Clone(),
+            BaseDevelopmentCost = BaseDevelopmentCost,
+            BaseDevelopmentManDays = BaseDevelopmentManDays,
+        };
 }
 
 public enum AircraftConstructionStandard

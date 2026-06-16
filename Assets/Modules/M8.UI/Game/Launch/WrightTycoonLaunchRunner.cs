@@ -1990,9 +1990,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 try
                 {
                     var hasFrozenDate = TryCreateSimulationDate(state.FrozenYear, state.FrozenMonth, out var frozenDate);
+                    var familyDefinition = ResolveFamilyDefinitionWithSavedEngineTechnology(
+                        state.EngineResearchId,
+                        state.FamilyDefinition);
                     var aircraft = hasFrozenDate
-                        ? BuildAircraftForDate(state.FamilyDefinition, state.TypeDefinition, frozenDate)
-                        : _aircraftFactory.CreateAircraft(state.FamilyDefinition, state.TypeDefinition);
+                        ? BuildAircraftForDate(familyDefinition, state.TypeDefinition, frozenDate)
+                        : _aircraftFactory.CreateAircraft(familyDefinition, state.TypeDefinition);
                     var designId = string.IsNullOrWhiteSpace(state.DesignId) ? state.TypeDefinition.Id : state.DesignId;
                     var displayName = string.IsNullOrWhiteSpace(state.DisplayName) ? state.Name : state.DisplayName;
                     var catalogItem = new FactoryAircraftTypeCatalogItem(
@@ -3703,7 +3706,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "Engineering Time (months)",
             ResolveTypeResearchTimeMonthsForDesignerPreview(
                 _aircraftPreview,
-                _typeVersionDevelopment?.SourceDevelopmentStartedYear),
+                ResolveActiveTypeVersionDiscountBaselineYear()),
             "0");
         if (_aircraftPreview.Airframe.Parameters.MaterialType == MaterialType.WoodFabric
             && perf.TotalWeight.Kilograms > PlaneDesignerBalance.Airframe.WoodFabricMaximumTotalWeightKilograms)
@@ -5915,7 +5918,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         try
         {
             var rebuiltAircraft = BuildAircraftForDate(
-                savedDesign.CatalogItem.Aircraft.FamilyDefinition,
+                ResolveFamilyDefinitionWithSavedEngineTechnology(savedDesign),
                 savedDesign.CatalogItem.Aircraft.TypeDefinition,
                 date);
             var rebuiltCatalogItem = new FactoryAircraftTypeCatalogItem(
@@ -6291,7 +6294,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
             try
             {
-                var rebuiltAircraft = _aircraftFactory.CreateAircraft(aircraft.FamilyDefinition, updatedType);
+                var familyDefinition = ResolveFamilyDefinitionWithSavedEngineTechnology(savedDesign);
+                var rebuiltAircraft = savedDesign.TryGetFrozenDate(out var frozenDate)
+                    ? BuildAircraftForDate(familyDefinition, updatedType, frozenDate)
+                    : _aircraftFactory.CreateAircraft(familyDefinition, updatedType);
                 var updatedCatalogItem = new FactoryAircraftTypeCatalogItem(
                     savedDesign.CatalogItem.DesignId,
                     savedDesign.CatalogItem.DisplayName,
@@ -6946,7 +6952,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _tab = 1;
         _factoryActionMessage =
             $"Developing new type version from '{savedDesign.Name}'. " +
-            "Engineering quote uses 90% base discount and 50% of technology progress since baseline.";
+            ResolveTypeVersionDevelopmentPricingMessage(savedDesign);
     }
 
     private bool TryLoadSavedAircraftDesignIntoTypeDesigner(
@@ -7307,6 +7313,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     continue;
                 }
 
+                if (!IsTypeResearchCompleted(savedDesign.SourceTypeResearchId))
+                {
+                    return false;
+                }
+
                 baselineYear = savedDesign.DevelopmentStartedYear;
                 return true;
             }
@@ -7314,6 +7325,31 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         return false;
     }
+
+    private int? ResolveActiveTypeVersionDiscountBaselineYear()
+    {
+        if (_typeVersionDevelopment is null
+            || !IsTypeResearchCompleted(_typeVersionDevelopment.SourceTypeResearchId))
+        {
+            return null;
+        }
+
+        return _typeVersionDevelopment.SourceDevelopmentStartedYear;
+    }
+
+    private string ResolveTypeVersionDevelopmentPricingMessage(SavedAircraftDesign sourceDesign)
+    {
+        if (sourceDesign is not null && IsTypeResearchCompleted(sourceDesign.TypeResearchId))
+        {
+            return "Engineering quote uses 90% base discount and 50% of technology progress since baseline.";
+        }
+
+        return "Baseline type is not completed yet, so this version uses full type engineering cost and time.";
+    }
+
+    private bool IsTypeResearchCompleted(string typeResearchId) =>
+        _researchBoard is not null
+        && _researchBoard.IsCompleted(ResearchSubjectType.AircraftType, typeResearchId);
 
     private double CalculateTechnologyProgressSinceYear(int baselineYear)
     {
@@ -7823,6 +7859,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var familyDefinitionForCatalog = isTypeVersionDevelopment
             ? activeTypeVersionDevelopment!.SourceFamilyDefinition
             : _aircraftPreview.FamilyDefinition;
+        familyDefinitionForCatalog = ResolveFamilyDefinitionWithSavedEngineTechnology(
+            selectedSavedEngine.ResearchId,
+            familyDefinitionForCatalog);
         var typeModifiers = GetResearchModifierPoints(ResearchSubjectType.AircraftType, typeResearchId);
         var typeDefinition = BuildTypeForAircraft(familyDefinitionForCatalog, typeModifiers);
         var aircraftForCatalog = _aircraftFactory.CreateAircraft(familyDefinitionForCatalog, typeDefinition);
@@ -8989,9 +9028,67 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             RequiredFactoryToolLevel = FixedFactoryToolRequirementLevel,
             BaseDevelopmentCost = ApplyEarlyResearchDiscountToCost(_baseDevelopmentCost),
             BaseDevelopmentManDays = _baseDevelopmentManDays,
+            InstalledEngineTechnologyModifiers = ResolveInstalledEngineTechnologyModifiers(saved),
             BaseEngineParameters = saved.Parameters.Clone(),
             BaseAirframeParameters = baseAirframe,
         };
+    }
+
+    private AircraftFamilyDefinition ResolveFamilyDefinitionWithSavedEngineTechnology(
+        SavedAircraftDesign savedDesign) =>
+        ResolveFamilyDefinitionWithSavedEngineTechnology(
+            savedDesign.EngineResearchId,
+            savedDesign.CatalogItem.Aircraft.FamilyDefinition);
+
+    private AircraftFamilyDefinition ResolveFamilyDefinitionWithSavedEngineTechnology(
+        string engineResearchId,
+        AircraftFamilyDefinition familyDefinition)
+    {
+        if (familyDefinition is null)
+        {
+            throw new ArgumentNullException(nameof(familyDefinition));
+        }
+
+        if (!TryGetSavedEngineByResearchId(engineResearchId, out var savedEngine))
+        {
+            return familyDefinition;
+        }
+
+        var modifiers = ResolveInstalledEngineTechnologyModifiers(savedEngine);
+        return modifiers.HasValue
+            ? familyDefinition.WithInstalledEngineTechnologyModifiers(modifiers.Value)
+            : familyDefinition;
+    }
+
+    private HistoricalCampaignTechnologyModifiers? ResolveInstalledEngineTechnologyModifiers(SavedEngineDesign savedEngine)
+    {
+        if (savedEngine is null)
+        {
+            return null;
+        }
+
+        if (savedEngine.TryGetFrozenDate(out var frozenDate))
+        {
+            return _historicalCampaignTechnologyProgression.ResolveForDate(frozenDate);
+        }
+
+        return null;
+    }
+
+    private bool TryGetSavedEngineByResearchId(string researchId, out SavedEngineDesign savedEngine)
+    {
+        for (var index = 0; index < _savedEngines.Count; index++)
+        {
+            var candidate = _savedEngines[index];
+            if (string.Equals(candidate.ResearchId, researchId, StringComparison.Ordinal))
+            {
+                savedEngine = candidate;
+                return true;
+            }
+        }
+
+        savedEngine = null!;
+        return false;
     }
 
     private AircraftTypeDefinition BuildTypeForAircraft(
