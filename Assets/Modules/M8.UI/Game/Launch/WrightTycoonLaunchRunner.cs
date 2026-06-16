@@ -1934,7 +1934,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        _contractDeliverabilityFilter = data.ContractDeliverabilityFilter;
+        _contractDeliverabilityFilter = Enum.IsDefined(typeof(ContractDeliverabilityFilter), data.ContractDeliverabilityFilter)
+            ? data.ContractDeliverabilityFilter
+            : ContractDeliverabilityFilter.All;
         _contractSpecificationFilter = data.ContractSpecificationFilter;
         _contractRequestedCategoryFilterEnabled = data.ContractRequestedCategoryFilterEnabled;
         _contractRequestedCategoryFilter = Enum.IsDefined(typeof(AircraftCategory), data.ContractRequestedCategoryFilter)
@@ -3960,7 +3962,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 GUILayout.Label($"{contract.Id} | {contract.CompanyName}");
                 GUILayout.Label($"Quantity: {FormatUiInteger(contract.QuantityUnits)} units");
                 GUILayout.Label($"Deadline: {FormatUiInteger(contract.RemainingMonths)} months remaining (initial {FormatUiInteger(contract.DeadlineMonths)})");
-                GUILayout.Label($"Can deliver now: {(snapshot.CanBeDeliveredNow ? "Yes" : "No")} | Matching plane by specs: {(snapshot.HasMatchingPlaneBySpecification ? "Yes" : "No")}");
+                GUILayout.Label($"Can deliver now: {(snapshot.CanBeDeliveredNow ? "Yes" : "No")} | Can profit: {(snapshot.CanProfit ? "Yes" : "No")} | Matching plane by specs: {(snapshot.HasMatchingPlaneBySpecification ? "Yes" : "No")}");
                 DrawContractRequirements(contract.Requirements);
 
                 var deliveryCandidates = BuildContractDeliveryCandidates(
@@ -8929,7 +8931,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         IReadOnlyDictionary<string, int> warehouseSnapshot)
     {
         var hasMatchingPlaneBySpecification = false;
-        var deliverableWarehouseUnits = 0;
 
         foreach (var catalogItem in catalog.Values)
         {
@@ -8945,19 +8946,29 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
 
             hasMatchingPlaneBySpecification = true;
-            if (warehouseSnapshot.TryGetValue(catalogItem.DesignId, out var stockUnits)
-                && stockUnits > 0)
-            {
-                deliverableWarehouseUnits += stockUnits;
-                if (deliverableWarehouseUnits >= contract.QuantityUnits)
-                {
-                    break;
-                }
-            }
+            break;
         }
 
-        var canBeDeliveredNow = deliverableWarehouseUnits >= contract.QuantityUnits;
-        return new ContractAvailabilitySnapshot(contract, canBeDeliveredNow, hasMatchingPlaneBySpecification);
+        var deliveryCandidates = BuildContractDeliveryCandidates(
+            contract,
+            contractBoard,
+            catalog,
+            warehouseSnapshot);
+        var deliveryPlan = BuildCheapestContractDeliveryPlan(contract.QuantityUnits, deliveryCandidates);
+        var deliveredUnits = deliveryPlan.Sum(allocation => allocation.UnitsToDeliver);
+        var canBeDeliveredNow = deliveredUnits >= contract.QuantityUnits;
+        var expectedProfitLoss = 0d;
+        if (canBeDeliveredNow)
+        {
+            var fulfillmentCost = deliveryPlan.Sum(allocation => allocation.Candidate.UnitFulfillmentCost * allocation.UnitsToDeliver);
+            expectedProfitLoss = GetContractTotalPrice(contract) - fulfillmentCost;
+        }
+
+        return new ContractAvailabilitySnapshot(
+            contract,
+            canBeDeliveredNow,
+            hasMatchingPlaneBySpecification,
+            expectedProfitLoss);
     }
 
     private IReadOnlyList<ContractDeliveryCandidate> BuildContractDeliveryCandidates(
@@ -9070,6 +9081,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (_contractDeliverabilityFilter == ContractDeliverabilityFilter.CanBeDeliveredOnly
             && !snapshot.CanBeDeliveredNow)
+        {
+            return false;
+        }
+
+        if (_contractDeliverabilityFilter == ContractDeliverabilityFilter.CanProfitOnly
+            && !snapshot.CanProfit)
         {
             return false;
         }
@@ -12004,9 +12021,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private static ContractDeliverabilityFilter DrawContractDeliverabilityFilter(string label, ContractDeliverabilityFilter currentFilter)
     {
         GUILayout.Label(label);
-        var labels = new[] { "All", "Can Be Delivered" };
+        var labels = new[] { "All", "Can Be Delivered", "Can Profit" };
         var index = Mathf.Clamp((int)currentFilter, 0, labels.Length - 1);
-        var nextIndex = GUILayout.SelectionGrid(index, labels, 2);
+        var nextIndex = GUILayout.SelectionGrid(index, labels, labels.Length);
         nextIndex = Mathf.Clamp(nextIndex, 0, labels.Length - 1);
         return (ContractDeliverabilityFilter)nextIndex;
     }
@@ -12907,6 +12924,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         All = 0,
         CanBeDeliveredOnly = 1,
+        CanProfitOnly = 2,
     }
 
     private enum ContractSpecificationFilter
@@ -12921,16 +12939,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public ContractAvailabilitySnapshot(
             Contract contract,
             bool canBeDeliveredNow,
-            bool hasMatchingPlaneBySpecification)
+            bool hasMatchingPlaneBySpecification,
+            double expectedProfitLoss)
         {
             Contract = contract;
             CanBeDeliveredNow = canBeDeliveredNow;
             HasMatchingPlaneBySpecification = hasMatchingPlaneBySpecification;
+            ExpectedProfitLoss = expectedProfitLoss;
         }
 
         public Contract Contract { get; }
 
         public bool CanBeDeliveredNow { get; }
+
+        public bool CanProfit => CanBeDeliveredNow && ExpectedProfitLoss > 0d;
+
+        public double ExpectedProfitLoss { get; }
 
         public bool HasMatchingPlaneBySpecification { get; }
     }
