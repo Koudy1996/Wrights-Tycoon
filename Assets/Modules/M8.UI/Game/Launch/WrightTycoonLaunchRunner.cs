@@ -151,6 +151,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private int _typeCrewCount = 2;
     private TailType _typeTailType = TailType.Classic;
     private WingShape _typeWingShape = WingShape.Straight;
+    private AircraftRoleModuleSelection _typeRoleModuleSelection = AircraftRoleModuleSelection.None;
     private WingProfileType _typeWingProfile = WingProfileType.Laminar6SeriesAerodynamic;
     private double _typeWingAreaSquareMeters = 36d;
     private bool _typePayloadLimitEnabled;
@@ -1578,8 +1579,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             RequiredLineToolLevel = 1,
             TypeCrewCount = _typeCrewCount,
             TypeTailType = _typeTailType,
-            TypeWingShape = _typeWingShape,
-            TypeWingProfile = _typeWingProfile,
+            TypeWingShape = _baseAirframeParameters.WingShape,
+            TypeWingProfile = NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile),
             TypeWingAreaSquareMeters = _typeWingAreaSquareMeters,
             TypePayloadLimitEnabled = _typePayloadLimitEnabled,
             TypePayloadLimitKilograms = _typePayloadLimitKilograms,
@@ -1653,6 +1654,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 LockedStructureType = saved.LockedStructureType,
                 LockedMaterialType = saved.LockedMaterialType,
                 WingPosition = saved.WingPosition,
+                WingShape = saved.WingShape,
+                WingProfile = saved.WingProfile,
                 AllowedEngineFamily = saved.AllowedEngineFamily,
                 ConstructionStandard = saved.ConstructionStandard,
             });
@@ -1810,13 +1813,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _typeCrewCount = Mathf.Clamp(data.TypeCrewCount, PlaneDesignerBalance.Airframe.CrewMin, PlaneDesignerBalance.Airframe.CrewMax);
         _typeTailType = data.TypeTailType;
-        _typeWingShape = data.TypeWingShape;
-        var loadedWingProfile = Enum.IsDefined(typeof(WingProfileType), data.TypeWingProfile)
-            ? data.TypeWingProfile
-            : WingProfileType.Laminar6SeriesAerodynamic;
-        _typeWingProfile = loadedWingProfile == WingProfileType.Standard
-            ? WingProfileType.Laminar6SeriesAerodynamic
-            : loadedWingProfile;
+        _typeWingShape = _baseAirframeParameters.WingShape;
+        _typeWingProfile = _baseAirframeParameters.WingProfile;
         _typeWingAreaSquareMeters = data.TypeWingAreaSquareMeters <= 0d ? _baseAirframeParameters.WingAreaSquareMeters : data.TypeWingAreaSquareMeters;
         _typePayloadLimitEnabled = data.TypePayloadLimitEnabled;
         _typePayloadLimitKilograms = Math.Clamp(
@@ -1839,6 +1837,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeWeaponPayloadKilograms = Math.Clamp(data.TypeWeaponPayloadKilograms, 0d, TypePayloadLimitMaxKilograms);
         _typeHasSpecialEquipment = data.TypeHasSpecialEquipment;
         _typeHasCombatEquipment = data.TypeHasCombatEquipment;
+        _typeRoleModuleSelection = ResolveRoleModuleSelection(
+            _typeHasPassengerCabin,
+            _typeHasCargoSpace,
+            _typeHasSpecialEquipment,
+            _typeHasCombatEquipment);
+        ApplyRoleModuleSelection(_typeRoleModuleSelection);
 
         _researchModifiersByResearchId.Clear();
         if (data.ResearchModifiersByResearchId is not null)
@@ -1891,6 +1895,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (data.BaseAirframeParameters is not null)
         {
             _baseAirframeParameters = data.BaseAirframeParameters.Clone();
+            _baseAirframeParameters.WingProfile = NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile);
         }
 
         _savedEngines.Clear();
@@ -1958,6 +1963,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     state.LockedStructureType,
                     state.LockedMaterialType,
                     state.WingPosition,
+                    Enum.IsDefined(typeof(WingShape), state.WingShape) ? state.WingShape : WingShape.Straight,
+                    Enum.IsDefined(typeof(WingProfileType), state.WingProfile) ? NormalizeFamilyWingProfile(state.WingProfile) : WingProfileType.Laminar6SeriesAerodynamic,
                     state.AllowedEngineFamily == AircraftAllowedEngineFamily.Any ? AircraftAllowedEngineFamily.Propeller : state.AllowedEngineFamily,
                     Enum.IsDefined(typeof(AircraftConstructionStandard), state.ConstructionStandard)
                         ? state.ConstructionStandard
@@ -2633,6 +2640,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     $"({FormatUiInteger(PlaneDesignerBalance.Airframe.CompositeMaterialFallbackUnlockYear)}).");
             }
             _baseAirframeParameters.WingPosition = DrawWingPositionSelector("Wing Position", _baseAirframeParameters.WingPosition);
+            _baseAirframeParameters.WingShape = DrawWingShapeSelector("Wing Shape", _baseAirframeParameters.WingShape);
+            _typeWingShape = _baseAirframeParameters.WingShape;
+            _baseAirframeParameters.WingProfile = DrawWingProfileSelector("Wing Profile", NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile));
+            _typeWingProfile = _baseAirframeParameters.WingProfile;
+            DrawWingProfileHelp(_baseAirframeParameters.WingProfile);
             _familyAllowedEngineFamily = DrawFamilyAllowedEngineSelector("Engine Type", _familyAllowedEngineFamily);
 
             _baseAirframeParameters.EngineCount = _lockedEngineCount;
@@ -2725,17 +2737,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
         DrawSection("Role Modules");
         _typeNavigationEquipment = DrawNavigationEquipmentSelector("Navigation Equipment", _typeNavigationEquipment);
-        _typeHasPassengerCabin = GUILayout.Toggle(_typeHasPassengerCabin, "Passenger Cabin");
-        _typeHasCargoSpace = GUILayout.Toggle(_typeHasCargoSpace, "Cargo Space");
-        _typeHasSpecialEquipment = GUILayout.Toggle(_typeHasSpecialEquipment, "Special Equipment");
-        _typeHasCombatEquipment = GUILayout.Toggle(_typeHasCombatEquipment, "Combat Equipment");
-        _typeWeaponPayloadKilograms = DrawSlider(
-            "Weapon Payload (kg)",
-            _typeWeaponPayloadKilograms,
-            0d,
-            TypePayloadLimitMaxKilograms,
-            "0.0",
-            useLinearScale: true);
+        _typeRoleModuleSelection = DrawRoleModuleSelector("Role Module", _typeRoleModuleSelection);
+        ApplyRoleModuleSelection(_typeRoleModuleSelection);
+        if (_typeHasCombatEquipment && _aircraftPreview is not null)
+        {
+            GUILayout.Label($"Weapon Payload: {_aircraftPreview.TypeDefinition.WeaponPayloadKilograms:0.0} kg (from useful weight)");
+        }
+        else
+        {
+            GUILayout.Label("Weapon Payload: 0.0 kg");
+        }
+
         if (GUILayout.Button("Apply Category Defaults", GUILayout.Height(24f)))
         {
             ApplyCategoryDefaultsToCurrentRoleConfiguration();
@@ -2747,19 +2759,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             PlaneDesignerBalance.Airframe.CrewMin,
             PlaneDesignerBalance.Airframe.CrewMax);
         _typeTailType = DrawTailSelector("Tail Type", _typeTailType);
-        _typeWingShape = DrawEnum("Wing Shape", _typeWingShape, BuildWingShapeTooltipDefinition(_typeWingShape));
-        _typeWingProfile = DrawWingProfileSelector("Wing Profile", _typeWingProfile);
-        GUILayout.Label(_typeWingProfile switch
-        {
-            WingProfileType.Laminar6SeriesAerodynamic =>
-                "Laminar 6-series: up to +5% lift and -5% drag (full effect at 50 m2, fades to 0 at 500 m2).",
-            WingProfileType.Naca4DigitLight =>
-                "NACA 4-digit Light: -10% airframe cost, -10% weight, and drag rises by up to +80% from 250 to 1,000 km/h.",
-            WingProfileType.SymmetricalAcrobatic =>
-                "Symmetrical Acrobatic: +10% maneuverability, +20% airframe cost, -10% lift.",
-            _ =>
-                "Laminar 6-series: up to +5% lift and -5% drag (full effect at 50 m2, fades to 0 at 500 m2).",
-        });
+        _typeWingShape = _baseAirframeParameters.WingShape;
+        _typeWingProfile = _baseAirframeParameters.WingProfile;
         _typeWingAreaSquareMeters = DrawWingAreaSliderWithOptimizationButton(
             "Wing Area (m2)",
             _typeWingAreaSquareMeters,
@@ -3514,8 +3515,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         var current = _baseAirframeParameters.Clone();
         current.CrewCount = _typeCrewCount;
-        current.WingShape = _typeWingShape;
-        current.WingProfile = _typeWingProfile;
         current.WingAreaSquareMeters = _typeWingAreaSquareMeters;
         current.TailType = _typeTailType;
         current.FlapType = _typeFlapType;
@@ -6940,6 +6939,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var familyDefinition = aircraft.FamilyDefinition;
         var typeDefinition = aircraft.TypeDefinition;
         var baseAirframe = familyDefinition.BaseAirframeParameters.Clone();
+        baseAirframe.WingProfile = NormalizeFamilyWingProfile(baseAirframe.WingProfile);
         _selectedAircraftPictureId = ResolveValidAircraftPictureId(savedDesign.AircraftPictureId);
 
         _selectedSavedAircraftDesignIndex = designIndex;
@@ -6969,6 +6969,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeWeaponPayloadKilograms = typeDefinition.WeaponPayloadKilograms;
         _typeHasSpecialEquipment = typeDefinition.HasSpecialEquipment;
         _typeHasCombatEquipment = typeDefinition.HasCombatEquipment;
+        _typeRoleModuleSelection = ResolveRoleModuleSelection(
+            _typeHasPassengerCabin,
+            _typeHasCargoSpace,
+            _typeHasSpecialEquipment,
+            _typeHasCombatEquipment);
+        ApplyRoleModuleSelection(_typeRoleModuleSelection);
         _typeCrewCount = Mathf.Clamp(
             baseAirframe.CrewCount + typeDelta.CrewCountDelta,
             PlaneDesignerBalance.Airframe.CrewMin,
@@ -6987,9 +6993,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             baseAirframe.AerodynamicCleanlinessPercent + typeDelta.AerodynamicCleanlinessPercentDelta,
             PlaneDesignerBalance.Airframe.AerodynamicCleanlinessMinPercent,
             PlaneDesignerBalance.Airframe.AerodynamicCleanlinessMaxPercent);
-        _typeWingShape = typeDelta.WingShapeOverride ?? baseAirframe.WingShape;
-        var wingProfile = typeDelta.WingProfileOverride ?? baseAirframe.WingProfile;
-        _typeWingProfile = wingProfile == WingProfileType.Standard ? WingProfileType.Laminar6SeriesAerodynamic : wingProfile;
+        _typeWingShape = baseAirframe.WingShape;
+        _typeWingProfile = baseAirframe.WingProfile;
         _typeTailType = typeDelta.TailTypeOverride ?? baseAirframe.TailType;
         _typeFlapType = typeDelta.FlapTypeOverride ?? baseAirframe.FlapType;
         _typeHasLeadingEdgeFlaps = typeDelta.HasLeadingEdgeFlapsOverride ?? baseAirframe.HasLeadingEdgeFlaps;
@@ -7788,11 +7793,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        var typeModifiers = GetResearchModifierPoints(ResearchSubjectType.AircraftType, typeResearchId);
-        var typeDefinition = BuildType(familyResearchId, typeModifiers);
         var familyDefinitionForCatalog = isTypeVersionDevelopment
             ? activeTypeVersionDevelopment!.SourceFamilyDefinition
             : _aircraftPreview.FamilyDefinition;
+        var typeModifiers = GetResearchModifierPoints(ResearchSubjectType.AircraftType, typeResearchId);
+        var typeDefinition = BuildTypeForAircraft(familyDefinitionForCatalog, typeModifiers);
         var aircraftForCatalog = _aircraftFactory.CreateAircraft(familyDefinitionForCatalog, typeDefinition);
 
         var catalogItem = new FactoryAircraftTypeCatalogItem(
@@ -7877,6 +7882,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _lockedStructure,
             _lockedMaterial,
             _baseAirframeParameters.WingPosition,
+            _baseAirframeParameters.WingShape,
+            NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile),
             _familyAllowedEngineFamily,
             _familyConstructionStandard));
         _selectedSavedFamilyIndex = _savedFamilies.Count - 1;
@@ -7911,6 +7918,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         _baseAirframeParameters.WingPosition = saved.WingPosition;
+        _baseAirframeParameters.WingShape = saved.WingShape;
+        _baseAirframeParameters.WingProfile = saved.WingProfile;
+        _typeWingShape = _baseAirframeParameters.WingShape;
+        _typeWingProfile = _baseAirframeParameters.WingProfile;
         _baseAirframeParameters.EngineCount = saved.LockedEngineCount;
         _baseAirframeParameters.StructureType = saved.LockedStructureType;
         _baseAirframeParameters.MaterialType = _lockedMaterial;
@@ -7928,6 +7939,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _familyAllowedEngineFamily = AircraftAllowedEngineFamily.Propeller;
         _familyConstructionStandard = AircraftConstructionStandard.Ultralight;
         _baseAirframeParameters = CreateDefaultAirframeParameters(_lockedEngineCount);
+        _baseAirframeParameters.WingProfile = NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile);
         ApplyCategoryDefaultsToCurrentRoleConfiguration();
     }
 
@@ -8773,7 +8785,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             var family = _typeVersionDevelopment is not null
                 ? _typeVersionDevelopment.SourceFamilyDefinition
                 : BuildFamily(saved);
-            var type = BuildType(family.Id);
+            var type = BuildTypeForAircraft(family);
             _aircraftPreview = _aircraftFactory.CreateAircraft(family, type);
         }
         catch (Exception ex)
@@ -8923,6 +8935,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         baseAirframe.EngineCount = _lockedEngineCount;
         baseAirframe.StructureType = _lockedStructure;
         baseAirframe.MaterialType = _lockedMaterial;
+        baseAirframe.WingShape = _baseAirframeParameters.WingShape;
+        baseAirframe.WingPosition = _baseAirframeParameters.WingPosition;
+        baseAirframe.WingProfile = NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile);
 
         return new AircraftFamilyDefinition
         {
@@ -8936,6 +8951,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             LockedStructureType = _lockedStructure,
             LockedMaterialType = _lockedMaterial,
             LockedEngineCount = _lockedEngineCount,
+            ReferenceWingAreaSquareMeters = _baseAirframeParameters.WingAreaSquareMeters,
+            LockedWingShape = _baseAirframeParameters.WingShape,
+            LockedWingPosition = _baseAirframeParameters.WingPosition,
             Category = _selectedAircraftCategory,
             RequiredFactoryToolLevel = FixedFactoryToolRequirementLevel,
             BaseDevelopmentCost = ApplyEarlyResearchDiscountToCost(_baseDevelopmentCost),
@@ -8945,11 +8963,49 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         };
     }
 
-    private AircraftTypeDefinition BuildType(
-        string familyId,
+    private AircraftTypeDefinition BuildTypeForAircraft(
+        AircraftFamilyDefinition family,
         TypeResearchModifierPoints? researchModifiers = null,
         double? wingAreaSquareMetersOverride = null)
     {
+        if (_aircraftFactory is null)
+        {
+            throw new InvalidOperationException("Aircraft factory is not initialized.");
+        }
+
+        var provisionalType = BuildType(
+            family.Id,
+            researchModifiers,
+            wingAreaSquareMetersOverride,
+            weaponPayloadKilogramsOverride: 0d);
+        if (!provisionalType.HasCombatEquipment)
+        {
+            _typeWeaponPayloadKilograms = 0d;
+            return provisionalType;
+        }
+
+        var provisionalAircraft = _aircraftFactory.CreateAircraft(family, provisionalType);
+        var usefulWeightKilograms = Math.Clamp(
+            provisionalAircraft.Performance.PayloadCapacity.Kilograms,
+            0d,
+            TypePayloadLimitMaxKilograms);
+        _typeWeaponPayloadKilograms = usefulWeightKilograms;
+        return BuildType(
+            family.Id,
+            researchModifiers,
+            wingAreaSquareMetersOverride,
+            usefulWeightKilograms);
+    }
+
+    private AircraftTypeDefinition BuildType(
+        string familyId,
+        TypeResearchModifierPoints? researchModifiers = null,
+        double? wingAreaSquareMetersOverride = null,
+        double? weaponPayloadKilogramsOverride = null)
+    {
+        var weaponPayloadKilograms = _typeHasCombatEquipment
+            ? Math.Clamp(weaponPayloadKilogramsOverride ?? _typeWeaponPayloadKilograms, 0d, TypePayloadLimitMaxKilograms)
+            : 0d;
         return new AircraftTypeDefinition
         {
             Id = BuildTypeId(),
@@ -8961,7 +9017,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             NavigationEquipment = _typeNavigationEquipment,
             HasPassengerCabin = _typeHasPassengerCabin,
             HasCargoSpace = _typeHasCargoSpace,
-            WeaponPayloadKilograms = Math.Clamp(_typeWeaponPayloadKilograms, 0d, TypePayloadLimitMaxKilograms),
+            WeaponPayloadKilograms = weaponPayloadKilograms,
             HasSpecialEquipment = _typeHasSpecialEquipment,
             HasCombatEquipment = _typeHasCombatEquipment,
             ResearchModifiers = (researchModifiers ?? new TypeResearchModifierPoints()).Clone(),
@@ -8982,6 +9038,50 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeWeaponPayloadKilograms = roleDefaults.WeaponPayloadKilograms;
         _typeHasSpecialEquipment = roleDefaults.HasSpecialEquipment;
         _typeHasCombatEquipment = roleDefaults.HasCombatEquipment;
+        _typeRoleModuleSelection = ResolveRoleModuleSelection(
+            _typeHasPassengerCabin,
+            _typeHasCargoSpace,
+            _typeHasSpecialEquipment,
+            _typeHasCombatEquipment);
+        ApplyRoleModuleSelection(_typeRoleModuleSelection);
+    }
+
+    private void ApplyRoleModuleSelection(AircraftRoleModuleSelection selection)
+    {
+        _typeHasPassengerCabin = selection == AircraftRoleModuleSelection.PassengerCabin;
+        _typeHasCargoSpace = selection == AircraftRoleModuleSelection.CargoSpace;
+        _typeHasSpecialEquipment = selection == AircraftRoleModuleSelection.SpecialEquipment;
+        _typeHasCombatEquipment = selection == AircraftRoleModuleSelection.CombatEquipment;
+        if (!_typeHasCombatEquipment)
+        {
+            _typeWeaponPayloadKilograms = 0d;
+        }
+    }
+
+    private static AircraftRoleModuleSelection ResolveRoleModuleSelection(
+        bool hasPassengerCabin,
+        bool hasCargoSpace,
+        bool hasSpecialEquipment,
+        bool hasCombatEquipment)
+    {
+        if (hasCombatEquipment)
+        {
+            return AircraftRoleModuleSelection.CombatEquipment;
+        }
+
+        if (hasSpecialEquipment)
+        {
+            return AircraftRoleModuleSelection.SpecialEquipment;
+        }
+
+        if (hasCargoSpace)
+        {
+            return AircraftRoleModuleSelection.CargoSpace;
+        }
+
+        return hasPassengerCabin
+            ? AircraftRoleModuleSelection.PassengerCabin
+            : AircraftRoleModuleSelection.None;
     }
 
     private static AircraftConstructionStandard ResolveDefaultConstructionStandard(AircraftCategory category)
@@ -9038,6 +9138,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             or AircraftCategory.LongRangeCargo;
     }
 
+    private enum AircraftRoleModuleSelection
+    {
+        None = 0,
+        PassengerCabin = 1,
+        CargoSpace = 2,
+        SpecialEquipment = 3,
+        CombatEquipment = 4,
+    }
+
     private readonly struct AircraftTypeRoleConfiguration
     {
         public AircraftTypeRoleConfiguration(
@@ -9092,8 +9201,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             CrewCountDelta = crewDelta,
             EngineCowlingDelta = cowlingDelta,
             AerodynamicCleanlinessPercentDelta = aerodynamicCleanlinessDelta,
-            WingShapeOverride = _typeWingShape,
-            WingProfileOverride = _typeWingProfile,
             TailTypeOverride = _typeTailType,
             FlapTypeOverride = _typeFlapType,
             HasLeadingEdgeFlapsOverride = _typeHasLeadingEdgeFlaps,
@@ -10727,7 +10834,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             var family = _typeVersionDevelopment is not null
                 ? _typeVersionDevelopment.SourceFamilyDefinition
                 : BuildFamily(savedEngine);
-            var type = BuildType(family.Id, wingAreaSquareMetersOverride: wingAreaSquareMeters);
+            var type = BuildTypeForAircraft(family, wingAreaSquareMetersOverride: wingAreaSquareMeters);
             aircraft = _aircraftFactory.CreateAircraft(family, type);
             return true;
         }
@@ -11458,6 +11565,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[next];
     }
 
+    private WingShape DrawWingShapeSelector(string label, WingShape wingShape)
+    {
+        DrawModifierLabelWithTooltip(label, BuildWingShapeTooltipDefinition(wingShape));
+        var values = new[] { WingShape.Straight, WingShape.Swept, WingShape.Delta };
+        var labels = new[] { "Straight", "Swept", "Delta" };
+        var index = Array.IndexOf(values, wingShape);
+        if (index < 0)
+        {
+            index = 0;
+        }
+
+        var next = GUILayout.SelectionGrid(index, labels, 3);
+        next = Mathf.Clamp(next, 0, values.Length - 1);
+        return values[next];
+    }
+
     private static AircraftConstructionStandard DrawConstructionStandardSelector(
         string label,
         AircraftConstructionStandard constructionStandard)
@@ -11504,6 +11627,39 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[next];
     }
 
+    private static AircraftRoleModuleSelection DrawRoleModuleSelector(
+        string label,
+        AircraftRoleModuleSelection selection)
+    {
+        GUILayout.Label(label);
+        var values = new[]
+        {
+            AircraftRoleModuleSelection.None,
+            AircraftRoleModuleSelection.PassengerCabin,
+            AircraftRoleModuleSelection.CargoSpace,
+            AircraftRoleModuleSelection.SpecialEquipment,
+            AircraftRoleModuleSelection.CombatEquipment,
+        };
+        var labels = new[] { "None", "Passenger", "Cargo", "Special", "Combat" };
+        var index = Array.IndexOf(values, selection);
+        if (index < 0)
+        {
+            index = 0;
+        }
+
+        index = Mathf.RoundToInt(GUILayout.HorizontalSlider(index, 0, values.Length - 1));
+        index = Mathf.Clamp(index, 0, values.Length - 1);
+        GUILayout.Label($"Selected: {labels[index]}");
+        GUILayout.BeginHorizontal();
+        for (var labelIndex = 0; labelIndex < labels.Length; labelIndex++)
+        {
+            GUILayout.Label(labels[labelIndex], GUILayout.ExpandWidth(true));
+        }
+
+        GUILayout.EndHorizontal();
+        return values[index];
+    }
+
     private WingProfileType DrawWingProfileSelector(string label, WingProfileType wingProfile)
     {
         DrawModifierLabelWithTooltip(label, BuildWingProfileTooltipDefinition(wingProfile));
@@ -11528,6 +11684,26 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var next = GUILayout.SelectionGrid(index, labels, 2);
         next = Mathf.Clamp(next, 0, values.Length - 1);
         return values[next];
+    }
+
+    private static WingProfileType NormalizeFamilyWingProfile(WingProfileType wingProfile) =>
+        wingProfile == WingProfileType.Standard
+            ? WingProfileType.Laminar6SeriesAerodynamic
+            : wingProfile;
+
+    private static void DrawWingProfileHelp(WingProfileType wingProfile)
+    {
+        GUILayout.Label(wingProfile switch
+        {
+            WingProfileType.Laminar6SeriesAerodynamic =>
+                "Laminar 6-series: up to +5% lift and -5% drag (full effect at 50 m2, fades to 0 at 500 m2).",
+            WingProfileType.Naca4DigitLight =>
+                "NACA 4-digit Light: -10% airframe cost, -10% weight, and drag rises by up to +80% from 250 to 1,000 km/h.",
+            WingProfileType.SymmetricalAcrobatic =>
+                "Symmetrical Acrobatic: +10% maneuverability, +20% airframe cost, -10% lift.",
+            _ =>
+                "Laminar 6-series: up to +5% lift and -5% drag (full effect at 50 m2, fades to 0 at 500 m2).",
+        });
     }
 
     private static TailType DrawTailSelector(string label, TailType tailType)
@@ -11835,9 +12011,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeCrewCount = _baseAirframeParameters.CrewCount;
         _typeTailType = _baseAirframeParameters.TailType;
         _typeWingShape = _baseAirframeParameters.WingShape;
-        _typeWingProfile = _baseAirframeParameters.WingProfile == WingProfileType.Standard
-            ? WingProfileType.Laminar6SeriesAerodynamic
-            : _baseAirframeParameters.WingProfile;
+        _baseAirframeParameters.WingProfile = NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile);
+        _typeWingProfile = _baseAirframeParameters.WingProfile;
         _typeWingAreaSquareMeters = _baseAirframeParameters.WingAreaSquareMeters;
         _typeFlapType = _baseAirframeParameters.FlapType == FlapType.LeadingEdge ? FlapType.Plain : _baseAirframeParameters.FlapType;
         _typeHasLeadingEdgeFlaps = _baseAirframeParameters.HasLeadingEdgeFlaps || _baseAirframeParameters.FlapType == FlapType.LeadingEdge;
@@ -12428,6 +12603,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             StructureType lockedStructureType,
             MaterialType lockedMaterialType,
             WingPosition wingPosition,
+            WingShape wingShape,
+            WingProfileType wingProfile,
             AircraftAllowedEngineFamily allowedEngineFamily,
             AircraftConstructionStandard constructionStandard)
         {
@@ -12437,6 +12614,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             LockedStructureType = lockedStructureType;
             LockedMaterialType = lockedMaterialType;
             WingPosition = wingPosition;
+            WingShape = wingShape;
+            WingProfile = NormalizeFamilyWingProfile(wingProfile);
             AllowedEngineFamily = allowedEngineFamily;
             ConstructionStandard = constructionStandard;
         }
@@ -12452,6 +12631,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public MaterialType LockedMaterialType { get; }
 
         public WingPosition WingPosition { get; }
+
+        public WingShape WingShape { get; }
+
+        public WingProfileType WingProfile { get; }
 
         public AircraftAllowedEngineFamily AllowedEngineFamily { get; }
 
@@ -12830,6 +13013,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public MaterialType LockedMaterialType { get; set; }
 
         public WingPosition WingPosition { get; set; }
+
+        public WingShape WingShape { get; set; }
+
+        public WingProfileType WingProfile { get; set; }
 
         public AircraftAllowedEngineFamily AllowedEngineFamily { get; set; }
 
