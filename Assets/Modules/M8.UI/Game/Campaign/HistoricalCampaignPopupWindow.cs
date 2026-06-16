@@ -1,11 +1,13 @@
 using UnityEngine;
 using WrightTycoon.Core.Campaign;
+using WrightTycoon.Game.UI;
 
 namespace WrightTycoon.Game.Campaign;
 
 public sealed class HistoricalCampaignPopupWindow
 {
     private static readonly Vector2 DefaultSize = new(860f, 680f);
+    private static readonly Vector2 MinimumSize = new(620f, 460f);
     private const float HeaderHeight = 24f;
     private static readonly Color WindowBodyColor = new(0.08f, 0.10f, 0.13f, 1f);
     private static readonly Color ContentPanelColor = new(0.11f, 0.14f, 0.18f, 1f);
@@ -16,6 +18,9 @@ public sealed class HistoricalCampaignPopupWindow
 
     private Rect _windowRect = new(96f, 96f, DefaultSize.x, DefaultSize.y);
     private Vector2 _articleScroll;
+    private bool _isResizing;
+    private Vector2 _resizeStartMouse;
+    private Vector2 _resizeStartSize;
     private string _title = string.Empty;
     private string _dateText = string.Empty;
     private string _articleText = string.Empty;
@@ -30,6 +35,30 @@ public sealed class HistoricalCampaignPopupWindow
     private GUIStyle? _windowTitleStyle;
 
     public bool IsOpen => _isOpen;
+
+    public PopupWindowState CaptureLayoutState() =>
+        new()
+        {
+            IsOpen = false,
+            PositionX = _windowRect.x,
+            PositionY = _windowRect.y,
+            SizeX = _windowRect.width,
+            SizeY = _windowRect.height,
+        };
+
+    public void ApplyLayoutState(PopupWindowState? state)
+    {
+        if (state is null)
+        {
+            return;
+        }
+
+        _windowRect = new Rect(
+            state.PositionX,
+            state.PositionY,
+            state.SizeX > 0f ? state.SizeX : DefaultSize.x,
+            state.SizeY > 0f ? state.SizeY : DefaultSize.y);
+    }
 
     public void Show(HistoricalCampaignEventDefinition definition, Texture2D? image)
     {
@@ -92,7 +121,15 @@ public sealed class HistoricalCampaignPopupWindow
 
         GUILayout.EndArea();
 
-        GUI.DragWindow(new Rect(0f, 0f, _windowRect.width - 40f, 24f));
+        var resizeHandleRect = new Rect(_windowRect.width - 18f, _windowRect.height - 18f, 14f, 14f);
+        GUI.Box(resizeHandleRect, "=");
+        HandleResize(resizeHandleRect);
+
+        if (!_isResizing)
+        {
+            GUI.DragWindow(new Rect(0f, 0f, _windowRect.width - 40f, 24f));
+        }
+
         _ = windowId;
     }
 
@@ -100,8 +137,8 @@ public sealed class HistoricalCampaignPopupWindow
     {
         var maxWidth = Mathf.Max(320f, virtualScreenSize.x - 24f);
         var maxHeight = Mathf.Max(240f, virtualScreenSize.y - 24f);
-        var minWidth = Mathf.Min(620f, maxWidth);
-        var minHeight = Mathf.Min(460f, maxHeight);
+        var minWidth = Mathf.Min(MinimumSize.x, maxWidth);
+        var minHeight = Mathf.Min(MinimumSize.y, maxHeight);
         var width = Mathf.Clamp(_windowRect.width, minWidth, maxWidth);
         var height = Mathf.Clamp(_windowRect.height, minHeight, maxHeight);
         _windowRect.width = width;
@@ -111,6 +148,40 @@ public sealed class HistoricalCampaignPopupWindow
         var maxY = Mathf.Max(0f, virtualScreenSize.y - _windowRect.height);
         _windowRect.x = Mathf.Clamp(_windowRect.x, 0f, maxX);
         _windowRect.y = Mathf.Clamp(_windowRect.y, 0f, maxY);
+    }
+
+    private void HandleResize(Rect resizeHandleRect)
+    {
+        var currentEvent = Event.current;
+        if (currentEvent is null)
+        {
+            return;
+        }
+
+        var mousePosition = currentEvent.mousePosition;
+        if (currentEvent.type == EventType.MouseDown && resizeHandleRect.Contains(mousePosition))
+        {
+            _isResizing = true;
+            _resizeStartMouse = mousePosition;
+            _resizeStartSize = new Vector2(_windowRect.width, _windowRect.height);
+            currentEvent.Use();
+            return;
+        }
+
+        if (_isResizing && currentEvent.type == EventType.MouseDrag)
+        {
+            var delta = mousePosition - _resizeStartMouse;
+            _windowRect.width = Mathf.Max(MinimumSize.x, _resizeStartSize.x + delta.x);
+            _windowRect.height = Mathf.Max(MinimumSize.y, _resizeStartSize.y + delta.y);
+            currentEvent.Use();
+            return;
+        }
+
+        if (_isResizing && currentEvent.type == EventType.MouseUp)
+        {
+            _isResizing = false;
+            currentEvent.Use();
+        }
     }
 
     private void DrawImagePanel(Rect imageRect)

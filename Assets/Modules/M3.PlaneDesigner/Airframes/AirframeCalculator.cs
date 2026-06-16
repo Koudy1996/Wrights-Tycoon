@@ -84,6 +84,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
         var referenceAreaRatio = definition.ReferenceWingAreaSquareMeters > Numeric.Epsilon
             ? parameters.WingAreaSquareMeters / definition.ReferenceWingAreaSquareMeters
             : 1d;
+        var aspectRatioEffects = ResolveAspectRatioEffects(parameters.WingAspectRatio);
 
         var structuralAreaScale = Numeric.Clamp(
             System.Math.Pow(
@@ -97,13 +98,15 @@ public sealed class AirframeCalculator : IAirframeCalculator
         var crewMass = parameters.CrewCount * 88d;
         var installationMass = parameters.EngineCount * (42d + (parameters.WingAreaSquareMeters * 0.012d));
         var wingMass = System.Math.Pow(parameters.WingAreaSquareMeters, PlaneDesignerBalance.Airframe.WingMassExponent)
-            * PlaneDesignerBalance.Airframe.WingMassCoefficient;
+            * PlaneDesignerBalance.Airframe.WingMassCoefficient
+            * aspectRatioEffects.WingMassMultiplier;
         // Larger planforms need disproportionately more spar/rib reinforcement.
         var wingReinforcementMass = definition.BaseStructuralWeightKilograms
             * PlaneDesignerBalance.Airframe.WingReinforcementMassBaseShare
             * System.Math.Pow(
                 System.Math.Max(referenceAreaRatio, PlaneDesignerBalance.Airframe.StructuralAreaScaleMinRatio),
-                PlaneDesignerBalance.Airframe.WingReinforcementMassExponent);
+                PlaneDesignerBalance.Airframe.WingReinforcementMassExponent)
+            * aspectRatioEffects.WingMassMultiplier;
         var wingSystemsMass = parameters.WingAreaSquareMeters
             * (PlaneDesignerBalance.Airframe.WingSystemsMassBasePerSquareMeter
                + (parameters.EngineCount * PlaneDesignerBalance.Airframe.WingSystemsMassPerEnginePerSquareMeter));
@@ -303,6 +306,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
             + tailDragDelta
             + cowlingDragDelta
             + ((System.Math.Sqrt(System.Math.Max(referenceAreaRatio, 0.1d)) - 1d) * 0.0012d);
+        dragCoefficient *= aspectRatioEffects.DragMultiplier;
         dragCoefficient *= aerodynamicCleanlinessDragFactor;
         if (parameters.HasBackupSystems)
         {
@@ -375,6 +379,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
             maneuverability *= 1d + PlaneDesignerBalance.Airframe.SymmetricalAcrobaticProfileManeuverabilityBonusRatio;
         }
 
+        maneuverability *= aspectRatioEffects.ManeuverabilityMultiplier;
         maneuverability = Numeric.Clamp(maneuverability, 1d, 100d);
 
         var productionCost = (definition.BaseCost * materialCostFactor * structureCostFactor)
@@ -460,6 +465,55 @@ public sealed class AirframeCalculator : IAirframeCalculator
         var range = System.Math.Max(noEffectArea - fullEffectArea, Numeric.Epsilon);
         var blendToZero = Numeric.Clamp((wingAreaSquareMeters - fullEffectArea) / range, 0d, 1d);
         return 1d - blendToZero;
+    }
+
+    private static AspectRatioEffectPoint ResolveAspectRatioEffects(double aspectRatio)
+    {
+        var curve = PlaneDesignerBalance.Airframe.WingAspectRatioEffectCurve;
+        if (curve.Count == 0)
+        {
+            throw new InvalidOperationException("Wing aspect ratio effect curve is empty.");
+        }
+
+        var clampedAspectRatio = Numeric.Clamp(
+            aspectRatio,
+            PlaneDesignerBalance.Airframe.WingAspectRatioMin,
+            PlaneDesignerBalance.Airframe.WingAspectRatioMax);
+        if (clampedAspectRatio <= curve[0].AspectRatio)
+        {
+            return curve[0];
+        }
+
+        var lastIndex = curve.Count - 1;
+        if (clampedAspectRatio >= curve[lastIndex].AspectRatio)
+        {
+            return curve[lastIndex];
+        }
+
+        for (var index = 1; index < curve.Count; index++)
+        {
+            var upper = curve[index];
+            if (clampedAspectRatio > upper.AspectRatio)
+            {
+                continue;
+            }
+
+            var lower = curve[index - 1];
+            var aspectRatioRange = upper.AspectRatio - lower.AspectRatio;
+            if (aspectRatioRange <= Numeric.Epsilon)
+            {
+                throw new InvalidOperationException($"Wing aspect ratio effect curve has invalid range at index {index}.");
+            }
+
+            var blend = (clampedAspectRatio - lower.AspectRatio) / aspectRatioRange;
+            return new AspectRatioEffectPoint(
+                clampedAspectRatio,
+                lower.DragMultiplier + ((upper.DragMultiplier - lower.DragMultiplier) * blend),
+                lower.WingMassMultiplier + ((upper.WingMassMultiplier - lower.WingMassMultiplier) * blend),
+                lower.ManeuverabilityMultiplier + ((upper.ManeuverabilityMultiplier - lower.ManeuverabilityMultiplier) * blend));
+        }
+
+        return curve[lastIndex];
     }
 
     private static double ResolveMaterialWeightFactor(MaterialType materialType, double preMaterialWeightKilograms)

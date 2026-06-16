@@ -18,6 +18,8 @@ public sealed class AirframeParameters
 
     public WingProfileType WingProfile { get; set; } = WingProfileType.Standard;
 
+    public double WingAspectRatio { get; set; } = PlaneDesignerBalance.Airframe.WingAspectRatioDefault;
+
     public double WingAreaSquareMeters { get; set; } = 28d;
 
     public TailType TailType { get; set; } = TailType.Classic;
@@ -51,6 +53,7 @@ public sealed class AirframeParameters
             WingPosition = WingPosition,
             WingShape = WingShape,
             WingProfile = WingProfile,
+            WingAspectRatio = WingAspectRatio,
             WingAreaSquareMeters = WingAreaSquareMeters,
             TailType = TailType,
             FlapType = FlapType,
@@ -75,6 +78,14 @@ public sealed class AirframeParameters
         if (WingAreaSquareMeters < 1d || WingAreaSquareMeters > 1000d)
         {
             throw new ArgumentOutOfRangeException(nameof(WingAreaSquareMeters), "Wing area must be within [1, 1000] m2.");
+        }
+
+        if (WingAspectRatio < PlaneDesignerBalance.Airframe.WingAspectRatioMin
+            || WingAspectRatio > PlaneDesignerBalance.Airframe.WingAspectRatioMax)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(WingAspectRatio),
+                $"Wing aspect ratio must be within [{PlaneDesignerBalance.Airframe.WingAspectRatioMin}, {PlaneDesignerBalance.Airframe.WingAspectRatioMax}].");
         }
 
         if (FuelAmountLiters < PlaneDesignerBalance.Airframe.FuelMinLiters

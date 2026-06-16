@@ -32,6 +32,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const int FixedFactoryToolRequirementLevel = 1;
     private const int ModernCampaignStartYear = 2020;
     private const int PastOrdersWindowId = 9401;
+    private const int PendingProposalAdvanceDialogWindowId = 9402;
     private const string HistoricalCampaignBonusContractBatchEffectType = "bonus_contract_batch";
     private const double VersionDevelopmentResearchCostMultiplier = 0.1d;
     private const double VersionDevelopmentResearchTimeMultiplier = 0.1d;
@@ -190,6 +191,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private Vector2 _historicalCampaignArchiveScroll;
     private Vector2 _pastOrdersScroll;
     private Rect _pastOrdersWindowRect = new(120f, 100f, 980f, 620f);
+    private Rect _pendingProposalAdvanceDialogRect = new(0f, 0f, 620f, 190f);
+    private bool _isPastOrdersWindowResizing;
+    private bool _isPendingProposalDialogResizing;
+    private Vector2 _pastOrdersResizeStartMouse;
+    private Vector2 _pastOrdersResizeStartSize;
+    private Vector2 _pendingProposalResizeStartMouse;
+    private Vector2 _pendingProposalResizeStartSize;
     private bool _showHistoricalCampaignDebugPanel;
     private bool _showPendingProposalAdvanceDialog;
     private bool _disablePendingProposalAdvancePrompt;
@@ -705,16 +713,35 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var overlayRect = new Rect(0f, 0f, virtualScreenSize.x, virtualScreenSize.y);
         DrawRect(overlayRect, new Color(0f, 0f, 0f, 0.62f));
 
-        var dialogWidth = Mathf.Min(620f, virtualScreenSize.x - 40f);
-        var dialogHeight = 190f;
-        var dialogRect = new Rect(
-            (virtualScreenSize.x - dialogWidth) * 0.5f,
-            (virtualScreenSize.y - dialogHeight) * 0.5f,
-            dialogWidth,
-            dialogHeight);
+        if (_pendingProposalAdvanceDialogRect.x <= 0f && _pendingProposalAdvanceDialogRect.y <= 0f)
+        {
+            _pendingProposalAdvanceDialogRect.x = (virtualScreenSize.x - _pendingProposalAdvanceDialogRect.width) * 0.5f;
+            _pendingProposalAdvanceDialogRect.y = (virtualScreenSize.y - _pendingProposalAdvanceDialogRect.height) * 0.5f;
+        }
 
-        DrawRect(dialogRect, new Color(0.06f, 0.09f, 0.13f, 0.98f));
-        GUILayout.BeginArea(dialogRect, GUI.skin.box);
+        var minimumSize = new Vector2(500f, 170f);
+        ClampPopupWindowRect(ref _pendingProposalAdvanceDialogRect, virtualScreenSize, minimumSize, margin: 20f);
+        _pendingProposalAdvanceDialogRect = GUI.Window(
+            PendingProposalAdvanceDialogWindowId,
+            _pendingProposalAdvanceDialogRect,
+            DrawPendingProposalAdvanceDialogContents,
+            "Pending Proposals");
+        ClampPopupWindowRect(ref _pendingProposalAdvanceDialogRect, virtualScreenSize, minimumSize, margin: 20f);
+    }
+
+    private void DrawPendingProposalAdvanceDialogContents(int windowId)
+    {
+        var pendingProposalCount = CountVisiblePendingResearchProposals();
+        DrawRect(
+            new Rect(0f, 0f, _pendingProposalAdvanceDialogRect.width, _pendingProposalAdvanceDialogRect.height),
+            new Color(0.06f, 0.09f, 0.13f, 0.98f));
+
+        var contentRect = new Rect(
+            10f,
+            28f,
+            _pendingProposalAdvanceDialogRect.width - 20f,
+            _pendingProposalAdvanceDialogRect.height - 54f);
+        GUILayout.BeginArea(contentRect);
         GUILayout.Label("Do you have proposals ready and not approved, do you want to continue");
         GUILayout.Label($"Pending proposals: {FormatUiInteger(pendingProposalCount)}");
         GUILayout.FlexibleSpace();
@@ -722,11 +749,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (GUILayout.Button("NO", GUILayout.Height(30f)))
         {
             _showPendingProposalAdvanceDialog = false;
+            _isPendingProposalDialogResizing = false;
         }
 
         if (GUILayout.Button("YES", GUILayout.Height(30f)))
         {
             _showPendingProposalAdvanceDialog = false;
+            _isPendingProposalDialogResizing = false;
             AdvanceToNextMonth();
         }
 
@@ -734,11 +763,33 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             _disablePendingProposalAdvancePrompt = true;
             _showPendingProposalAdvanceDialog = false;
+            _isPendingProposalDialogResizing = false;
             AdvanceToNextMonth();
         }
 
         GUILayout.EndHorizontal();
         GUILayout.EndArea();
+
+        var resizeHandleRect = new Rect(
+            _pendingProposalAdvanceDialogRect.width - 18f,
+            _pendingProposalAdvanceDialogRect.height - 18f,
+            14f,
+            14f);
+        GUI.Box(resizeHandleRect, "=");
+        HandlePopupWindowResize(
+            ref _pendingProposalAdvanceDialogRect,
+            resizeHandleRect,
+            new Vector2(500f, 170f),
+            ref _isPendingProposalDialogResizing,
+            ref _pendingProposalResizeStartMouse,
+            ref _pendingProposalResizeStartSize);
+
+        if (!_isPendingProposalDialogResizing)
+        {
+            GUI.DragWindow(new Rect(0f, 0f, _pendingProposalAdvanceDialogRect.width - 40f, 24f));
+        }
+
+        _ = windowId;
     }
 
     private void TryInitialize()
@@ -1606,6 +1657,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             ContractQuantityFilterMax = _contractQuantityFilterMax,
             DisablePendingProposalAdvancePrompt = _disablePendingProposalAdvancePrompt,
             GovernmentContractNotebookState = CreateNotebookWindowSaveState(_governmentContractNotebookState),
+            PastOrdersWindowState = CreatePopupWindowSaveState(
+                _showPastOrdersWindow,
+                _pastOrdersWindowRect),
+            PendingProposalDialogState = CreatePopupWindowSaveState(
+                false,
+                _pendingProposalAdvanceDialogRect),
+            HistoricalCampaignPopupState = _historicalCampaignPopupWindow.CaptureLayoutState(),
             FiredHistoricalCampaignEventIds = _historicalCampaignState.CreateSnapshot().ToList(),
             HistoricalCampaignArchiveEntries = _historicalCampaignArchive
                 .Select(entry => new HistoricalCampaignArchiveEntry
@@ -1654,6 +1712,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 LockedStructureType = saved.LockedStructureType,
                 LockedMaterialType = saved.LockedMaterialType,
                 WingAreaSquareMeters = saved.WingAreaSquareMeters,
+                WingAspectRatio = saved.WingAspectRatio,
                 WingPosition = saved.WingPosition,
                 WingShape = saved.WingShape,
                 WingProfile = saved.WingProfile,
@@ -1878,6 +1937,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _disablePendingProposalAdvancePrompt = data.DisablePendingProposalAdvancePrompt;
         _showPendingProposalAdvanceDialog = false;
         _governmentContractNotebookState = ReadNotebookWindowSaveState(data.GovernmentContractNotebookState);
+        var pastOrdersWindowState = ReadPopupWindowSaveState(
+            data.PastOrdersWindowState,
+            new Rect(120f, 100f, 980f, 620f));
+        _pastOrdersWindowRect = pastOrdersWindowState.Rect;
+        var pendingProposalDialogState = ReadPopupWindowSaveState(
+            data.PendingProposalDialogState,
+            new Rect(0f, 0f, 620f, 190f));
+        _pendingProposalAdvanceDialogRect = pendingProposalDialogState.Rect;
+        _historicalCampaignPopupWindow.ApplyLayoutState(data.HistoricalCampaignPopupState);
         _historicalCampaignState.ReplaceFiredEventIds(data.FiredHistoricalCampaignEventIds);
         NormalizeSelectedAircraftCategoryForHistoricalCampaign();
         RestoreHistoricalCampaignArchive(data.HistoricalCampaignArchiveEntries);
@@ -1899,6 +1967,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             _baseAirframeParameters = data.BaseAirframeParameters.Clone();
             _baseAirframeParameters.WingProfile = NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile);
+            _baseAirframeParameters.WingAspectRatio = ClampWingAspectRatio(_baseAirframeParameters.WingAspectRatio);
         }
 
         _savedEngines.Clear();
@@ -1966,6 +2035,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     state.LockedStructureType,
                     state.LockedMaterialType,
                     ResolveSavedFamilyWingArea(state),
+                    ResolveSavedFamilyWingAspectRatio(state),
                     state.WingPosition,
                     Enum.IsDefined(typeof(WingShape), state.WingShape) ? state.WingShape : WingShape.Straight,
                     Enum.IsDefined(typeof(WingProfileType), state.WingProfile) ? NormalizeFamilyWingProfile(state.WingProfile) : WingProfileType.Laminar6SeriesAerodynamic,
@@ -2664,6 +2734,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _typeWingAreaSquareMeters = ClampTypeWingArea(_baseAirframeParameters.WingAreaSquareMeters * typeWingAreaRatio);
             }
 
+            _baseAirframeParameters.WingAspectRatio = DrawSlider(
+                "Family Wing Aspect Ratio",
+                _baseAirframeParameters.WingAspectRatio,
+                PlaneDesignerBalance.Airframe.WingAspectRatioMin,
+                PlaneDesignerBalance.Airframe.WingAspectRatioMax,
+                "0.0",
+                useLinearScale: true);
             _baseAirframeParameters.WingPosition = DrawWingPositionSelector("Wing Position", _baseAirframeParameters.WingPosition);
             _baseAirframeParameters.WingShape = DrawWingShapeSelector("Wing Shape", _baseAirframeParameters.WingShape);
             _typeWingShape = _baseAirframeParameters.WingShape;
@@ -4152,16 +4229,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        var minWidth = 780f;
-        var minHeight = 460f;
-        var maxX = System.Math.Max(virtualScreenSize.x - _pastOrdersWindowRect.width - 10f, 10f);
-        var maxY = System.Math.Max(virtualScreenSize.y - _pastOrdersWindowRect.height - 10f, 10f);
-        _pastOrdersWindowRect.x = Mathf.Clamp(_pastOrdersWindowRect.x, 10f, maxX);
-        _pastOrdersWindowRect.y = Mathf.Clamp(_pastOrdersWindowRect.y, 10f, maxY);
-        _pastOrdersWindowRect.width = Mathf.Clamp(_pastOrdersWindowRect.width, minWidth, virtualScreenSize.x - 20f);
-        _pastOrdersWindowRect.height = Mathf.Clamp(_pastOrdersWindowRect.height, minHeight, virtualScreenSize.y - 20f);
+        var minimumSize = new Vector2(780f, 460f);
+        ClampPopupWindowRect(ref _pastOrdersWindowRect, virtualScreenSize, minimumSize, margin: 10f);
 
         _pastOrdersWindowRect = GUI.Window(PastOrdersWindowId, _pastOrdersWindowRect, DrawPastOrdersWindowContents, "Past Orders");
+        ClampPopupWindowRect(ref _pastOrdersWindowRect, virtualScreenSize, minimumSize, margin: 10f);
     }
 
     private void DrawPastOrdersWindowContents(int windowId)
@@ -4189,6 +4261,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (GUILayout.Button("Close", GUILayout.Width(120f), GUILayout.Height(24f)))
         {
             _showPastOrdersWindow = false;
+            _isPastOrdersWindowResizing = false;
         }
 
         GUILayout.EndHorizontal();
@@ -4236,7 +4309,102 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         GUILayout.EndScrollView();
-        GUI.DragWindow(new Rect(0f, 0f, 10000f, 28f));
+
+        var resizeHandleRect = new Rect(_pastOrdersWindowRect.width - 18f, _pastOrdersWindowRect.height - 18f, 14f, 14f);
+        GUI.Box(resizeHandleRect, "=");
+        HandlePopupWindowResize(
+            ref _pastOrdersWindowRect,
+            resizeHandleRect,
+            new Vector2(780f, 460f),
+            ref _isPastOrdersWindowResizing,
+            ref _pastOrdersResizeStartMouse,
+            ref _pastOrdersResizeStartSize);
+
+        if (!_isPastOrdersWindowResizing)
+        {
+            GUI.DragWindow(new Rect(0f, 0f, 10000f, 28f));
+        }
+    }
+
+    private static void ClampPopupWindowRect(
+        ref Rect rect,
+        Vector2 virtualScreenSize,
+        Vector2 minimumSize,
+        float margin)
+    {
+        var maxWidth = Mathf.Max(minimumSize.x, virtualScreenSize.x - (margin * 2f));
+        var maxHeight = Mathf.Max(minimumSize.y, virtualScreenSize.y - (margin * 2f));
+        rect.width = Mathf.Clamp(rect.width, minimumSize.x, maxWidth);
+        rect.height = Mathf.Clamp(rect.height, minimumSize.y, maxHeight);
+
+        var maxX = Mathf.Max(margin, virtualScreenSize.x - rect.width - margin);
+        var maxY = Mathf.Max(margin, virtualScreenSize.y - rect.height - margin);
+        rect.x = Mathf.Clamp(rect.x, margin, maxX);
+        rect.y = Mathf.Clamp(rect.y, margin, maxY);
+    }
+
+    private static void HandlePopupWindowResize(
+        ref Rect windowRect,
+        Rect resizeHandleRect,
+        Vector2 minimumSize,
+        ref bool isResizing,
+        ref Vector2 resizeStartMouse,
+        ref Vector2 resizeStartSize)
+    {
+        var currentEvent = Event.current;
+        if (currentEvent is null)
+        {
+            return;
+        }
+
+        var mousePosition = currentEvent.mousePosition;
+        if (currentEvent.type == EventType.MouseDown && resizeHandleRect.Contains(mousePosition))
+        {
+            isResizing = true;
+            resizeStartMouse = mousePosition;
+            resizeStartSize = new Vector2(windowRect.width, windowRect.height);
+            currentEvent.Use();
+            return;
+        }
+
+        if (isResizing && currentEvent.type == EventType.MouseDrag)
+        {
+            var delta = mousePosition - resizeStartMouse;
+            windowRect.width = Mathf.Max(minimumSize.x, resizeStartSize.x + delta.x);
+            windowRect.height = Mathf.Max(minimumSize.y, resizeStartSize.y + delta.y);
+            currentEvent.Use();
+            return;
+        }
+
+        if (isResizing && currentEvent.type == EventType.MouseUp)
+        {
+            isResizing = false;
+            currentEvent.Use();
+        }
+    }
+
+    private static PopupWindowState CreatePopupWindowSaveState(bool isOpen, Rect rect) =>
+        new()
+        {
+            IsOpen = isOpen,
+            PositionX = rect.x,
+            PositionY = rect.y,
+            SizeX = rect.width,
+            SizeY = rect.height,
+        };
+
+    private static (bool IsOpen, Rect Rect) ReadPopupWindowSaveState(
+        PopupWindowState? state,
+        Rect fallback)
+    {
+        if (state is null)
+        {
+            return (false, fallback);
+        }
+
+        var width = state.SizeX > 0f ? state.SizeX : fallback.width;
+        var height = state.SizeY > 0f ? state.SizeY : fallback.height;
+        return (state.IsOpen, new Rect(state.PositionX, state.PositionY, width, height));
     }
 
 
@@ -6820,6 +6988,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             ResolveSavedEngineDisplayNameForAircraftDesign(selected));
         DrawParameterValueRow("Crew Members", FormatUiInteger(aircraft.Airframe.Parameters.CrewCount));
         DrawParameterValueRow("Wing Area (m2)", FormatUiNumber(aircraft.Airframe.Parameters.WingAreaSquareMeters, "0.0"));
+        DrawParameterValueRow("Wing Aspect Ratio", FormatUiNumber(aircraft.Airframe.Parameters.WingAspectRatio, "0.0"));
         DrawParameterValueRow("Wing Shape", aircraft.Airframe.Parameters.WingShape.ToString());
         DrawParameterValueRow("Wing Profile", aircraft.Airframe.Parameters.WingProfile.ToString());
         DrawParameterValueRow("Tail Type", aircraft.Airframe.Parameters.TailType.ToString());
@@ -7948,6 +8117,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _lockedStructure,
             _lockedMaterial,
             Math.Clamp(_baseAirframeParameters.WingAreaSquareMeters, TypeWingAreaMinSquareMeters, TypeWingAreaMaxSquareMeters),
+            ClampWingAspectRatio(_baseAirframeParameters.WingAspectRatio),
             _baseAirframeParameters.WingPosition,
             _baseAirframeParameters.WingShape,
             NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile),
@@ -7986,6 +8156,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _baseAirframeParameters.WingPosition = saved.WingPosition;
         _baseAirframeParameters.WingAreaSquareMeters = saved.WingAreaSquareMeters;
+        _baseAirframeParameters.WingAspectRatio = saved.WingAspectRatio;
         _baseAirframeParameters.WingShape = saved.WingShape;
         _baseAirframeParameters.WingProfile = saved.WingProfile;
         _typeWingShape = _baseAirframeParameters.WingShape;
@@ -9008,6 +9179,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         baseAirframe.WingShape = _baseAirframeParameters.WingShape;
         baseAirframe.WingPosition = _baseAirframeParameters.WingPosition;
         baseAirframe.WingProfile = NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile);
+        baseAirframe.WingAspectRatio = ClampWingAspectRatio(_baseAirframeParameters.WingAspectRatio);
 
         return new AircraftFamilyDefinition
         {
@@ -9214,6 +9386,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         return CreateDefaultAirframeParameters(NormalizeEngineCount(state.LockedEngineCount)).WingAreaSquareMeters;
     }
+
+    private static double ResolveSavedFamilyWingAspectRatio(SavedFamilyDesignState state) =>
+        state.WingAspectRatio >= PlaneDesignerBalance.Airframe.WingAspectRatioMin
+        && state.WingAspectRatio <= PlaneDesignerBalance.Airframe.WingAspectRatioMax
+            ? state.WingAspectRatio
+            : PlaneDesignerBalance.Airframe.WingAspectRatioDefault;
+
+    private static double ClampWingAspectRatio(double wingAspectRatio) =>
+        Math.Clamp(
+            wingAspectRatio,
+            PlaneDesignerBalance.Airframe.WingAspectRatioMin,
+            PlaneDesignerBalance.Airframe.WingAspectRatioMax);
 
     private static AircraftRoleModuleSelection ResolveRoleModuleSelection(
         bool hasPassengerCabin,
@@ -12760,6 +12944,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             StructureType lockedStructureType,
             MaterialType lockedMaterialType,
             double wingAreaSquareMeters,
+            double wingAspectRatio,
             WingPosition wingPosition,
             WingShape wingShape,
             WingProfileType wingProfile,
@@ -12772,6 +12957,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             LockedStructureType = lockedStructureType;
             LockedMaterialType = lockedMaterialType;
             WingAreaSquareMeters = Math.Clamp(wingAreaSquareMeters, TypeWingAreaMinSquareMeters, TypeWingAreaMaxSquareMeters);
+            WingAspectRatio = ClampWingAspectRatio(wingAspectRatio);
             WingPosition = wingPosition;
             WingShape = wingShape;
             WingProfile = NormalizeFamilyWingProfile(wingProfile);
@@ -12790,6 +12976,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public MaterialType LockedMaterialType { get; }
 
         public double WingAreaSquareMeters { get; }
+
+        public double WingAspectRatio { get; }
 
         public WingPosition WingPosition { get; }
 
@@ -13072,6 +13260,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public NotebookWindowSaveState GovernmentContractNotebookState { get; set; } = new();
 
+        public PopupWindowState PastOrdersWindowState { get; set; } = new();
+
+        public PopupWindowState PendingProposalDialogState { get; set; } = new();
+
+        public PopupWindowState HistoricalCampaignPopupState { get; set; } = new();
+
         public EngineParameters EngineParameters { get; set; } = new();
 
         public AirframeParameters BaseAirframeParameters { get; set; } = new();
@@ -13174,6 +13368,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public MaterialType LockedMaterialType { get; set; }
 
         public double WingAreaSquareMeters { get; set; }
+
+        public double WingAspectRatio { get; set; }
 
         public WingPosition WingPosition { get; set; }
 

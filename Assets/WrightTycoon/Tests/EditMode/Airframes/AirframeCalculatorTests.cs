@@ -27,6 +27,33 @@ public sealed class AirframeCalculatorTests
     }
 
     [Test]
+    public void HigherWingAspectRatio_ReducesDragButIncreasesWeightAndLowersManeuverability()
+    {
+        var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
+        var definition = CreateDefinition();
+
+        var lowAspect = CreateParameters();
+        lowAspect.WingAspectRatio = 4d;
+
+        var reference = lowAspect.Clone();
+        reference.WingAspectRatio = PlaneDesignerBalance.Airframe.WingAspectRatioDefault;
+
+        var highAspect = lowAspect.Clone();
+        highAspect.WingAspectRatio = 22d;
+
+        var lowReport = calculator.Calculate(definition, lowAspect);
+        var referenceReport = calculator.Calculate(definition, reference);
+        var highReport = calculator.Calculate(definition, highAspect);
+
+        Assert.That(referenceReport.DragCoefficient, Is.LessThan(lowReport.DragCoefficient));
+        Assert.That(highReport.DragCoefficient, Is.LessThan(referenceReport.DragCoefficient));
+        Assert.That(referenceReport.TotalWeight.Kilograms, Is.GreaterThan(lowReport.TotalWeight.Kilograms));
+        Assert.That(highReport.TotalWeight.Kilograms, Is.GreaterThan(referenceReport.TotalWeight.Kilograms));
+        Assert.That(referenceReport.Maneuverability, Is.LessThan(lowReport.Maneuverability));
+        Assert.That(highReport.Maneuverability, Is.LessThan(referenceReport.Maneuverability));
+    }
+
+    [Test]
     public void RetractableGear_ReducesDragCoefficient()
     {
         var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());

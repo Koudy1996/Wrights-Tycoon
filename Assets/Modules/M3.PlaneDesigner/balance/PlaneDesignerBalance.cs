@@ -45,6 +45,31 @@ public static class PlaneDesignerBalance
         public const double RunwayLongLengthMeters = 2000d;
         public const int CompositeMaterialFallbackUnlockYear = 1982;
         public const string CompositeMaterialUnlockEventId = "evt.advanced_aero_research";
+        public const double WingAspectRatioMin = 1d;
+        public const double WingAspectRatioMax = 50d;
+        public const double WingAspectRatioDefault = 8d;
+
+        public static readonly IReadOnlyList<AspectRatioEffectPoint> WingAspectRatioEffectCurve = Array.AsReadOnly(new[]
+        {
+            new AspectRatioEffectPoint(1d, 1.32d, 0.94d, 1.18d),
+            new AspectRatioEffectPoint(2d, 1.24d, 0.95d, 1.14d),
+            new AspectRatioEffectPoint(3d, 1.17d, 0.96d, 1.10d),
+            new AspectRatioEffectPoint(4d, 1.11d, 0.97d, 1.07d),
+            new AspectRatioEffectPoint(5d, 1.07d, 0.98d, 1.04d),
+            new AspectRatioEffectPoint(6d, 1.04d, 0.99d, 1.02d),
+            new AspectRatioEffectPoint(8d, 1.00d, 1.00d, 1.00d),
+            new AspectRatioEffectPoint(10d, 0.96d, 1.02d, 0.97d),
+            new AspectRatioEffectPoint(12d, 0.93d, 1.04d, 0.94d),
+            new AspectRatioEffectPoint(15d, 0.89d, 1.07d, 0.90d),
+            new AspectRatioEffectPoint(18d, 0.86d, 1.10d, 0.86d),
+            new AspectRatioEffectPoint(22d, 0.83d, 1.14d, 0.81d),
+            new AspectRatioEffectPoint(26d, 0.81d, 1.18d, 0.76d),
+            new AspectRatioEffectPoint(30d, 0.79d, 1.22d, 0.71d),
+            new AspectRatioEffectPoint(35d, 0.77d, 1.28d, 0.66d),
+            new AspectRatioEffectPoint(40d, 0.75d, 1.35d, 0.61d),
+            new AspectRatioEffectPoint(45d, 0.74d, 1.43d, 0.56d),
+            new AspectRatioEffectPoint(50d, 0.73d, 1.52d, 0.52d),
+        });
 
         public const double StructuralAreaScaleMinRatio = 0.2d;
         public const double StructuralAreaScaleExponent = 1.28d;
@@ -531,4 +556,10 @@ public readonly record struct AircraftCategoryBalanceEntry(
 public readonly record struct SpeedWeightFactorPoint(
     double SpeedKilometersPerHour,
     double WeightFactor);
+
+public readonly record struct AspectRatioEffectPoint(
+    double AspectRatio,
+    double DragMultiplier,
+    double WingMassMultiplier,
+    double ManeuverabilityMultiplier);
 
