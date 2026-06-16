@@ -1062,10 +1062,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawBuildManifestSummary();
 
         _playerCompanyName = DrawText("Company Name", _playerCompanyName);
-        if (string.IsNullOrWhiteSpace(_playerCompanyName))
-        {
-            _playerCompanyName = "Player Company";
-        }
 
         GUILayout.Space(10f);
 
@@ -1831,9 +1827,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             throw new ArgumentNullException(nameof(data));
         }
 
-        _playerCompanyName = string.IsNullOrWhiteSpace(data.PlayerCompanyName)
-            ? "Player Company"
-            : data.PlayerCompanyName.Trim();
+        _playerCompanyName = data.PlayerCompanyName?.Trim() ?? string.Empty;
 
         var year = data.CurrentYear <= 0 ? SimulationDate.WrightTycoonStart.Year : data.CurrentYear;
         var month = data.CurrentMonth < 1 ? 1 : data.CurrentMonth > 12 ? 12 : data.CurrentMonth;
