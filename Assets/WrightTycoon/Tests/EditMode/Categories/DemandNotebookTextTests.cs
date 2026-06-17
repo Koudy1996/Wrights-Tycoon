@@ -1,0 +1,54 @@
+using System;
+using System.Reflection;
+using System.Runtime.Serialization;
+using NUnit.Framework;
+using WrightTycoon.Core.Categories;
+using WrightTycoon.Core.Simulation;
+
+namespace WrightTycoon.Core.Tests.Categories;
+
+[TestFixture]
+public sealed class DemandNotebookTextTests
+{
+    [TestCase(AircraftCategory.LightSportAndRecreational, "Ultralight construction only")]
+    [TestCase(AircraftCategory.MilitaryTactical, "Army-grade construction only")]
+    [TestCase(AircraftCategory.MilitaryStrategicSupport, "Army-grade construction only")]
+    [TestCase(AircraftCategory.Bomber, "Army-grade construction only")]
+    [TestCase(AircraftCategory.RegionalJet, "Any construction")]
+    public void FormatDemandConstructionRequirement_UsesSpecificAllowedConstructionText(
+        AircraftCategory category,
+        string expected)
+    {
+        var runnerType = RequireRunnerType();
+        var method = runnerType.GetMethod(
+            "FormatDemandConstructionRequirement",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.Invoke(null, new object[] { category }), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void BuildDemandNotebookContent_OmitsCurrentAndForecastYearLines()
+    {
+        var runnerType = RequireRunnerType();
+        var runner = FormatterServices.GetUninitializedObject(runnerType);
+        var currentDateField = runnerType.GetField("_currentDate", BindingFlags.NonPublic | BindingFlags.Instance);
+        var method = runnerType.GetMethod(
+            "BuildDemandNotebookContent",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        Assert.That(currentDateField, Is.Not.Null);
+        Assert.That(method, Is.Not.Null);
+
+        currentDateField!.SetValue(runner, SimulationDate.WrightTycoonStart);
+        var content = (string)method!.Invoke(runner, new object[] { AircraftCategory.RegionalJet })!;
+
+        Assert.That(content, Does.Contain("Demand Type: Regional Jet"));
+        Assert.That(content, Does.Not.Contain("Current Year:"));
+        Assert.That(content, Does.Not.Contain("Forecast Year:"));
+    }
+
+    private static Type RequireRunnerType() =>
+        Type.GetType("WrightTycoon.Game.Launch.WrightTycoonLaunchRunner, WrightTycoon.Game", throwOnError: true)!;
+}

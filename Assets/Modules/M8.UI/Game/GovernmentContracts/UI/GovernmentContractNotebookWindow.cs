@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using WrightTycoon.Game.UI;
 
@@ -27,7 +28,11 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
     private int _windowId;
     private string _title = "Government Contract Notebook";
     private string _content = string.Empty;
+    private IReadOnlyList<string> _tabLabels = Array.Empty<string>();
+    private int _selectedTabIndex = -1;
+    private Action<int>? _tabSelected;
     private GUIStyle? _contentLabelStyle;
+    private GUIStyle? _selectedTabStyle;
 
     public ContractUIState State => _state;
 
@@ -113,6 +118,20 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
         _content = content ?? string.Empty;
     }
 
+    public void SetTabs(
+        IReadOnlyList<string>? tabLabels,
+        int selectedTabIndex,
+        Action<int>? tabSelected)
+    {
+        _tabLabels = tabLabels ?? Array.Empty<string>();
+        _selectedTabIndex = _tabLabels.Count == 0
+            ? -1
+            : Mathf.Clamp(selectedTabIndex, 0, _tabLabels.Count - 1);
+        _tabSelected = tabSelected;
+    }
+
+    public void ClearTabs() => SetTabs(Array.Empty<string>(), -1, null);
+
     public void Open()
     {
         _state.IsOpen = true;
@@ -170,7 +189,14 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
             GUIUtility.ExitGUI();
         }
 
-        var contentRect = new Rect(10f, 28f, _windowRect.width - 26f, _windowRect.height - 72f);
+        var contentTop = 28f;
+        if (_tabLabels.Count > 0)
+        {
+            DrawTabs(contentTop);
+            contentTop += 34f;
+        }
+
+        var contentRect = new Rect(10f, contentTop, _windowRect.width - 26f, _windowRect.height - contentTop - 44f);
         GUILayout.BeginArea(contentRect);
         _contentScroll = GUILayout.BeginScrollView(_contentScroll);
         GUILayout.Label(_content, GetContentLabelStyle(), GUILayout.ExpandWidth(true));
@@ -178,10 +204,7 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
         GUILayout.EndArea();
 
         var resizeHandleRect = new Rect(_windowRect.width - 82f, _windowRect.height - 34f, 74f, 24f);
-        if (GUI.RepeatButton(resizeHandleRect, "Resize"))
-        {
-            // Visual button state only; actual resizing is handled below so dragging remains smooth.
-        }
+        GUI.Box(resizeHandleRect, "Resize");
 
         HandleResize(resizeHandleRect);
 
@@ -191,6 +214,32 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
         }
 
         _ = windowId;
+    }
+
+    private void DrawTabs(float top)
+    {
+        const float tabHeight = 26f;
+        const float minTabWidth = 96f;
+        const float maxTabWidth = 180f;
+        var availableWidth = Mathf.Max(80f, _windowRect.width - 20f);
+        var tabWidth = Mathf.Clamp(availableWidth / _tabLabels.Count, minTabWidth, maxTabWidth);
+
+        GUILayout.BeginArea(new Rect(10f, top, availableWidth, tabHeight));
+        GUILayout.BeginHorizontal();
+        for (var index = 0; index < _tabLabels.Count; index++)
+        {
+            var label = _tabLabels[index];
+            var style = index == _selectedTabIndex ? GetSelectedTabStyle() : GUI.skin.button;
+            if (GUILayout.Button(label, style, GUILayout.Width(tabWidth), GUILayout.Height(tabHeight)))
+            {
+                _selectedTabIndex = index;
+                _tabSelected?.Invoke(index);
+                GUIUtility.ExitGUI();
+            }
+        }
+
+        GUILayout.EndHorizontal();
+        GUILayout.EndArea();
     }
 
     private void DrawOpaqueWindowBackground()
@@ -221,9 +270,13 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
 
         if (_isResizing && currentEvent.type == EventType.MouseDrag)
         {
-            var delta = mousePosition - _resizeStartMouseVirtual;
-            _windowRect.width = Mathf.Clamp(_resizeStartSize.x + delta.x, _minimumSize.x, _maximumSize.x);
-            _windowRect.height = Mathf.Clamp(_resizeStartSize.y + delta.y, _minimumSize.y, _maximumSize.y);
+            _windowRect = CalculateResizedRect(
+                _windowRect,
+                _resizeStartMouseVirtual,
+                _resizeStartSize,
+                mousePosition,
+                _minimumSize,
+                _maximumSize);
             currentEvent.Use();
             return;
         }
@@ -233,6 +286,20 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
             _isResizing = false;
             currentEvent.Use();
         }
+    }
+
+    public static Rect CalculateResizedRect(
+        Rect currentRect,
+        Vector2 startMousePosition,
+        Vector2 startSize,
+        Vector2 currentMousePosition,
+        Vector2 minimumSize,
+        Vector2 maximumSize)
+    {
+        var delta = currentMousePosition - startMousePosition;
+        currentRect.width = Mathf.Clamp(startSize.x + delta.x, minimumSize.x, maximumSize.x);
+        currentRect.height = Mathf.Clamp(startSize.y + delta.y, minimumSize.y, maximumSize.y);
+        return currentRect;
     }
 
     private void ClampWindowToScreen(Vector2 virtualScreenSize)
@@ -301,6 +368,16 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
         };
 
         return _contentLabelStyle;
+    }
+
+    private GUIStyle GetSelectedTabStyle()
+    {
+        _selectedTabStyle ??= new GUIStyle(GUI.skin.button)
+        {
+            fontStyle = FontStyle.Bold,
+        };
+
+        return _selectedTabStyle;
     }
 
     private void InitializeDefaults()

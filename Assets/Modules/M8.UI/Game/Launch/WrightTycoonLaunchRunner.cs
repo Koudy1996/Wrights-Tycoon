@@ -121,8 +121,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private string _campaignActionMessage = string.Empty;
     private GovernmentContractNotebookWindow? _governmentContractNotebookWindow;
     private ContractUIState _governmentContractNotebookState = CreateDefaultGovernmentContractNotebookState();
-    private readonly Dictionary<AircraftCategory, GovernmentContractNotebookWindow> _demandNotebookWindows = new();
-    private readonly Dictionary<AircraftCategory, ContractUIState> _demandNotebookStates = new();
+    private GovernmentContractNotebookWindow? _demandNotebookWindow;
+    private ContractUIState _demandNotebookState = CreateDefaultDemandNotebookState();
+    private readonly List<AircraftCategory> _pinnedDemandCategories = new();
+    private AircraftCategory? _selectedDemandNotebookCategory;
     private string _factoryActionMessage = string.Empty;
     private string _researchActionMessage = string.Empty;
     private string _initError = string.Empty;
@@ -957,16 +959,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _saveActionMessage = string.Empty;
         _showPastOrdersWindow = false;
         _pastOrdersScroll = Vector2.zero;
-        foreach (var window in _demandNotebookWindows.Values)
+        if (_demandNotebookWindow is not null)
         {
-            if (window is not null)
-            {
-                Destroy(window.gameObject);
-            }
+            Destroy(_demandNotebookWindow.gameObject);
         }
 
-        _demandNotebookWindows.Clear();
-        _demandNotebookStates.Clear();
+        _demandNotebookWindow = null;
+        _demandNotebookState = CreateDefaultDemandNotebookState();
+        _pinnedDemandCategories.Clear();
+        _selectedDemandNotebookCategory = null;
         _showPendingProposalAdvanceDialog = false;
         _disablePendingProposalAdvancePrompt = false;
         _showHistoricalCampaignDebugPanel = false;
@@ -4401,20 +4402,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         };
     }
 
-    private static ContractUIState CreateDefaultDemandNotebookState(AircraftCategory category)
+    private static ContractUIState CreateDefaultDemandNotebookState()
     {
-        var offset = Math.Max(0, (int)category) * 18f;
         return new ContractUIState
         {
             IsOpen = false,
-            Position = new Vector2(160f + offset, -160f - offset),
+            Position = new Vector2(160f, -160f),
             Size = new Vector2(520f, 380f),
         };
     }
 
-    private static ContractUIState CloneDemandNotebookState(ContractUIState? state, AircraftCategory category)
+    private static ContractUIState CloneDemandNotebookState(ContractUIState? state)
     {
-        var source = state ?? CreateDefaultDemandNotebookState(category);
+        var source = state ?? CreateDefaultDemandNotebookState();
         var size = source.Size;
         if (size.x <= 0f || size.y <= 0f)
         {
@@ -4442,11 +4442,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         };
     }
 
-    private static NotebookWindowSaveState CreateDemandNotebookWindowSaveState(
-        AircraftCategory category,
-        ContractUIState? state)
+    private static NotebookWindowSaveState CreateDemandNotebookWindowSaveState(ContractUIState? state)
     {
-        var normalized = CloneDemandNotebookState(state, category);
+        var normalized = CloneDemandNotebookState(state);
         return new NotebookWindowSaveState
         {
             IsOpen = normalized.IsOpen,
@@ -4479,13 +4477,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         });
     }
 
-    private static ContractUIState ReadDemandNotebookWindowSaveState(
-        AircraftCategory category,
-        NotebookWindowSaveState? state)
+    private static ContractUIState ReadDemandNotebookWindowSaveState(NotebookWindowSaveState? state)
     {
         if (state is null)
         {
-            return CreateDefaultDemandNotebookState(category);
+            return CreateDefaultDemandNotebookState();
         }
 
         var position = new Vector2(
@@ -4500,19 +4496,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             IsOpen = state.IsOpen,
             Position = position,
             Size = size,
-        }, category);
+        });
     }
 
     private List<DemandNotebookStateEntry> CreateDemandNotebookSaveStates()
     {
         CaptureDemandNotebookStates();
-        var entries = new List<DemandNotebookStateEntry>(_demandNotebookStates.Count);
-        foreach (var entry in _demandNotebookStates.OrderBy(item => item.Key))
+        var entries = new List<DemandNotebookStateEntry>(_pinnedDemandCategories.Count);
+        foreach (var category in _pinnedDemandCategories.OrderBy(item => item))
         {
             entries.Add(new DemandNotebookStateEntry
             {
-                Category = entry.Key,
-                State = CreateDemandNotebookWindowSaveState(entry.Key, entry.Value),
+                Category = category,
+                State = CreateDemandNotebookWindowSaveState(_demandNotebookState),
             });
         }
 
@@ -5284,61 +5280,83 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void OpenDemandNotebookWindow(AircraftCategory category)
     {
-        EnsureDemandNotebookWindow(category);
-        RefreshDemandNotebookWindowContent(category);
-        if (_demandNotebookWindows.TryGetValue(category, out var window))
+        if (!_pinnedDemandCategories.Contains(category))
         {
-            window.Open();
-            _demandNotebookStates[category] = CloneDemandNotebookState(window.CaptureState(), category);
+            _pinnedDemandCategories.Add(category);
         }
+
+        _selectedDemandNotebookCategory = category;
+        EnsureDemandNotebookWindow();
+        RefreshDemandNotebookWindowContent();
+        _demandNotebookWindow?.Open();
+        CaptureDemandNotebookStates();
     }
 
-    private void EnsureDemandNotebookWindow(AircraftCategory category)
+    private void EnsureDemandNotebookWindow()
     {
-        if (_demandNotebookWindows.ContainsKey(category))
+        if (_demandNotebookWindow is not null)
         {
             return;
         }
 
-        var state = _demandNotebookStates.TryGetValue(category, out var savedState)
-            ? CloneDemandNotebookState(savedState, category)
-            : CreateDefaultDemandNotebookState(category);
-        var window = GovernmentContractNotebookWindow.CreateRuntimeUi(transform, state);
-        _demandNotebookWindows[category] = window;
-        RefreshDemandNotebookWindowContent(category);
+        _demandNotebookWindow = GovernmentContractNotebookWindow.CreateRuntimeUi(
+            transform,
+            CloneDemandNotebookState(_demandNotebookState));
+        RefreshDemandNotebookWindowContent();
     }
 
-    private void RefreshDemandNotebookWindowContent(AircraftCategory category)
+    private void RefreshDemandNotebookWindowContent()
     {
-        if (!_demandNotebookWindows.TryGetValue(category, out var window))
+        if (_demandNotebookWindow is null)
         {
             return;
         }
 
+        if (_pinnedDemandCategories.Count == 0)
+        {
+            _selectedDemandNotebookCategory = null;
+            _demandNotebookWindow.ClearTabs();
+            _demandNotebookWindow.SetContent("Demand", "No pinned demand categories.");
+            return;
+        }
+
+        if (!_selectedDemandNotebookCategory.HasValue
+            || !_pinnedDemandCategories.Contains(_selectedDemandNotebookCategory.Value))
+        {
+            _selectedDemandNotebookCategory = _pinnedDemandCategories[0];
+        }
+
+        var category = _selectedDemandNotebookCategory.Value;
+        var selectedIndex = Math.Max(0, _pinnedDemandCategories.IndexOf(category));
+        var tabLabels = _pinnedDemandCategories
+            .Select(pinnedCategory => AircraftCategoryCatalog.GetProfile(pinnedCategory).DisplayName)
+            .ToArray();
         var content = BuildDemandNotebookContent(category);
-        var profile = AircraftCategoryCatalog.GetProfile(category);
-        window.SetContent($"Demand | {profile.DisplayName}", content);
+        _demandNotebookWindow.SetTabs(tabLabels, selectedIndex, OnDemandNotebookTabSelected);
+        _demandNotebookWindow.SetContent("Demand", content);
     }
 
     private void RefreshDemandNotebookWindows()
     {
-        foreach (var category in _demandNotebookWindows.Keys.ToArray())
+        if (_demandNotebookWindow is not null)
         {
-            RefreshDemandNotebookWindowContent(category);
+            RefreshDemandNotebookWindowContent();
         }
     }
 
     private void CaptureDemandNotebookStates()
     {
-        foreach (var entry in _demandNotebookWindows)
+        if (_demandNotebookWindow is not null)
         {
-            _demandNotebookStates[entry.Key] = CloneDemandNotebookState(entry.Value.CaptureState(), entry.Key);
+            _demandNotebookState = CloneDemandNotebookState(_demandNotebookWindow.CaptureState());
         }
     }
 
     private void RestoreDemandNotebookStates(IReadOnlyList<DemandNotebookStateEntry>? entries)
     {
-        _demandNotebookStates.Clear();
+        _pinnedDemandCategories.Clear();
+        _selectedDemandNotebookCategory = null;
+        _demandNotebookState = CreateDefaultDemandNotebookState();
         if (entries is null)
         {
             return;
@@ -5352,26 +5370,44 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 continue;
             }
 
-            _demandNotebookStates[entry.Category] = ReadDemandNotebookWindowSaveState(entry.Category, entry.State);
+            if (!_pinnedDemandCategories.Contains(entry.Category))
+            {
+                _pinnedDemandCategories.Add(entry.Category);
+            }
+
+            if (entry.State is not null)
+            {
+                _demandNotebookState = ReadDemandNotebookWindowSaveState(entry.State);
+            }
+        }
+
+        if (_pinnedDemandCategories.Count > 0)
+        {
+            _selectedDemandNotebookCategory = _pinnedDemandCategories[0];
         }
     }
 
     private void ApplyDemandNotebookStates()
     {
-        foreach (var entry in _demandNotebookStates.ToArray())
+        if (_pinnedDemandCategories.Count == 0 || !_demandNotebookState.IsOpen)
         {
-            if (!entry.Value.IsOpen)
-            {
-                continue;
-            }
-
-            EnsureDemandNotebookWindow(entry.Key);
-            if (_demandNotebookWindows.TryGetValue(entry.Key, out var window))
-            {
-                window.ApplyState(CloneDemandNotebookState(entry.Value, entry.Key));
-                RefreshDemandNotebookWindowContent(entry.Key);
-            }
+            return;
         }
+
+        EnsureDemandNotebookWindow();
+        _demandNotebookWindow?.ApplyState(CloneDemandNotebookState(_demandNotebookState));
+        RefreshDemandNotebookWindowContent();
+    }
+
+    private void OnDemandNotebookTabSelected(int selectedIndex)
+    {
+        if (selectedIndex < 0 || selectedIndex >= _pinnedDemandCategories.Count)
+        {
+            return;
+        }
+
+        _selectedDemandNotebookCategory = _pinnedDemandCategories[selectedIndex];
+        RefreshDemandNotebookWindowContent();
     }
 
     private string BuildDemandNotebookContent(AircraftCategory category)
@@ -5387,8 +5423,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var lines = new List<string>
         {
             $"Demand Type: {currentProfile.DisplayName}",
-            $"Current Year: {FormatUiInteger(currentYear)}",
-            $"Forecast Year: {FormatUiInteger(forecastYear)}",
             $"Demand Multiplier Now: {FormatUiNumber(TypeRequirementBalance.ResolveMinimumRequirementMultiplier(currentYear), "0.000")}",
             $"Demand Multiplier +3y: {FormatUiNumber(TypeRequirementBalance.ResolveMinimumRequirementMultiplier(forecastYear), "0.000")}",
             string.Empty,
@@ -5417,9 +5451,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         return category switch
         {
-            AircraftCategory.LightSportAndRecreational => "Ultralight",
-            AircraftCategory.MilitaryTactical or AircraftCategory.MilitaryStrategicSupport or AircraftCategory.Bomber => "Army-grade",
-            _ => "Any civil-capable construction",
+            AircraftCategory.LightSportAndRecreational => "Ultralight construction only",
+            AircraftCategory.MilitaryTactical or AircraftCategory.MilitaryStrategicSupport or AircraftCategory.Bomber =>
+                "Army-grade construction only",
+            _ => "Any construction",
         };
     }
 
