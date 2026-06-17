@@ -170,15 +170,19 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
             GUIUtility.ExitGUI();
         }
 
-        var contentRect = new Rect(10f, 28f, _windowRect.width - 20f, _windowRect.height - 52f);
+        var contentRect = new Rect(10f, 28f, _windowRect.width - 26f, _windowRect.height - 72f);
         GUILayout.BeginArea(contentRect);
         _contentScroll = GUILayout.BeginScrollView(_contentScroll);
         GUILayout.Label(_content, GetContentLabelStyle(), GUILayout.ExpandWidth(true));
         GUILayout.EndScrollView();
         GUILayout.EndArea();
 
-        var resizeHandleRect = new Rect(_windowRect.width - 18f, _windowRect.height - 18f, 14f, 14f);
-        GUI.Box(resizeHandleRect, "=");
+        var resizeHandleRect = new Rect(_windowRect.width - 82f, _windowRect.height - 34f, 74f, 24f);
+        if (GUI.RepeatButton(resizeHandleRect, "Resize"))
+        {
+            // Visual button state only; actual resizing is handled below so dragging remains smooth.
+        }
+
         HandleResize(resizeHandleRect);
 
         if (!_isResizing)
@@ -205,12 +209,11 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
             return;
         }
 
-        var virtualMousePosition = WrightTycoonGuiScaling.GetVirtualMousePosition(WrightTycoonGuiScaling.CalculateScale());
-
-        if (currentEvent.type == EventType.MouseDown && resizeHandleRect.Contains(virtualMousePosition))
+        var mousePosition = currentEvent.mousePosition;
+        if (currentEvent.type == EventType.MouseDown && resizeHandleRect.Contains(mousePosition))
         {
             _isResizing = true;
-            _resizeStartMouseVirtual = virtualMousePosition;
+            _resizeStartMouseVirtual = mousePosition;
             _resizeStartSize = new Vector2(_windowRect.width, _windowRect.height);
             currentEvent.Use();
             return;
@@ -218,7 +221,7 @@ public sealed class GovernmentContractNotebookWindow : MonoBehaviour
 
         if (_isResizing && currentEvent.type == EventType.MouseDrag)
         {
-            var delta = virtualMousePosition - _resizeStartMouseVirtual;
+            var delta = mousePosition - _resizeStartMouseVirtual;
             _windowRect.width = Mathf.Clamp(_resizeStartSize.x + delta.x, _minimumSize.x, _maximumSize.x);
             _windowRect.height = Mathf.Clamp(_resizeStartSize.y + delta.y, _minimumSize.y, _maximumSize.y);
             currentEvent.Use();

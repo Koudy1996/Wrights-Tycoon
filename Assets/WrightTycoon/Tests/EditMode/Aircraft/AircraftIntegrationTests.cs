@@ -343,6 +343,52 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    public void NavigationEquipment_AddsWeightDragReliabilityAndProductionCost()
+    {
+        var factory = CreateFactory();
+        var family = CreateFamily("fam.navigation.effects", engineCount: 2, category: AircraftCategory.LightMultiRolePiston);
+
+        var noNavigationType = new AircraftTypeDefinition
+        {
+            Id = "type.navigation.none",
+            FamilyId = family.Id,
+            DisplayName = "No Navigation",
+            NavigationEquipment = AircraftNavigationEquipment.None,
+        };
+        var basicNavigationType = new AircraftTypeDefinition
+        {
+            Id = "type.navigation.basic",
+            FamilyId = family.Id,
+            DisplayName = "Basic Navigation",
+            NavigationEquipment = AircraftNavigationEquipment.BasicNavigationSuite,
+        };
+        var advancedNavigationType = new AircraftTypeDefinition
+        {
+            Id = "type.navigation.advanced",
+            FamilyId = family.Id,
+            DisplayName = "Advanced Navigation",
+            NavigationEquipment = AircraftNavigationEquipment.AdvancedNavigationSuite,
+        };
+
+        var noNavigation = factory.CreateAircraft(family, noNavigationType);
+        var basicNavigation = factory.CreateAircraft(family, basicNavigationType);
+        var advancedNavigation = factory.CreateAircraft(family, advancedNavigationType);
+
+        Assert.That(basicNavigation.Performance.TotalWeight.Kilograms, Is.GreaterThan(noNavigation.Performance.TotalWeight.Kilograms));
+        Assert.That(advancedNavigation.Performance.TotalWeight.Kilograms, Is.GreaterThan(basicNavigation.Performance.TotalWeight.Kilograms));
+        Assert.That(basicNavigation.Performance.PayloadCapacity.Kilograms, Is.LessThan(noNavigation.Performance.PayloadCapacity.Kilograms));
+        Assert.That(advancedNavigation.Performance.PayloadCapacity.Kilograms, Is.LessThan(basicNavigation.Performance.PayloadCapacity.Kilograms));
+        Assert.That(basicNavigation.Performance.TotalDragAreaSquareMeters, Is.GreaterThan(noNavigation.Performance.TotalDragAreaSquareMeters));
+        Assert.That(advancedNavigation.Performance.TotalDragAreaSquareMeters, Is.GreaterThan(basicNavigation.Performance.TotalDragAreaSquareMeters));
+        Assert.That(basicNavigation.Performance.OverallReliability, Is.GreaterThan(noNavigation.Performance.OverallReliability));
+        Assert.That(advancedNavigation.Performance.OverallReliability, Is.GreaterThan(basicNavigation.Performance.OverallReliability));
+        Assert.That(basicNavigation.Performance.TotalProductionCost, Is.EqualTo(noNavigation.Performance.TotalProductionCost + 18000d).Within(0.01d));
+        Assert.That(advancedNavigation.Performance.TotalProductionCost, Is.EqualTo(noNavigation.Performance.TotalProductionCost + 85000d).Within(0.01d));
+        Assert.That(basicNavigation.Performance.TotalProductionManDays, Is.EqualTo(noNavigation.Performance.TotalProductionManDays + 8d).Within(0.01d));
+        Assert.That(advancedNavigation.Performance.TotalProductionManDays, Is.EqualTo(noNavigation.Performance.TotalProductionManDays + 24d).Within(0.01d));
+    }
+
+    [Test]
     public void PassengerCapacity_IsComputedFromPayloadUsing250KgPerPassenger()
     {
         var factory = CreateFactory();

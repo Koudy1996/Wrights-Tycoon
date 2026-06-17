@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Physics;
@@ -111,6 +112,40 @@ public sealed class AirframeCalculatorTests
 
         Assert.That(compositeReport.TotalWeight.Kilograms, Is.LessThan(aluminumReport.TotalWeight.Kilograms));
         Assert.That(compositeReport.ProductionCost, Is.GreaterThan(aluminumReport.ProductionCost));
+    }
+
+    [Test]
+    public void ConstructionStandard_ModifiesWeightCostReliabilityManeuverabilityAndDrag()
+    {
+        var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
+        var definition = CreateDefinition();
+
+        var civil = CreateParameters();
+        civil.ConstructionStandard = AircraftConstructionStandard.Civil;
+
+        var ultralight = civil.Clone();
+        ultralight.ConstructionStandard = AircraftConstructionStandard.Ultralight;
+
+        var armyGrade = civil.Clone();
+        armyGrade.ConstructionStandard = AircraftConstructionStandard.ArmyGrade;
+
+        var civilReport = calculator.Calculate(definition, civil);
+        var ultralightReport = calculator.Calculate(definition, ultralight);
+        var armyGradeReport = calculator.Calculate(definition, armyGrade);
+
+        Assert.That(ultralightReport.TotalWeight.Kilograms, Is.LessThan(civilReport.TotalWeight.Kilograms));
+        Assert.That(ultralightReport.ProductionCost, Is.LessThan(civilReport.ProductionCost));
+        Assert.That(ultralightReport.ProductionManDays, Is.LessThan(civilReport.ProductionManDays));
+        Assert.That(ultralightReport.ReliabilityModifier, Is.LessThan(civilReport.ReliabilityModifier));
+        Assert.That(ultralightReport.Maneuverability, Is.GreaterThan(civilReport.Maneuverability));
+        Assert.That(ultralightReport.DragCoefficient, Is.GreaterThan(civilReport.DragCoefficient));
+
+        Assert.That(armyGradeReport.TotalWeight.Kilograms, Is.GreaterThan(civilReport.TotalWeight.Kilograms));
+        Assert.That(armyGradeReport.ProductionCost, Is.GreaterThan(civilReport.ProductionCost));
+        Assert.That(armyGradeReport.ProductionManDays, Is.GreaterThan(civilReport.ProductionManDays));
+        Assert.That(armyGradeReport.ReliabilityModifier, Is.GreaterThan(civilReport.ReliabilityModifier));
+        Assert.That(armyGradeReport.Maneuverability, Is.LessThan(civilReport.Maneuverability));
+        Assert.That(armyGradeReport.DragCoefficient, Is.GreaterThan(civilReport.DragCoefficient));
     }
 
     [Test]

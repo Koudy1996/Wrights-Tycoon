@@ -29,6 +29,15 @@ public sealed class AircraftPerformanceCalculator
 
     public AircraftPerformanceReport Calculate(Engine engine, Airframe airframe, AircraftCategory category)
     {
+        return Calculate(engine, airframe, category, AircraftNavigationEquipment.None);
+    }
+
+    public AircraftPerformanceReport Calculate(
+        Engine engine,
+        Airframe airframe,
+        AircraftCategory category,
+        AircraftNavigationEquipment navigationEquipment)
+    {
         if (engine is null)
         {
             throw new ArgumentNullException(nameof(engine));
@@ -40,6 +49,7 @@ public sealed class AircraftPerformanceCalculator
         }
 
         var categoryProfile = AircraftCategoryCatalog.GetProfile(category);
+        var navigationEffects = AircraftNavigationEquipmentBalance.GetEffects(navigationEquipment);
         var engineCount = airframe.Parameters.EngineCount;
         var wingAreaSquareMeters = System.Math.Max(airframe.Parameters.WingAreaSquareMeters, Numeric.Epsilon);
         var baseDragCoefficient = System.Math.Max(
@@ -47,7 +57,7 @@ public sealed class AircraftPerformanceCalculator
             PlaneDesignerBalance.Performance.MinimumDragCoefficient);
         var wingPositionDragFactor = GetWingPositionSpeedDragFactor(airframe.Parameters.WingPosition);
         var dragCoefficient = Numeric.Clamp(
-            baseDragCoefficient * wingPositionDragFactor,
+            (baseDragCoefficient * wingPositionDragFactor) + navigationEffects.DragCoefficientDelta,
             PlaneDesignerBalance.Performance.MinimumDragCoefficient,
             PlaneDesignerBalance.Performance.SpeedCalculationMaximumDragCoefficient);
         var hasDeltaWingDragModifier = airframe.Parameters.WingShape == WingShape.Delta;
@@ -69,7 +79,11 @@ public sealed class AircraftPerformanceCalculator
 
         // Category weight modifiers can be negative (for very light categories), so do not clamp.
         var categoryStructuralMassKilograms = categoryProfile.WeightModifierKilograms;
-        var emptyWeightKilograms = baseStructuralWithoutFuelKilograms + engineMassKilograms + systemsMassKilograms + categoryStructuralMassKilograms;
+        var emptyWeightKilograms = baseStructuralWithoutFuelKilograms
+            + engineMassKilograms
+            + systemsMassKilograms
+            + categoryStructuralMassKilograms
+            + navigationEffects.ExtraWeightKilograms;
 
         var speedPoints = new AircraftPerformancePoint[EvaluationAltitudes.Length];
         for (var index = 0; index < EvaluationAltitudes.Length; index++)
@@ -175,10 +189,14 @@ public sealed class AircraftPerformanceCalculator
             engine.Performance.Reliability,
             airframe.Performance.ReliabilityModifier,
             engineCount,
-            categoryProfile.ReliabilityModifierDelta);
+            categoryProfile.ReliabilityModifierDelta + navigationEffects.ReliabilityDelta);
 
-        var totalProductionCost = airframe.Performance.ProductionCost + (engine.Performance.Cost * engineCount);
-        var totalProductionManDays = airframe.Performance.ProductionManDays + (engine.Performance.ProductionManDays * engineCount);
+        var totalProductionCost = airframe.Performance.ProductionCost
+            + (engine.Performance.Cost * engineCount)
+            + navigationEffects.ProductionCostAdd;
+        var totalProductionManDays = airframe.Performance.ProductionManDays
+            + (engine.Performance.ProductionManDays * engineCount)
+            + navigationEffects.ProductionManDaysAdd;
 
         return new AircraftPerformanceReport(
             Array.AsReadOnly(speedPoints),

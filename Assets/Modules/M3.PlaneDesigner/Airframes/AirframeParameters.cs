@@ -1,4 +1,5 @@
 using System;
+using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Math;
 
@@ -11,6 +12,8 @@ public sealed class AirframeParameters
     public StructureType StructureType { get; set; } = StructureType.Truss;
 
     public MaterialType MaterialType { get; set; } = MaterialType.WoodFabric;
+
+    public AircraftConstructionStandard ConstructionStandard { get; set; } = AircraftConstructionStandard.Civil;
 
     public WingPosition WingPosition { get; set; } = WingPosition.High;
 
@@ -50,6 +53,7 @@ public sealed class AirframeParameters
             EngineCount = EngineCount,
             StructureType = StructureType,
             MaterialType = MaterialType,
+            ConstructionStandard = ConstructionStandard,
             WingPosition = WingPosition,
             WingShape = WingShape,
             WingProfile = WingProfile,
@@ -128,6 +132,11 @@ public sealed class AirframeParameters
         if (!Enum.IsDefined(typeof(RunwayType), RunwayType))
         {
             throw new ArgumentOutOfRangeException(nameof(RunwayType), "Unsupported runway type.");
+        }
+
+        if (!Enum.IsDefined(typeof(AircraftConstructionStandard), ConstructionStandard))
+        {
+            throw new ArgumentOutOfRangeException(nameof(ConstructionStandard), "Unsupported construction standard.");
         }
 
         if (!Enum.IsDefined(typeof(WingProfileType), WingProfile))

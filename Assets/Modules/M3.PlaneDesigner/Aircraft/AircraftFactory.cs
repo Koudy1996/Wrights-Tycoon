@@ -83,6 +83,7 @@ public sealed class AircraftFactory
         // Family-level locks keep variants inside one product line.
         variantAirframe.StructureType = familyDefinition.LockedStructureType;
         variantAirframe.MaterialType = familyDefinition.LockedMaterialType;
+        variantAirframe.ConstructionStandard = familyDefinition.ConstructionStandard;
         variantAirframe.EngineCount = familyDefinition.LockedEngineCount;
         ValidateTypeWingAreaWithinFamilyEnvelope(
             familyDefinition,
@@ -99,7 +100,11 @@ public sealed class AircraftFactory
                 familyDefinition.InstalledEngineTechnologyModifiers.Value)
             : _engineBuilder.Build(engineDefinition, variantEngine);
         var airframe = _airframeBuilder.Build(airframeDefinition, variantAirframe);
-        var performance = _performanceCalculator.Calculate(engine, airframe, familyDefinition.Category);
+        var performance = _performanceCalculator.Calculate(
+            engine,
+            airframe,
+            familyDefinition.Category,
+            typeDefinition.NavigationEquipment);
         var researchModifierEffects = TypeResearchModifierCalculator.Calculate(typeDefinition.ResearchModifiers);
         performance = ApplyTypeResearchModifierEffects(performance, researchModifierEffects);
         var development = _developmentCostCalculator.Calculate(familyDefinition, baseEngine, variantEngine, baseAirframe, variantAirframe);

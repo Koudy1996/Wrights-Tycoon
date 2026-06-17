@@ -36,6 +36,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
         definition.Validate();
         parameters.Validate();
         var effectiveTechnologyModifiers = HistoricalCampaignTechnologyModifiers.Sanitize(technologyModifiers);
+        var constructionStandardEffects = AircraftConstructionStandardBalance.GetEffects(parameters.ConstructionStandard);
 
         var materialCostFactor = parameters.MaterialType switch
         {
@@ -147,6 +148,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
         }
 
         totalWeightKg = ApplySmallWoodTrussWeightModifier(totalWeightKg, parameters);
+        totalWeightKg *= constructionStandardEffects.WeightMultiplier;
         totalWeightKg /= effectiveTechnologyModifiers.AirframeEfficiencyMultiplier;
         var totalWeight = Mass.FromKilograms(totalWeightKg);
 
@@ -307,6 +309,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
             + cowlingDragDelta
             + ((System.Math.Sqrt(System.Math.Max(referenceAreaRatio, 0.1d)) - 1d) * 0.0012d);
         dragCoefficient *= aspectRatioEffects.DragMultiplier;
+        dragCoefficient *= constructionStandardEffects.DragMultiplier;
         dragCoefficient *= aerodynamicCleanlinessDragFactor;
         if (parameters.HasBackupSystems)
         {
@@ -380,6 +383,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
         }
 
         maneuverability *= aspectRatioEffects.ManeuverabilityMultiplier;
+        maneuverability *= constructionStandardEffects.ManeuverabilityMultiplier;
         maneuverability = Numeric.Clamp(maneuverability, 1d, 100d);
 
         var productionCost = (definition.BaseCost * materialCostFactor * structureCostFactor)
@@ -394,6 +398,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
             WingProfileType.SymmetricalAcrobatic => 1d + PlaneDesignerBalance.Airframe.SymmetricalAcrobaticProfileCostIncreaseRatio,
             _ => 1d,
         };
+        productionCost *= constructionStandardEffects.ProductionCostMultiplier;
         productionCost /= effectiveTechnologyModifiers.AirframeEfficiencyMultiplier;
         productionCost = System.Math.Max(0d, productionCost);
 
@@ -408,6 +413,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
                * PlaneDesignerBalance.Airframe.AerodynamicCleanlinessManDaysBaseShare
                * aerodynamicCleanlinessRatio
                * aerodynamicCleanlinessRatio);
+        productionManDays *= constructionStandardEffects.ProductionManDaysMultiplier;
         productionManDays /= effectiveTechnologyModifiers.AirframeEfficiencyMultiplier;
         productionManDays = System.Math.Max(0d, productionManDays);
 
@@ -423,6 +429,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
             reliabilityModifier += PlaneDesignerBalance.Airframe.BackupSystemsReliabilityDelta;
         }
 
+        reliabilityModifier += constructionStandardEffects.ReliabilityDelta;
         reliabilityModifier = Numeric.Clamp(reliabilityModifier, 0.65d, 1.2d);
 
         var seaLevelDensity = _atmosphereModel.GetDensityAtAltitude(0d);

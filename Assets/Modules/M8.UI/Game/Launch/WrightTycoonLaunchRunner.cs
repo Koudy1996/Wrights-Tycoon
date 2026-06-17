@@ -46,6 +46,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const float ModifierTooltipHoverDelaySeconds = 0.5f;
     private const float ModifierTooltipHoverRadiusPixels = 26f;
     private const float ModifierTooltipIconSize = 18f;
+    private static string s_dragSelectTextFieldControlName = string.Empty;
+    private static int s_dragSelectTextFieldKeyboardControl;
 
     [Header("Default Definition IDs")]
     [SerializeField] private string _engineDefinitionId = "eng.piston.sport";
@@ -2732,18 +2734,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _baseAirframeParameters.WingAreaSquareMeters,
                 TypeWingAreaMinSquareMeters,
                 TypeWingAreaMaxSquareMeters);
-            _baseAirframeParameters.WingAreaSquareMeters = DrawSlider(
+            var typeWingAreaRatioBeforeFamilyChange = previousFamilyWingArea > 1e-6
+                ? _typeWingAreaSquareMeters / previousFamilyWingArea
+                : 1d;
+            _baseAirframeParameters.WingAreaSquareMeters = DrawFamilyWingAreaSliderWithOptimizationButton(
                 "Family Wing Area (m2)",
                 _baseAirframeParameters.WingAreaSquareMeters,
                 TypeWingAreaMinSquareMeters,
                 TypeWingAreaMaxSquareMeters,
-                "0.0");
+                "0.0",
+                typeWingAreaRatioBeforeFamilyChange);
             if (Math.Abs(_baseAirframeParameters.WingAreaSquareMeters - previousFamilyWingArea) > 1e-6)
             {
-                var typeWingAreaRatio = previousFamilyWingArea > 1e-6
-                    ? _typeWingAreaSquareMeters / previousFamilyWingArea
-                    : 1d;
-                _typeWingAreaSquareMeters = ClampTypeWingArea(_baseAirframeParameters.WingAreaSquareMeters * typeWingAreaRatio);
+                _typeWingAreaSquareMeters = ClampTypeWingArea(_baseAirframeParameters.WingAreaSquareMeters * typeWingAreaRatioBeforeFamilyChange);
             }
 
             _baseAirframeParameters.WingAspectRatio = DrawSlider(
@@ -9441,10 +9444,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         baseAirframe.EngineCount = _lockedEngineCount;
         baseAirframe.StructureType = _lockedStructure;
         baseAirframe.MaterialType = _lockedMaterial;
+        baseAirframe.ConstructionStandard = _familyConstructionStandard;
         baseAirframe.WingShape = _baseAirframeParameters.WingShape;
         baseAirframe.WingPosition = _baseAirframeParameters.WingPosition;
         baseAirframe.WingProfile = NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile);
         baseAirframe.WingAspectRatio = ClampWingAspectRatio(_baseAirframeParameters.WingAspectRatio);
+        var constructionStandardEffects = AircraftConstructionStandardBalance.GetEffects(_familyConstructionStandard);
 
         return new AircraftFamilyDefinition
         {
@@ -9463,8 +9468,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             LockedWingPosition = _baseAirframeParameters.WingPosition,
             Category = _selectedAircraftCategory,
             RequiredFactoryToolLevel = FixedFactoryToolRequirementLevel,
-            BaseDevelopmentCost = ApplyEarlyResearchDiscountToCost(_baseDevelopmentCost),
-            BaseDevelopmentManDays = _baseDevelopmentManDays,
+            BaseDevelopmentCost = ApplyEarlyResearchDiscountToCost(_baseDevelopmentCost * constructionStandardEffects.DevelopmentCostMultiplier),
+            BaseDevelopmentManDays = _baseDevelopmentManDays * constructionStandardEffects.DevelopmentManDaysMultiplier,
             InstalledEngineTechnologyModifiers = ResolveInstalledEngineTechnologyModifiers(saved),
             BaseEngineParameters = saved.Parameters.Clone(),
             BaseAirframeParameters = baseAirframe,
@@ -10955,19 +10960,138 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private static void SelectAllFocusedTextFieldWhenDraggingOutside(string controlName, Rect fieldRect)
     {
         var currentEvent = Event.current;
-        if (currentEvent is null
-            || currentEvent.type != EventType.MouseDrag
-            || currentEvent.button != 0
-            || fieldRect.Contains(currentEvent.mousePosition)
-            || !string.Equals(GUI.GetNameOfFocusedControl(), controlName, StringComparison.Ordinal))
+        if (currentEvent is null)
         {
             return;
         }
 
-        if (GUIUtility.GetStateObject(typeof(TextEditor), GUIUtility.keyboardControl) is TextEditor editor)
+        if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0 && fieldRect.Contains(currentEvent.mousePosition))
+        {
+            GUI.FocusControl(controlName);
+            s_dragSelectTextFieldControlName = controlName;
+            s_dragSelectTextFieldKeyboardControl = GUIUtility.keyboardControl;
+            return;
+        }
+
+        var isTrackedControl = string.Equals(s_dragSelectTextFieldControlName, controlName, StringComparison.Ordinal);
+        if (!isTrackedControl)
+        {
+            return;
+        }
+
+        var pointerOutsideField = !fieldRect.Contains(currentEvent.mousePosition);
+        if (pointerOutsideField
+            && currentEvent.button == 0
+            && (currentEvent.type == EventType.MouseDrag || currentEvent.type == EventType.MouseUp))
+        {
+            SelectAllTextField(controlName);
+            currentEvent.Use();
+        }
+
+        if (currentEvent.type == EventType.MouseUp || currentEvent.type == EventType.Ignore)
+        {
+            s_dragSelectTextFieldControlName = string.Empty;
+            s_dragSelectTextFieldKeyboardControl = 0;
+        }
+    }
+
+    private static void SelectAllTextField(string controlName)
+    {
+        GUI.FocusControl(controlName);
+        var keyboardControl = GUIUtility.keyboardControl != 0
+            ? GUIUtility.keyboardControl
+            : s_dragSelectTextFieldKeyboardControl;
+        if (keyboardControl == 0)
+        {
+            return;
+        }
+
+        s_dragSelectTextFieldKeyboardControl = keyboardControl;
+        if (GUIUtility.GetStateObject(typeof(TextEditor), keyboardControl) is TextEditor editor)
         {
             editor.SelectAll();
         }
+    }
+
+    private double DrawFamilyWingAreaSliderWithOptimizationButton(
+        string label,
+        double value,
+        double min,
+        double max,
+        string format,
+        double typeWingAreaRatio)
+    {
+        var currentValue = Math.Clamp(value, min, max);
+        var key = BuildNumericFieldKey("family.double", label, min, max);
+        var controlName = BuildControlName("double", key);
+        _doubleSliderHadFocus.TryGetValue(key, out var hadFocus);
+
+        if (!_doubleSliderInputBuffer.TryGetValue(key, out var currentInput))
+        {
+            currentInput = FormatUiNumber(currentValue, format);
+            _doubleSliderInputBuffer[key] = currentInput;
+        }
+
+        GUILayout.Label($"{label}: {FormatUiNumber(currentValue, format)}");
+        GUILayout.BeginHorizontal();
+        var sliderPosition = ToExponentialSliderPosition(currentValue, min, max);
+        var nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
+        var nextInput = DrawDragSelectTextField(controlName, currentInput, GUILayout.Width(120f));
+        GUILayout.Label(
+            $"[{FormatUiNumber(min, format)} - {FormatUiNumber(max, format)}]",
+            GUILayout.Width(185f));
+        var optimizeClicked = GUILayout.Button("Best Payload", GUILayout.Width(120f), GUILayout.Height(24f));
+        GUILayout.EndHorizontal();
+
+        var hasFocus = GUI.GetNameOfFocusedControl() == controlName;
+        var pressedEnter = hasFocus
+            && Event.current.type == EventType.KeyDown
+            && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter);
+        var lostFocus = hadFocus && !hasFocus;
+
+        var sliderMappedValue = FromExponentialSliderPosition(nextSliderPosition, min, max);
+        var sliderRounded = Math.Clamp(Math.Round(sliderMappedValue, 4, MidpointRounding.AwayFromZero), min, max);
+        var sliderChanged = Math.Abs(sliderRounded - currentValue) > 1e-6;
+
+        if (sliderChanged)
+        {
+            currentValue = sliderRounded;
+        }
+
+        _doubleSliderInputBuffer[key] = nextInput;
+
+        if (pressedEnter || lostFocus)
+        {
+            if (TryParseDecimalCandidate(nextInput, out var parsedValue)
+                && parsedValue >= min
+                && parsedValue <= max)
+            {
+                currentValue = Math.Round(parsedValue, 4, MidpointRounding.AwayFromZero);
+            }
+
+            if (pressedEnter)
+            {
+                Event.current.Use();
+            }
+        }
+
+        if (optimizeClicked)
+        {
+            _baseAirframeParameters.WingAreaSquareMeters = currentValue;
+            _typeWingAreaSquareMeters = ClampTypeWingArea(currentValue * typeWingAreaRatio);
+            FindBestFamilyWingAreaForMaximumPayloadCapacity(min, max, typeWingAreaRatio);
+            _doubleSliderInputBuffer[key] = FormatUiNumber(_baseAirframeParameters.WingAreaSquareMeters, format);
+            _doubleSliderHadFocus[key] = false;
+            return _baseAirframeParameters.WingAreaSquareMeters;
+        }
+
+        if (!hasFocus || sliderChanged)
+        {
+            _doubleSliderInputBuffer[key] = FormatUiNumber(currentValue, format);
+        }
+
+        _doubleSliderHadFocus[key] = hasFocus;
+        return currentValue;
     }
 
     private double DrawWingAreaSliderWithOptimizationButton(
@@ -11274,6 +11398,77 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             $"(payload {FormatUiNumber(bestPayloadKilograms, "0.0")} kg).";
     }
 
+    private void FindBestFamilyWingAreaForMaximumPayloadCapacity(
+        double minWingArea,
+        double maxWingArea,
+        double typeWingAreaRatio)
+    {
+        var originalFamilyWingArea = Math.Clamp(_baseAirframeParameters.WingAreaSquareMeters, minWingArea, maxWingArea);
+        var originalTypeWingArea = _typeWingAreaSquareMeters;
+        var bestFamilyWingArea = originalFamilyWingArea;
+        var bestTypeWingArea = ResolveTypeWingAreaForFamilyCandidate(originalFamilyWingArea, typeWingAreaRatio);
+        var bestPayloadKilograms = 0d;
+        var hasBestCandidate = false;
+        var lastError = string.Empty;
+
+        ScanFamilyWingAreaRangeForPayload(
+            minWingArea,
+            maxWingArea,
+            step: 5d,
+            originalFamilyWingArea,
+            typeWingAreaRatio,
+            ref hasBestCandidate,
+            ref bestFamilyWingArea,
+            ref bestTypeWingArea,
+            ref bestPayloadKilograms,
+            ref lastError);
+
+        if (hasBestCandidate)
+        {
+            ScanFamilyWingAreaRangeForPayload(
+                Math.Max(minWingArea, bestFamilyWingArea - 10d),
+                Math.Min(maxWingArea, bestFamilyWingArea + 10d),
+                step: 1d,
+                originalFamilyWingArea,
+                typeWingAreaRatio,
+                ref hasBestCandidate,
+                ref bestFamilyWingArea,
+                ref bestTypeWingArea,
+                ref bestPayloadKilograms,
+                ref lastError);
+
+            ScanFamilyWingAreaRangeForPayload(
+                Math.Max(minWingArea, bestFamilyWingArea - 1d),
+                Math.Min(maxWingArea, bestFamilyWingArea + 1d),
+                step: 0.1d,
+                originalFamilyWingArea,
+                typeWingAreaRatio,
+                ref hasBestCandidate,
+                ref bestFamilyWingArea,
+                ref bestTypeWingArea,
+                ref bestPayloadKilograms,
+                ref lastError);
+        }
+
+        if (!hasBestCandidate)
+        {
+            _baseAirframeParameters.WingAreaSquareMeters = originalFamilyWingArea;
+            _typeWingAreaSquareMeters = originalTypeWingArea;
+            RebuildAircraftPreview();
+            _factoryActionMessage = string.IsNullOrWhiteSpace(lastError)
+                ? "Family wing area optimization failed: no valid payload candidate found."
+                : $"Family wing area optimization failed: {lastError}";
+            return;
+        }
+
+        _baseAirframeParameters.WingAreaSquareMeters = Math.Round(bestFamilyWingArea, 4, MidpointRounding.AwayFromZero);
+        _typeWingAreaSquareMeters = Math.Round(bestTypeWingArea, 4, MidpointRounding.AwayFromZero);
+        RebuildAircraftPreview();
+        _factoryActionMessage =
+            $"Best family wing area for maximum useful load: {FormatUiNumber(_baseAirframeParameters.WingAreaSquareMeters, "0.0")} m2 " +
+            $"(type {FormatUiNumber(_typeWingAreaSquareMeters, "0.0")} m2, payload {FormatUiNumber(bestPayloadKilograms, "0.0")} kg).";
+    }
+
     private void FindSmallestWingAreaForPayloadLimit(double minWingArea, double maxWingArea)
     {
         var originalWingArea = Math.Clamp(_typeWingAreaSquareMeters, minWingArea, maxWingArea);
@@ -11434,6 +11629,67 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
     }
 
+    private void ScanFamilyWingAreaRangeForPayload(
+        double minWingArea,
+        double maxWingArea,
+        double step,
+        double originalWingArea,
+        double typeWingAreaRatio,
+        ref bool hasBestCandidate,
+        ref double bestFamilyWingArea,
+        ref double bestTypeWingArea,
+        ref double bestPayloadKilograms,
+        ref string lastError)
+    {
+        if (step <= 0d || minWingArea > maxWingArea)
+        {
+            return;
+        }
+
+        var candidateWingArea = minWingArea;
+        var guard = 0;
+        while (candidateWingArea <= maxWingArea + 1e-9d && guard < 20000)
+        {
+            var normalizedFamilyWingArea = Math.Clamp(
+                Math.Round(candidateWingArea, 4, MidpointRounding.AwayFromZero),
+                minWingArea,
+                maxWingArea);
+
+            if (TryBuildAircraftSnapshotForFamilyWingArea(
+                    normalizedFamilyWingArea,
+                    typeWingAreaRatio,
+                    out var candidateAircraft,
+                    out var candidateTypeWingArea,
+                    out var errorMessage))
+            {
+                var payloadCapacityKilograms = candidateAircraft.Performance.PayloadCapacity.Kilograms;
+                if (!double.IsNaN(payloadCapacityKilograms) && !double.IsInfinity(payloadCapacityKilograms))
+                {
+                    var isBetterPayload = !hasBestCandidate || payloadCapacityKilograms > bestPayloadKilograms + 1e-6d;
+                    var isEquivalentPayload = hasBestCandidate
+                        && System.Math.Abs(payloadCapacityKilograms - bestPayloadKilograms) <= 1e-6d;
+                    var isCloserToOriginal = isEquivalentPayload
+                        && System.Math.Abs(normalizedFamilyWingArea - originalWingArea) < System.Math.Abs(bestFamilyWingArea - originalWingArea);
+
+                    if (isBetterPayload || isCloserToOriginal)
+                    {
+                        hasBestCandidate = true;
+                        bestFamilyWingArea = normalizedFamilyWingArea;
+                        bestTypeWingArea = candidateTypeWingArea;
+                        bestPayloadKilograms = payloadCapacityKilograms;
+                    }
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                lastError = errorMessage;
+            }
+
+            candidateWingArea += step;
+            guard++;
+        }
+    }
+
     private bool TryBuildAircraftSnapshotForWingArea(double wingAreaSquareMeters, out Aircraft aircraft, out string errorMessage)
     {
         aircraft = null!;
@@ -11482,6 +11738,50 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             errorMessage = ex.Message;
             return false;
         }
+    }
+
+    private bool TryBuildAircraftSnapshotForFamilyWingArea(
+        double familyWingAreaSquareMeters,
+        double typeWingAreaRatio,
+        out Aircraft aircraft,
+        out double typeWingAreaSquareMeters,
+        out string errorMessage)
+    {
+        var originalFamilyWingArea = _baseAirframeParameters.WingAreaSquareMeters;
+        var originalTypeWingArea = _typeWingAreaSquareMeters;
+        typeWingAreaSquareMeters = ResolveTypeWingAreaForFamilyCandidate(familyWingAreaSquareMeters, typeWingAreaRatio);
+
+        try
+        {
+            _baseAirframeParameters.WingAreaSquareMeters = Math.Clamp(
+                familyWingAreaSquareMeters,
+                TypeWingAreaMinSquareMeters,
+                TypeWingAreaMaxSquareMeters);
+            _typeWingAreaSquareMeters = typeWingAreaSquareMeters;
+            return TryBuildAircraftSnapshotForWingArea(typeWingAreaSquareMeters, out aircraft, out errorMessage);
+        }
+        finally
+        {
+            _baseAirframeParameters.WingAreaSquareMeters = originalFamilyWingArea;
+            _typeWingAreaSquareMeters = originalTypeWingArea;
+        }
+    }
+
+    private static double ResolveTypeWingAreaForFamilyCandidate(double familyWingAreaSquareMeters, double typeWingAreaRatio)
+    {
+        var familyWingArea = Math.Clamp(
+            familyWingAreaSquareMeters,
+            TypeWingAreaMinSquareMeters,
+            TypeWingAreaMaxSquareMeters);
+        var typeMinimum = Math.Clamp(
+            familyWingArea * 0.8d,
+            TypeWingAreaMinSquareMeters,
+            TypeWingAreaMaxSquareMeters);
+        var typeMaximum = Math.Clamp(
+            familyWingArea * 1.2d,
+            TypeWingAreaMinSquareMeters,
+            TypeWingAreaMaxSquareMeters);
+        return Math.Clamp(familyWingArea * typeWingAreaRatio, typeMinimum, typeMaximum);
     }
 
     private static float ToExponentialSliderPosition(double value, double min, double max)
@@ -12286,16 +12586,34 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             index = 0;
         }
 
-        index = Mathf.RoundToInt(GUILayout.HorizontalSlider(index, 0, values.Length - 1));
+        var sliderRect = GUILayoutUtility.GetRect(120f, 20f, GUILayout.ExpandWidth(true));
+        index = Mathf.RoundToInt(GUI.HorizontalSlider(sliderRect, index, 0, values.Length - 1));
         index = Mathf.Clamp(index, 0, values.Length - 1);
         GUILayout.Label($"Selected: {labels[index]}");
-        GUILayout.BeginHorizontal();
+        var labelRowRect = GUILayoutUtility.GetRect(120f, 20f, GUILayout.ExpandWidth(true));
+        var labelStyle = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            wordWrap = false,
+            clipping = TextClipping.Clip,
+        };
+        var usableMinX = sliderRect.x + 6f;
+        var usableMaxX = sliderRect.xMax - 6f;
+        var markerWidth = Mathf.Max(64f, Mathf.Min(140f, sliderRect.width / values.Length));
         for (var labelIndex = 0; labelIndex < labels.Length; labelIndex++)
         {
-            GUILayout.Label(labels[labelIndex], GUILayout.ExpandWidth(true));
+            var normalizedPosition = labels.Length <= 1
+                ? 0f
+                : (float)labelIndex / (labels.Length - 1);
+            var centerX = Mathf.Lerp(usableMinX, usableMaxX, normalizedPosition);
+            var labelRect = new Rect(
+                centerX - (markerWidth * 0.5f),
+                labelRowRect.y,
+                markerWidth,
+                labelRowRect.height);
+            GUI.Label(labelRect, labels[labelIndex], labelStyle);
         }
 
-        GUILayout.EndHorizontal();
         return values[index];
     }
 
