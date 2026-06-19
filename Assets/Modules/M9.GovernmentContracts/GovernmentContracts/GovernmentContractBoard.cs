@@ -594,7 +594,7 @@ public sealed class GovernmentContractBoard
 
     private static GovernmentContractAircraftMetricsSnapshot CreateSnapshot(GovernmentContractAircraftMetrics metrics)
     {
-        return new GovernmentContractAircraftMetricsSnapshot
+        var snapshot = new GovernmentContractAircraftMetricsSnapshot
         {
             AircraftType = metrics.AircraftType,
             MaximumSpeedLowAltitudeMetersPerSecond = metrics.MaximumSpeedLowAltitudeMetersPerSecond,
@@ -608,6 +608,16 @@ public sealed class GovernmentContractBoard
             RequiredRunwayLengthMeters = metrics.RequiredRunwayLengthMeters,
             DevelopmentCost = metrics.DevelopmentCost,
         };
+
+        if (metrics.QualifiedAircraftTypes is not null)
+        {
+            for (var index = 0; index < metrics.QualifiedAircraftTypes.Count; index++)
+            {
+                snapshot.QualifiedAircraftTypes.Add(metrics.QualifiedAircraftTypes[index]);
+            }
+        }
+
+        return snapshot;
     }
 
     private static GovernmentContractDevelopmentPriceBreakdownSnapshot CreateSnapshot(
@@ -764,6 +774,10 @@ public sealed class GovernmentContractBoard
             throw new ArgumentNullException(nameof(snapshot));
         }
 
+        var qualifiedTypes = snapshot.QualifiedAircraftTypes is { Count: > 0 }
+            ? snapshot.QualifiedAircraftTypes
+            : null;
+
         return new GovernmentContractAircraftMetrics(
             snapshot.AircraftType,
             snapshot.MaximumSpeedLowAltitudeMetersPerSecond,
@@ -775,7 +789,8 @@ public sealed class GovernmentContractBoard
             snapshot.Maneuverability,
             snapshot.CrewSize,
             snapshot.RequiredRunwayLengthMeters,
-            snapshot.DevelopmentCost);
+            snapshot.DevelopmentCost,
+            qualifiedTypes);
     }
 
     private static GovernmentContractDevelopmentPriceBreakdown RestoreBreakdown(

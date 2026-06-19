@@ -5,7 +5,6 @@ using System.Linq;
 using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Balance;
-using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Math;
 
 namespace WrightTycoon.Core.Contracts;
@@ -28,20 +27,6 @@ public sealed class ContractEvaluator : IContractEvaluator
         var requirements = contract.Requirements;
 
         var unmetRequirements = new List<string>();
-        if (requirements.RequiredCategory.HasValue)
-        {
-            var requiredCategory = requirements.RequiredCategory.Value;
-            var profile = AircraftCategoryCatalog.GetProfile(requiredCategory);
-            var categoryCompliance = new CategoryComplianceEvaluator().Evaluate(aircraft, profile);
-            if (!categoryCompliance.IsCompliant)
-            {
-                unmetRequirements.Add($"Aircraft does not qualify as {profile.DisplayName}.");
-                for (var index = 0; index < categoryCompliance.UnmetRequirements.Count; index++)
-                {
-                    unmetRequirements.Add(categoryCompliance.UnmetRequirements[index]);
-                }
-            }
-        }
 
         if (requirements.MinimumReliability.HasValue)
         {

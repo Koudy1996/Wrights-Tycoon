@@ -77,7 +77,10 @@ public sealed class GovernmentContractSubmissionCandidateSnapshot
 
 public sealed class GovernmentContractAircraftMetricsSnapshot
 {
+    // Retained for backward compatibility with saves created before modular categories.
     public AircraftCategory AircraftType { get; set; }
+
+    public List<AircraftCategory> QualifiedAircraftTypes { get; set; } = new();
 
     public double MaximumSpeedLowAltitudeMetersPerSecond { get; set; }
 

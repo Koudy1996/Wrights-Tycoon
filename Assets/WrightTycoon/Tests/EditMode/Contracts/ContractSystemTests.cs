@@ -650,7 +650,7 @@ public sealed class ContractSystemTests
     }
 
     [Test]
-    public void Evaluator_BlocksDelivery_WhenAircraftDoesNotQualifyForRequiredCategory()
+    public void Evaluator_TreatsRequiredCategoryAsMarketLabel_WhenExplicitRequirementsPass()
     {
 
         var evaluator = new ContractEvaluator();
@@ -677,8 +677,8 @@ public sealed class ContractSystemTests
 
         var evaluation = evaluator.Evaluate(contract, aircraft);
 
-        Assert.That(evaluation.CanDeliver, Is.False);
-        Assert.That(evaluation.UnmetRequirements, Has.Some.Contains("qualify"));
+        Assert.That(evaluation.CanDeliver, Is.True);
+        Assert.That(evaluation.UnmetRequirements, Is.Empty);
     }
 
     [Test]

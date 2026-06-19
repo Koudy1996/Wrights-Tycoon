@@ -66,6 +66,7 @@ public readonly struct GovernmentContractAircraftMetrics
             : QualifiedAircraftTypes.Distinct().ToArray();
     }
 
+    // Legacy single-category value retained for old snapshots; eligibility uses explicit metrics.
     public AircraftCategory AircraftType { get; }
 
     public double MaximumSpeedLowAltitudeMetersPerSecond { get; }
@@ -89,9 +90,6 @@ public readonly struct GovernmentContractAircraftMetrics
     public double DevelopmentCost { get; }
 
     public IReadOnlyList<AircraftCategory> QualifiedAircraftTypes { get; }
-
-    public bool QualifiesAs(AircraftCategory category) =>
-        QualifiedAircraftTypes is not null && QualifiedAircraftTypes.Contains(category);
 
     public double GetMaximumSpeedForBand(GovernmentContractSpeedAltitudeBand band)
     {
@@ -158,11 +156,6 @@ public readonly struct GovernmentContractAircraftMetrics
         if (DevelopmentCost < 0d)
         {
             throw new ArgumentOutOfRangeException(nameof(DevelopmentCost), "Development cost must be >= 0.");
-        }
-
-        if (QualifiedAircraftTypes is null || QualifiedAircraftTypes.Count == 0)
-        {
-            throw new ArgumentException("At least one qualified aircraft type must be provided.", nameof(QualifiedAircraftTypes));
         }
 
         for (var index = 0; index < QualifiedAircraftTypes.Count; index++)

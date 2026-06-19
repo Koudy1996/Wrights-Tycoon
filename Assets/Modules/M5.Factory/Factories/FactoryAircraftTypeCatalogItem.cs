@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using WrightTycoon.Core.Categories;
 using AircraftModel = WrightTycoon.Core.Aircraft.Aircraft;
 
@@ -16,6 +18,7 @@ public sealed class FactoryAircraftTypeCatalogItem
         DesignId = designId ?? throw new ArgumentNullException(nameof(designId));
         DisplayName = displayName ?? throw new ArgumentNullException(nameof(displayName));
         Aircraft = aircraft ?? throw new ArgumentNullException(nameof(aircraft));
+        QualifiedCategories = new AircraftCategoryQualificationEvaluator().GetQualifiedCategories(Aircraft);
         RequiredFactoryToolLevel = requiredFactoryToolLevel;
         RequiredLineToolLevel = requiredLineToolLevel;
 
@@ -28,7 +31,9 @@ public sealed class FactoryAircraftTypeCatalogItem
 
     public AircraftModel Aircraft { get; }
 
-    public AircraftCategory Category => Aircraft.FamilyDefinition.Category;
+    public IReadOnlyList<AircraftCategory> QualifiedCategories { get; }
+
+    public bool QualifiesForCategory(AircraftCategory category) => QualifiedCategories.Contains(category);
 
     public int RequiredFactoryToolLevel { get; }
 

@@ -156,6 +156,35 @@ public sealed class GovernmentContractModuleTests
     }
 
     [Test]
+    public void ComplianceEvaluator_IgnoresLegacyAircraftType_WhenExplicitRequirementsPass()
+    {
+        var requirements = CreateRequirements();
+        var metrics = new GovernmentContractAircraftMetrics(
+            AircraftCategory.LightSportAndRecreational,
+            MaximumSpeedLowAltitudeMetersPerSecond: requirements.MinimumMaximumSpeedMetersPerSecond,
+            MaximumSpeedMediumAltitudeMetersPerSecond: requirements.MinimumMaximumSpeedMetersPerSecond,
+            MaximumSpeedHighAltitudeMetersPerSecond: requirements.MinimumMaximumSpeedMetersPerSecond,
+            RangeKilometers: requirements.MinimumRangeKilometers,
+            PayloadKilograms: requirements.MinimumPayloadKilograms,
+            Reliability: requirements.MinimumReliability,
+            Maneuverability: requirements.MinimumManeuverability,
+            CrewSize: requirements.MinimumCrewSize,
+            RequiredRunwayLengthMeters: requirements.MaximumRequiredRunwayLengthMeters,
+            DevelopmentCost: 200000d,
+            QualifiedAircraftTypes: new[] { AircraftCategory.LightSportAndRecreational });
+        var candidate = new GovernmentContractSubmissionCandidate(
+            "design.gov.legacy-type",
+            "Modular Candidate",
+            AircraftLifecycleStage.Completed,
+            metrics);
+
+        var report = new GovernmentContractComplianceEvaluator().Evaluate(requirements, candidate);
+
+        Assert.That(report.MeetsAllRequirements, Is.True);
+        Assert.That(report.UnmetRequirements, Is.Empty);
+    }
+
+    [Test]
     public void Generator_BlocksWideBodyBeforeIntroductionYear_AndAllowsItAfterward()
     {
         var random = new DeterministicRandomProvider();
@@ -360,6 +389,9 @@ public sealed class GovernmentContractModuleTests
         Assert.That(restored.ActiveDeliveryContracts[0].DeliveryId, Is.EqualTo(deliveryId));
         Assert.That(restored.ActiveDeliveryContracts[0].DeliveredUnits, Is.EqualTo(120));
         Assert.That(restored.ActiveDeliveryContracts[0].RemainingUnits, Is.EqualTo(totalUnitsRequired - 120));
+        Assert.That(
+            restored.EvaluatedContracts[0].AcceptedSubmission!.Metrics.QualifiedAircraftTypes,
+            Is.EquivalentTo(new[] { AircraftCategory.BusinessVipJet, AircraftCategory.RegionalJet }));
     }
 
     private static GovernmentContractRequirements CreateRequirements()
@@ -402,7 +434,8 @@ public sealed class GovernmentContractModuleTests
             Maneuverability: maneuverability,
             CrewSize: crew,
             RequiredRunwayLengthMeters: runway,
-            DevelopmentCost: 200000d);
+            DevelopmentCost: 200000d,
+            QualifiedAircraftTypes: new[] { AircraftCategory.BusinessVipJet, requirements.RequiredAircraftType });
 
         return new GovernmentContractSubmissionCandidate(
             "design.gov.test",

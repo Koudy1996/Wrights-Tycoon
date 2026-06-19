@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Balance;
@@ -20,7 +21,7 @@ public static class GovernmentContractSubmissionCandidateFactory
         }
 
         var aircraft = catalogItem.Aircraft;
-        var metrics = BuildMetrics(aircraft);
+        var metrics = BuildMetrics(aircraft, catalogItem.QualifiedCategories);
         return new GovernmentContractSubmissionCandidate(
             catalogItem.DesignId,
             catalogItem.DisplayName,
@@ -41,7 +42,9 @@ public static class GovernmentContractSubmissionCandidateFactory
             throw new ArgumentNullException(nameof(aircraft));
         }
 
-        var metrics = BuildMetrics(aircraft);
+        var metrics = BuildMetrics(
+            aircraft,
+            new AircraftCategoryQualificationEvaluator().GetQualifiedCategories(aircraft));
         return new GovernmentContractSubmissionCandidate(
             designId,
             displayName,
@@ -50,7 +53,9 @@ public static class GovernmentContractSubmissionCandidateFactory
             developmentPriceBreakdown);
     }
 
-    private static GovernmentContractAircraftMetrics BuildMetrics(WrightTycoon.Core.Aircraft.Aircraft aircraft)
+    private static GovernmentContractAircraftMetrics BuildMetrics(
+        WrightTycoon.Core.Aircraft.Aircraft aircraft,
+        IReadOnlyList<AircraftCategory> qualifiedCategories)
     {
         var lowSpeed = GetSpeedAtAltitude(aircraft.Performance, GovernmentContractBalance.SpeedAltitudeLowMeters);
         var mediumSpeed = GetSpeedAtAltitude(aircraft.Performance, GovernmentContractBalance.SpeedAltitudeMediumMeters);
@@ -59,10 +64,10 @@ public static class GovernmentContractSubmissionCandidateFactory
         var certifiedRangeKilometers = AircraftNavigationRangePolicy.GetCertifiedRangeKilometers(
             aircraft.TypeDefinition.NavigationEquipment,
             aircraft.Performance.RangeKilometers);
-        var qualifiedCategories = new AircraftCategoryQualificationEvaluator().GetQualifiedCategories(aircraft);
+        var legacyAircraftType = ResolveLegacyAircraftType(aircraft.FamilyDefinition.Category, qualifiedCategories);
 
         return new GovernmentContractAircraftMetrics(
-            aircraft.FamilyDefinition.Category,
+            legacyAircraftType,
             lowSpeed,
             mediumSpeed,
             highSpeed,
@@ -143,5 +148,25 @@ public static class GovernmentContractSubmissionCandidateFactory
             RunwayType.Long => PlaneDesignerBalance.Airframe.RunwayLongLengthMeters,
             _ => PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters,
         };
+    }
+
+    private static AircraftCategory ResolveLegacyAircraftType(
+        AircraftCategory fallbackCategory,
+        IReadOnlyList<AircraftCategory> qualifiedCategories)
+    {
+        if (qualifiedCategories is null || qualifiedCategories.Count == 0)
+        {
+            return fallbackCategory;
+        }
+
+        for (var index = 0; index < qualifiedCategories.Count; index++)
+        {
+            if (qualifiedCategories[index] == fallbackCategory)
+            {
+                return fallbackCategory;
+            }
+        }
+
+        return qualifiedCategories[0];
     }
 }

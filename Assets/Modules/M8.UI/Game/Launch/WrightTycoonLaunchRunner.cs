@@ -3978,28 +3978,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 if (deliveryCandidates.Count == 0)
                 {
                     DrawError("Status: blocked");
-                    var categoryCompatibleWarehouseUnits = warehouseSnapshot
-                        .Where(entry => entry.Value > 0 && catalog.TryGetValue(entry.Key, out var item) && IsCatalogItemQualifiedForContractCategory(contract, item))
+                    var availableWarehouseUnits = warehouseSnapshot
+                        .Where(entry => entry.Value > 0 && catalog.ContainsKey(entry.Key))
                         .Sum(entry => entry.Value);
-                    if (categoryCompatibleWarehouseUnits <= 0 && contract.Requirements.RequiredCategory.HasValue)
+
+                    if (availableWarehouseUnits <= 0)
                     {
-                        var requiredCategoryName =
-                            AircraftCategoryCatalog.GetProfile(contract.Requirements.RequiredCategory.Value).DisplayName;
-                        GUILayout.Label($"- No warehouse aircraft matches required category '{requiredCategoryName}'.");
+                        GUILayout.Label("- No usable aircraft in warehouse.");
                     }
                     else
                     {
-                        GUILayout.Label("- No usable aircraft in warehouse.");
+                        GUILayout.Label("- Available warehouse aircraft do not meet one or more contract requirements.");
                     }
 
                     if (warehouseSnapshot.Count > 0 && catalog.Count == 0)
                     {
                         GUILayout.Label("- Save at least one aircraft design in Airframe + Type tab.");
-                    }
-
-                    if (categoryCompatibleWarehouseUnits > 0)
-                    {
-                        GUILayout.Label("- Available aircraft qualified for the requested category do not meet one or more contract requirements.");
                     }
                 }
                 else
@@ -4625,7 +4619,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         lines.Add(string.Empty);
         lines.Add("Requirements");
-        lines.Add($"- Aircraft Type: {categoryProfile.DisplayName}");
+        lines.Add($"- Requested Market: {categoryProfile.DisplayName}");
         lines.Add($"- Speed Altitude Band: {requirements.SpeedAltitudeBand}");
         lines.Add($"- Minimum Max Speed: {FormatUiNumber(requirements.MinimumMaximumSpeedMetersPerSecond * 3.6d, "0.0")} km/h");
         lines.Add($"- Minimum Range: {FormatUiNumber(requirements.MinimumRangeKilometers, "0.0")} km");
@@ -5205,7 +5199,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         DrawSection("Requirements");
         var categoryProfile = AircraftCategoryCatalog.GetProfile(requirements.RequiredAircraftType);
-        GUILayout.Label($"Aircraft Type: {categoryProfile.DisplayName}");
+        GUILayout.Label($"Requested Market: {categoryProfile.DisplayName}");
         GUILayout.Label($"Maximum Speed Band: {requirements.SpeedAltitudeBand}");
         DrawMetric("Minimum Max Speed (km/h)", requirements.MinimumMaximumSpeedMetersPerSecond * 3.6d, "0.0");
         DrawMetric("Minimum Range (km)", requirements.MinimumRangeKilometers, "0.0");
@@ -8100,7 +8094,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 GUILayout.Label($"Status: {line.StatusMessage}");
                 if (!string.IsNullOrWhiteSpace(line.AssignedDesignId))
                 {
-                    GUILayout.Label($"Category: {ResolveAircraftCategoryName(line.AssignedDesignId)}");
+                    GUILayout.Label($"Qualified Categories: {ResolveAircraftCategoryName(line.AssignedDesignId)}");
                     TryDrawAircraftPictureByDesignId(line.AssignedDesignId, 220f, 130f);
                 }
 
@@ -8972,11 +8966,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         foreach (var catalogItem in catalog.Values)
         {
-            if (!IsCatalogItemQualifiedForContractCategory(contract, catalogItem))
-            {
-                continue;
-            }
-
             var evaluation = contractBoard.Evaluate(contract, catalogItem.Aircraft);
             if (!evaluation.CanDeliver)
             {
@@ -9019,11 +9008,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         foreach (var warehouseEntry in warehouseSnapshot)
         {
             if (warehouseEntry.Value <= 0 || !catalog.TryGetValue(warehouseEntry.Key, out var catalogItem))
-            {
-                continue;
-            }
-
-            if (!IsCatalogItemQualifiedForContractCategory(contract, catalogItem))
             {
                 continue;
             }
@@ -9082,29 +9066,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         return string.Join(", ", parts);
-    }
-
-    private static bool IsCatalogItemQualifiedForContractCategory(
-        Contract contract,
-        FactoryAircraftTypeCatalogItem catalogItem)
-    {
-        if (contract is null)
-        {
-            throw new ArgumentNullException(nameof(contract));
-        }
-
-        if (catalogItem is null)
-        {
-            throw new ArgumentNullException(nameof(catalogItem));
-        }
-
-        if (!contract.Requirements.RequiredCategory.HasValue)
-        {
-            return true;
-        }
-
-        var profile = AircraftCategoryCatalog.GetProfile(contract.Requirements.RequiredCategory.Value);
-        return new CategoryComplianceEvaluator().Evaluate(catalogItem.Aircraft, profile).IsCompliant;
     }
 
     private bool MatchesContractFilters(ContractAvailabilitySnapshot snapshot)
@@ -12441,7 +12402,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (requirements.RequiredCategory.HasValue)
         {
             var profile = AircraftCategoryCatalog.GetProfile(requirements.RequiredCategory.Value);
-            GUILayout.Label($"Category: {profile.DisplayName}");
+            GUILayout.Label($"Requested Market: {profile.DisplayName}");
         }
 
         if (requirements.MinimumReliability.HasValue)
