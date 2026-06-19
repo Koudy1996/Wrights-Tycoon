@@ -2701,7 +2701,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 $"family: {activeTypeVersionDevelopment.SourceFamilyDisplayName} | " +
                 $"development start: {FormatUiInteger(activeTypeVersionDevelopment.SourceDevelopmentStartedYear)} | " +
                 $"variant start: {FormatUiInteger(activeTypeVersionDevelopment.VariantDevelopmentStartedYear)}");
-            GUILayout.Label("Family and assigned engine are fixed while developing this type version.");
+            GUILayout.Label("Family is fixed; the variant may install any compatible saved engine.");
 
             if (GUILayout.Button("Cancel Version Development", GUILayout.Height(26f)))
             {
@@ -2886,41 +2886,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         DrawSection("Type Engine");
-        if (isTypeVersionDevelopment)
+        var compatibleEngineIndices = GetCompatibleSavedEngineIndices();
+        if (compatibleEngineIndices.Count == 0)
         {
-            var sourceEngineIndex = FindSavedEngineIndexByResearchId(activeTypeVersionDevelopment!.SourceEngineResearchId);
-            if (sourceEngineIndex >= 0)
-            {
-                _selectedSavedEngineIndex = sourceEngineIndex;
-                var sourceEngine = _savedEngines[sourceEngineIndex];
-                GUILayout.Label(
-                    $"Assigned Engine (locked): {BuildEngineDisplayName(sourceEngine.Name, sourceEngine.Definition.EngineType, sourceEngine.Parameters)}");
-            }
-            else
-            {
-                DrawError("Source engine for this type version is missing.");
-            }
+            DrawError($"No saved {GetAllowedEngineFamilyLabel(_familyAllowedEngineFamily).ToLowerInvariant()} engines available for this family.");
         }
         else
         {
-            var compatibleEngineIndices = GetCompatibleSavedEngineIndices();
-            if (compatibleEngineIndices.Count == 0)
-            {
-                DrawError($"No saved {GetAllowedEngineFamilyLabel(_familyAllowedEngineFamily).ToLowerInvariant()} engines available for this family.");
-            }
-            else
-            {
-                var compatibleLabels = compatibleEngineIndices
-                    .Select(engineIndex =>
-                    {
-                        var savedEngine = _savedEngines[engineIndex];
-                        return BuildEngineDisplayName(savedEngine.Name, savedEngine.Definition.EngineType, savedEngine.Parameters);
-                    })
-                    .ToArray();
-                var selectedCompatibleIndex = ResolveSelectedCompatibleEngineOptionIndex(compatibleEngineIndices);
-                selectedCompatibleIndex = DrawListSelector("Assigned Engine", selectedCompatibleIndex, compatibleLabels);
-                _selectedSavedEngineIndex = compatibleEngineIndices[selectedCompatibleIndex];
-            }
+            var compatibleLabels = compatibleEngineIndices
+                .Select(engineIndex => BuildTypeEngineOptionLabel(_savedEngines[engineIndex]))
+                .ToArray();
+            var selectedCompatibleIndex = ResolveSelectedCompatibleEngineOptionIndex(compatibleEngineIndices);
+            selectedCompatibleIndex = DrawListSelector("Assigned Engine", selectedCompatibleIndex, compatibleLabels);
+            _selectedSavedEngineIndex = compatibleEngineIndices[selectedCompatibleIndex];
         }
 
         _typeFlapType = DrawTrailingFlapSelector("Flaps", _typeFlapType);
@@ -3099,7 +3077,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 .GetQualifiedCategories(_aircraftPreview);
             if (qualifiedCategories.Count > 0)
             {
-                GUILayout.Label($"Qualified Categories: {FormatQualifiedCategorySummary(_aircraftPreview)}");
+                DrawParameterValueRow("Qualified Categories", FormatQualifiedCategorySummary(_aircraftPreview));
             }
             else
             {
@@ -3650,7 +3628,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var airframePerf = _aircraftPreview.Airframe.Performance;
 
         GUILayout.Label($"Family: {_aircraftPreview.FamilyDefinition.DisplayName}");
-        GUILayout.Label($"Qualified Categories: {FormatQualifiedCategorySummary(_aircraftPreview)}");
+        DrawParameterValueRow("Qualified Categories", FormatQualifiedCategorySummary(_aircraftPreview));
         GUILayout.Label($"Type: {_aircraftPreview.TypeDefinition.DisplayName}");
         GUILayout.Label($"Engine: {_aircraftPreview.Engine.Definition.DisplayName} x{FormatUiInteger(_aircraftPreview.Airframe.Parameters.EngineCount)}");
         var engineOutputAtSeaLevel = ResolveEngineOutputAtSeaLevel(_aircraftPreview.Engine);
@@ -5441,43 +5419,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static string FormatDemandConstructionRequirement(AircraftCategory category)
-    {
-        return category switch
-        {
-            AircraftCategory.LightSportAndRecreational => "Ultralight construction only",
-            AircraftCategory.MilitaryTactical or AircraftCategory.MilitaryStrategicSupport or AircraftCategory.Bomber =>
-                "Army-grade construction only",
-            _ => "Any construction",
-        };
-    }
+    private static string FormatDemandConstructionRequirement(AircraftCategory category) =>
+        AircraftCategoryRequirementBalance.GetConstructionDescription(category);
 
-    private static string FormatDemandRoleRequirement(AircraftCategoryProfile profile)
-    {
-        if (profile.Category == AircraftCategory.LightSportAndRecreational)
-        {
-            return "No passenger/cargo/special/combat module";
-        }
-
-        if (profile.HasPassengerCapacityRequirement)
-        {
-            return "Passenger cabin; no cargo/special/combat module";
-        }
-
-        if (IsCargoCategory(profile.Category))
-        {
-            return "Cargo space; no passenger/special/combat module";
-        }
-
-        return profile.Category switch
-        {
-            AircraftCategory.SpecialCivil => "Special equipment; no passenger/cargo/combat module",
-            AircraftCategory.MilitaryTactical => "Combat equipment and weapon payload; no passenger cabin",
-            AircraftCategory.Bomber => "Combat equipment and bomber weapon payload; no passenger cabin",
-            AircraftCategory.MilitaryStrategicSupport => "Army-grade; passenger cabin conflicts with combat equipment",
-            _ => "No specific role module",
-        };
-    }
+    private static string FormatDemandRoleRequirement(AircraftCategoryProfile profile) =>
+        AircraftCategoryRequirementBalance.GetRoleDescription(profile.Category);
 
     private static void DrawDemandRequirementRow(string label, double currentValue, double forecastValue, string format)
     {
@@ -7110,8 +7056,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 var categories = FormatQualifiedCategorySummary(savedDesign.CatalogItem.Aircraft);
                 GUILayout.BeginVertical();
                 GUILayout.Label(
-                    $"{savedDesign.Name} | {categories} | {GetAircraftDesignResearchStatus(savedDesign)} | " +
+                    $"{savedDesign.Name} | {GetAircraftDesignResearchStatus(savedDesign)} | " +
                     $"Approved Year: {FormatApprovedYear(savedDesign.ApprovedYear)}");
+                GUILayout.Label($"Qualified Categories: {categories}");
                 GUILayout.Label($"Picture: {savedDesign.AircraftPictureId}");
                 GUILayout.EndVertical();
 
@@ -8256,20 +8203,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        SavedEngineDesign selectedSavedEngine;
-        if (isTypeVersionDevelopment)
-        {
-            var sourceEngineIndex = FindSavedEngineIndexByResearchId(activeTypeVersionDevelopment!.SourceEngineResearchId);
-            if (sourceEngineIndex < 0 || sourceEngineIndex >= _savedEngines.Count)
-            {
-                _aircraftPreviewError = "Source engine for this type version is missing.";
-                return;
-            }
-
-            _selectedSavedEngineIndex = sourceEngineIndex;
-            selectedSavedEngine = _savedEngines[sourceEngineIndex];
-        }
-        else if (!TryGetSelectedCompatibleSavedEngine(out selectedSavedEngine, out var engineSelectionError))
+        if (!TryGetSelectedCompatibleSavedEngine(out var selectedSavedEngine, out var engineSelectionError))
         {
             _aircraftPreviewError = engineSelectionError;
             return;
@@ -9268,27 +9202,16 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         try
         {
-            SavedEngineDesign saved;
-            if (_typeVersionDevelopment is not null)
-            {
-                var sourceEngineIndex = FindSavedEngineIndexByResearchId(_typeVersionDevelopment.SourceEngineResearchId);
-                if (sourceEngineIndex < 0 || sourceEngineIndex >= _savedEngines.Count)
-                {
-                    _aircraftPreviewError = "Source engine for this type version is missing.";
-                    return;
-                }
-
-                _selectedSavedEngineIndex = sourceEngineIndex;
-                saved = _savedEngines[sourceEngineIndex];
-            }
-            else if (!TryGetSelectedCompatibleSavedEngine(out saved, out var engineSelectionError))
+            if (!TryGetSelectedCompatibleSavedEngine(out var saved, out var engineSelectionError))
             {
                 _aircraftPreviewError = engineSelectionError;
                 return;
             }
 
             var family = _typeVersionDevelopment is not null
-                ? _typeVersionDevelopment.SourceFamilyDefinition
+                ? ResolveFamilyDefinitionWithSavedEngineTechnology(
+                    saved.ResearchId,
+                    _typeVersionDevelopment.SourceFamilyDefinition)
                 : BuildFamily(saved);
             var type = BuildTypeForAircraft(family);
             _aircraftPreview = _aircraftFactory.CreateAircraft(family, type);
@@ -9374,6 +9297,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private IReadOnlyList<int> GetCompatibleSavedEngineIndices()
     {
         var compatibleIndices = new List<int>();
+        var requiredClassification = _typeVersionDevelopment?.SourceFamilyDefinition.EngineClassification
+            ?? AircraftEngineClassification.Any;
         for (var index = 0; index < _savedEngines.Count; index++)
         {
             var savedEngine = _savedEngines[index];
@@ -9383,13 +9308,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
 
             var engineType = savedEngine.Definition.EngineType;
-            if (AircraftEngineFamilyCompatibility.IsEngineTypeAllowed(_familyAllowedEngineFamily, engineType))
+            if (AircraftEngineFamilyCompatibility.IsEngineTypeAllowed(_familyAllowedEngineFamily, engineType)
+                && AircraftEngineClassificationCompatibility.IsEngineTypeAllowed(requiredClassification, engineType))
             {
                 compatibleIndices.Add(index);
             }
         }
 
         return compatibleIndices;
+    }
+
+    private static string BuildTypeEngineOptionLabel(SavedEngineDesign savedEngine)
+    {
+        var approvalStatus = savedEngine.ApprovedYear.HasValue
+            ? $"Approved {FormatUiInteger(savedEngine.ApprovedYear.Value)}"
+            : "Awaiting approval";
+        return $"{BuildEngineDisplayName(savedEngine.Name, savedEngine.Definition.EngineType, savedEngine.Parameters)} | {approvalStatus}";
     }
 
     private int ResolveSelectedCompatibleEngineOptionIndex(IReadOnlyList<int> compatibleEngineIndices)
@@ -9492,10 +9426,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return familyDefinition;
         }
 
-        var modifiers = ResolveInstalledEngineTechnologyModifiers(savedEngine);
-        return modifiers.HasValue
-            ? familyDefinition.WithInstalledEngineTechnologyModifiers(modifiers.Value)
-            : familyDefinition;
+        return familyDefinition.WithInstalledEngine(
+            savedEngine.Definition.Id,
+            savedEngine.Definition.EngineType,
+            savedEngine.Parameters,
+            ResolveInstalledEngineTechnologyModifiers(savedEngine));
     }
 
     private HistoricalCampaignTechnologyModifiers? ResolveInstalledEngineTechnologyModifiers(SavedEngineDesign savedEngine)
@@ -11705,25 +11640,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         try
         {
-            SavedEngineDesign savedEngine;
-            if (_typeVersionDevelopment is not null)
-            {
-                var sourceEngineIndex = FindSavedEngineIndexByResearchId(_typeVersionDevelopment.SourceEngineResearchId);
-                if (sourceEngineIndex < 0 || sourceEngineIndex >= _savedEngines.Count)
-                {
-                    errorMessage = "Source engine for this type version is missing.";
-                    return false;
-                }
-
-                savedEngine = _savedEngines[sourceEngineIndex];
-            }
-            else if (!TryGetSelectedCompatibleSavedEngine(out savedEngine, out errorMessage))
+            if (!TryGetSelectedCompatibleSavedEngine(out var savedEngine, out errorMessage))
             {
                 return false;
             }
 
             var family = _typeVersionDevelopment is not null
-                ? _typeVersionDevelopment.SourceFamilyDefinition
+                ? ResolveFamilyDefinitionWithSavedEngineTechnology(
+                    savedEngine.ResearchId,
+                    _typeVersionDevelopment.SourceFamilyDefinition)
                 : BuildFamily(savedEngine);
             var type = BuildTypeForAircraft(family, wingAreaSquareMetersOverride: wingAreaSquareMeters);
             aircraft = _aircraftFactory.CreateAircraft(family, type);

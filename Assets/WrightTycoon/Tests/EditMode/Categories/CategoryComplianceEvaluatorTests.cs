@@ -32,15 +32,15 @@ public sealed class CategoryComplianceEvaluatorTests
     }
 
     [Test]
-    public void Evaluate_ReturnsDetailedUnmetRequirements_WhenAircraftOutsideCategoryBounds()
+    public void Evaluate_ReturnsDetailedUnmetRequirements_WhenAircraftMissesMinimumsOrWeightCeiling()
     {
         var evaluator = new CategoryComplianceEvaluator();
         var category = AircraftCategory.LightSportAndRecreational;
         var aircraft = CreateAircraft(
             category,
-            crewCount: 4,
-            speedAtSeaLevelMetersPerSecond: 50d,
-            rangeKilometers: 1200d,
+            crewCount: 0,
+            speedAtSeaLevelMetersPerSecond: 10d,
+            rangeKilometers: 20d,
             payloadKilograms: 25d,
             totalWeightKilograms: 2000d);
 
@@ -135,6 +135,28 @@ public sealed class CategoryComplianceEvaluatorTests
     }
 
     [Test]
+    public void Evaluate_RejectsUltralightConstructionForCivilPassengerCategory()
+    {
+        var evaluator = new CategoryComplianceEvaluator();
+        var aircraft = CreateAircraft(
+            AircraftCategory.RegionalJet,
+            crewCount: 2,
+            speedAtSeaLevelMetersPerSecond: 195d,
+            rangeKilometers: 3000d,
+            payloadKilograms: 10000d,
+            totalWeightKilograms: 20000d,
+            maneuverability: 40d,
+            constructionStandard: AircraftConstructionStandard.Ultralight,
+            navigationEquipment: AircraftNavigationEquipment.BasicNavigationSuite,
+            hasPassengerCabin: true);
+
+        var result = evaluator.Evaluate(aircraft);
+
+        Assert.That(result.IsCompliant, Is.False);
+        Assert.That(result.UnmetRequirements, Has.Some.Contains("Civil or army-grade construction"));
+    }
+
+    [Test]
     public void QualificationEvaluator_ReturnsEveryCategorySatisfiedByCargoType()
     {
         var evaluator = new AircraftCategoryQualificationEvaluator();
@@ -174,6 +196,28 @@ public sealed class CategoryComplianceEvaluatorTests
 
         Assert.That(categories, Has.Member(AircraftCategory.BusinessVipJet));
         Assert.That(categories, Has.No.Member(AircraftCategory.LightSportAndRecreational));
+    }
+
+    [Test]
+    public void QualificationEvaluator_AllowsOnePassengerTypeToQualifyForMultipleMarkets()
+    {
+        var evaluator = new AircraftCategoryQualificationEvaluator();
+        var aircraft = CreateAircraft(
+            AircraftCategory.LightSportAndRecreational,
+            crewCount: 2,
+            speedAtSeaLevelMetersPerSecond: 180d,
+            rangeKilometers: 3000d,
+            payloadKilograms: 9000d,
+            totalWeightKilograms: 20000d,
+            maneuverability: 40d,
+            navigationEquipment: AircraftNavigationEquipment.BasicNavigationSuite,
+            hasPassengerCabin: true);
+
+        var categories = evaluator.GetQualifiedCategories(aircraft);
+
+        Assert.That(categories, Has.Member(AircraftCategory.TurbopropRegional));
+        Assert.That(categories, Has.Member(AircraftCategory.RegionalJet));
+        Assert.That(categories, Has.Member(AircraftCategory.BusinessVipJet));
     }
 
     [Test]

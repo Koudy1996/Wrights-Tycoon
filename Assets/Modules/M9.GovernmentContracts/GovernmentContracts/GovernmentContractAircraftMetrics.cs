@@ -61,7 +61,7 @@ public readonly struct GovernmentContractAircraftMetrics
         this.CrewSize = CrewSize;
         this.RequiredRunwayLengthMeters = RequiredRunwayLengthMeters;
         this.DevelopmentCost = DevelopmentCost;
-        this.QualifiedAircraftTypes = QualifiedAircraftTypes is null || QualifiedAircraftTypes.Count == 0
+        this.QualifiedAircraftTypes = QualifiedAircraftTypes is null
             ? new[] { AircraftType }
             : QualifiedAircraftTypes.Distinct().ToArray();
     }

@@ -149,6 +149,11 @@ public static class ContractBalance
         AircraftCategory.BusinessVipJet,
         AircraftCategory.MilitaryTactical,
         AircraftCategory.MilitaryStrategicSupport,
+        AircraftCategory.LightCargo,
+        AircraftCategory.MediumCargo,
+        AircraftCategory.HeavyCargo,
+        AircraftCategory.LongRangeCargo,
+        AircraftCategory.Bomber,
     };
 
     public static readonly AircraftCategory[] CivilRequestedCategories =
@@ -161,12 +166,17 @@ public static class ContractBalance
         AircraftCategory.HeavyTransportWideBody,
         AircraftCategory.SpecialCivil,
         AircraftCategory.BusinessVipJet,
+        AircraftCategory.LightCargo,
+        AircraftCategory.MediumCargo,
+        AircraftCategory.HeavyCargo,
+        AircraftCategory.LongRangeCargo,
     };
 
     public static readonly AircraftCategory[] MilitaryRequestedCategories =
     {
         AircraftCategory.MilitaryTactical,
         AircraftCategory.MilitaryStrategicSupport,
+        AircraftCategory.Bomber,
     };
 
     public static readonly AircraftCategory[] HistoricalCampaignInitiallyLockedCategories =
@@ -187,6 +197,7 @@ public static class ContractBalance
         AircraftCategory.SpecialCivil,
         AircraftCategory.BusinessVipJet,
         AircraftCategory.MilitaryTactical,
+        AircraftCategory.LightCargo,
     };
 
     public static readonly AircraftCategory[] MediumRunwayCategories =
@@ -199,6 +210,9 @@ public static class ContractBalance
         AircraftCategory.BusinessVipJet,
         AircraftCategory.MilitaryTactical,
         AircraftCategory.MilitaryStrategicSupport,
+        AircraftCategory.LightCargo,
+        AircraftCategory.MediumCargo,
+        AircraftCategory.Bomber,
     };
 
     public static readonly AircraftCategory[] LongRunwayCategories =
@@ -207,6 +221,10 @@ public static class ContractBalance
         AircraftCategory.MediumTransportNarrowBody,
         AircraftCategory.HeavyTransportWideBody,
         AircraftCategory.MilitaryStrategicSupport,
+        AircraftCategory.MediumCargo,
+        AircraftCategory.HeavyCargo,
+        AircraftCategory.LongRangeCargo,
+        AircraftCategory.Bomber,
     };
 
     public static double[] ResolveAllowedRunwayLengthMeters(AircraftCategory category)

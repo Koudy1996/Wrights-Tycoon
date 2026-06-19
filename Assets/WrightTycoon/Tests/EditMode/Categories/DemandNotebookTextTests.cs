@@ -10,11 +10,11 @@ namespace WrightTycoon.Core.Tests.Categories;
 [TestFixture]
 public sealed class DemandNotebookTextTests
 {
-    [TestCase(AircraftCategory.LightSportAndRecreational, "Ultralight construction only")]
-    [TestCase(AircraftCategory.MilitaryTactical, "Army-grade construction only")]
-    [TestCase(AircraftCategory.MilitaryStrategicSupport, "Army-grade construction only")]
-    [TestCase(AircraftCategory.Bomber, "Army-grade construction only")]
-    [TestCase(AircraftCategory.RegionalJet, "Any construction")]
+    [TestCase(AircraftCategory.LightSportAndRecreational, "Ultralight construction")]
+    [TestCase(AircraftCategory.MilitaryTactical, "Army-grade construction")]
+    [TestCase(AircraftCategory.MilitaryStrategicSupport, "Army-grade construction")]
+    [TestCase(AircraftCategory.Bomber, "Army-grade construction")]
+    [TestCase(AircraftCategory.RegionalJet, "Civil or army-grade construction")]
     public void FormatDemandConstructionRequirement_UsesSpecificAllowedConstructionText(
         AircraftCategory category,
         string expected)

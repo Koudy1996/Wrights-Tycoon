@@ -32,6 +32,22 @@ public sealed class GovernmentContractComplianceEvaluator
 
         var metrics = candidate.Metrics;
 
+        var qualifiesForRequestedCategory = false;
+        for (var index = 0; index < metrics.QualifiedAircraftTypes.Count; index++)
+        {
+            if (metrics.QualifiedAircraftTypes[index] == requirements.RequiredAircraftType)
+            {
+                qualifiesForRequestedCategory = true;
+                break;
+            }
+        }
+
+        if (!qualifiesForRequestedCategory)
+        {
+            unmetRequirements.Add(
+                $"Aircraft does not qualify for requested category '{requirements.RequiredAircraftType}'.");
+        }
+
         var actualSpeed = metrics.GetMaximumSpeedForBand(requirements.SpeedAltitudeBand);
         if (actualSpeed + Numeric.Epsilon < requirements.MinimumMaximumSpeedMetersPerSecond)
         {

@@ -171,6 +171,63 @@ public sealed class AircraftFamilyDefinition
             BaseDevelopmentCost = BaseDevelopmentCost,
             BaseDevelopmentManDays = BaseDevelopmentManDays,
         };
+
+    public AircraftFamilyDefinition WithInstalledEngine(
+        string engineDefinitionId,
+        EngineType engineType,
+        EngineParameters engineParameters,
+        HistoricalCampaignTechnologyModifiers? technologyModifiers = null)
+    {
+        if (string.IsNullOrWhiteSpace(engineDefinitionId))
+        {
+            throw new ArgumentException("Engine definition id cannot be empty.", nameof(engineDefinitionId));
+        }
+
+        if (engineParameters is null)
+        {
+            throw new ArgumentNullException(nameof(engineParameters));
+        }
+
+        if (!AircraftEngineFamilyCompatibility.IsEngineTypeAllowed(AllowedEngineFamily, engineType))
+        {
+            throw new InvalidOperationException(
+                $"Engine type '{engineType}' is not allowed for family policy '{AllowedEngineFamily}'.");
+        }
+
+        if (!AircraftEngineClassificationCompatibility.IsEngineTypeAllowed(EngineClassification, engineType))
+        {
+            throw new InvalidOperationException(
+                $"Engine type '{engineType}' does not match family classification '{EngineClassification}'.");
+        }
+
+        return new AircraftFamilyDefinition
+        {
+            Id = Id,
+            DisplayName = DisplayName,
+            EngineDefinitionId = engineDefinitionId,
+            AirframeDefinitionId = AirframeDefinitionId,
+            LockedEngineType = engineType,
+            AllowedEngineFamily = AllowedEngineFamily,
+            ConstructionStandard = ConstructionStandard,
+            EngineClassification = EngineClassification,
+            LockedStructureType = LockedStructureType,
+            LockedMaterialType = LockedMaterialType,
+            LockedEngineCount = LockedEngineCount,
+            ReferenceWingAreaSquareMeters = ReferenceWingAreaSquareMeters,
+            WingAspectRatio = WingAspectRatio,
+            LockedWingShape = LockedWingShape,
+            LockedWingPosition = LockedWingPosition,
+            Category = Category,
+            RequiredFactoryToolLevel = RequiredFactoryToolLevel,
+            InstalledEngineTechnologyModifiers = technologyModifiers.HasValue
+                ? HistoricalCampaignTechnologyModifiers.Sanitize(technologyModifiers.Value)
+                : null,
+            BaseEngineParameters = engineParameters.Clone(),
+            BaseAirframeParameters = BaseAirframeParameters.Clone(),
+            BaseDevelopmentCost = BaseDevelopmentCost,
+            BaseDevelopmentManDays = BaseDevelopmentManDays,
+        };
+    }
 }
 
 public enum AircraftConstructionStandard

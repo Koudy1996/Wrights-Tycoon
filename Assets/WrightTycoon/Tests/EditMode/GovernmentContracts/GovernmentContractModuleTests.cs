@@ -156,7 +156,7 @@ public sealed class GovernmentContractModuleTests
     }
 
     [Test]
-    public void ComplianceEvaluator_IgnoresLegacyAircraftType_WhenExplicitRequirementsPass()
+    public void ComplianceEvaluator_BlocksCandidateOutsideRequestedDynamicCategory()
     {
         var requirements = CreateRequirements();
         var metrics = new GovernmentContractAircraftMetrics(
@@ -180,8 +180,29 @@ public sealed class GovernmentContractModuleTests
 
         var report = new GovernmentContractComplianceEvaluator().Evaluate(requirements, candidate);
 
-        Assert.That(report.MeetsAllRequirements, Is.True);
-        Assert.That(report.UnmetRequirements, Is.Empty);
+        Assert.That(report.MeetsAllRequirements, Is.False);
+        Assert.That(report.UnmetRequirements, Has.Some.Contains("does not qualify"));
+    }
+
+    [Test]
+    public void AircraftMetrics_PreserveAnExplicitlyEmptyDynamicCategoryList()
+    {
+        var requirements = CreateRequirements();
+        var metrics = new GovernmentContractAircraftMetrics(
+            AircraftCategory.LightSportAndRecreational,
+            MaximumSpeedLowAltitudeMetersPerSecond: requirements.MinimumMaximumSpeedMetersPerSecond,
+            MaximumSpeedMediumAltitudeMetersPerSecond: requirements.MinimumMaximumSpeedMetersPerSecond,
+            MaximumSpeedHighAltitudeMetersPerSecond: requirements.MinimumMaximumSpeedMetersPerSecond,
+            RangeKilometers: requirements.MinimumRangeKilometers,
+            PayloadKilograms: requirements.MinimumPayloadKilograms,
+            Reliability: requirements.MinimumReliability,
+            Maneuverability: requirements.MinimumManeuverability,
+            CrewSize: requirements.MinimumCrewSize,
+            RequiredRunwayLengthMeters: requirements.MaximumRequiredRunwayLengthMeters,
+            DevelopmentCost: 200000d,
+            QualifiedAircraftTypes: System.Array.Empty<AircraftCategory>());
+
+        Assert.That(metrics.QualifiedAircraftTypes, Is.Empty);
     }
 
     [Test]
@@ -380,6 +401,9 @@ public sealed class GovernmentContractModuleTests
         Assert.That(board.ActiveDeliveryContracts.Count, Is.EqualTo(1));
 
         var snapshot = board.CreateSnapshot();
+        Assert.That(
+            snapshot.EvaluatedContracts[0].AcceptedSubmission!.Metrics.UsesDynamicCategoryQualification,
+            Is.True);
         var restored = new GovernmentContractBoard(new StubGovernmentContractGenerator(CreateRequirements()), new DeterministicRandomProvider());
         restored.RestoreSnapshot(snapshot);
 

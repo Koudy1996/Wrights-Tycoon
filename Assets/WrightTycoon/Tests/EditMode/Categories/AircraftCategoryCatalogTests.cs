@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Categories;
 
 namespace WrightTycoon.Core.Tests.Categories;
@@ -52,6 +53,28 @@ public sealed class AircraftCategoryCatalogTests
         AssertModifier(AircraftCategory.HeavyCargo, weight: 5000d, speed: -5d, reliability: 0.1d, fuelMultiplier: 0.76d);
         AssertModifier(AircraftCategory.LongRangeCargo, weight: 5500d, speed: -3d, reliability: 0.12d, fuelMultiplier: 0.7d);
         AssertModifier(AircraftCategory.Bomber, weight: 3500d, speed: 30d, reliability: -0.08d, fuelMultiplier: 1.05d);
+    }
+
+    [Test]
+    public void RequirementBalance_DefinesConstructionAndRoleForEveryCategory()
+    {
+        var profiles = AircraftCategoryCatalog.GetAllProfiles();
+
+        for (var index = 0; index < profiles.Count; index++)
+        {
+            var policy = AircraftCategoryRequirementBalance.GetPolicy(profiles[index].Category);
+            Assert.That(policy.AllowedConstructionStandards, Is.Not.EqualTo(AircraftConstructionStandardOptions.None));
+        }
+
+        Assert.That(
+            AircraftCategoryRequirementBalance.GetPolicy(AircraftCategory.RegionalJet).RoleRequirement,
+            Is.EqualTo(AircraftCategoryRoleRequirement.PassengerCabin));
+        Assert.That(
+            AircraftCategoryRequirementBalance.GetPolicy(AircraftCategory.HeavyCargo).RoleRequirement,
+            Is.EqualTo(AircraftCategoryRoleRequirement.CargoSpace));
+        Assert.That(
+            AircraftCategoryRequirementBalance.GetPolicy(AircraftCategory.Bomber).AllowedConstructionStandards,
+            Is.EqualTo(AircraftConstructionStandardOptions.ArmyGrade));
     }
 
     private static void AssertModifier(

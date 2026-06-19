@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Simulation;
 
 namespace WrightTycoon.Core.GovernmentContracts;
@@ -597,6 +598,7 @@ public sealed class GovernmentContractBoard
         var snapshot = new GovernmentContractAircraftMetricsSnapshot
         {
             AircraftType = metrics.AircraftType,
+            UsesDynamicCategoryQualification = true,
             MaximumSpeedLowAltitudeMetersPerSecond = metrics.MaximumSpeedLowAltitudeMetersPerSecond,
             MaximumSpeedMediumAltitudeMetersPerSecond = metrics.MaximumSpeedMediumAltitudeMetersPerSecond,
             MaximumSpeedHighAltitudeMetersPerSecond = metrics.MaximumSpeedHighAltitudeMetersPerSecond,
@@ -774,8 +776,8 @@ public sealed class GovernmentContractBoard
             throw new ArgumentNullException(nameof(snapshot));
         }
 
-        var qualifiedTypes = snapshot.QualifiedAircraftTypes is { Count: > 0 }
-            ? snapshot.QualifiedAircraftTypes
+        IReadOnlyList<AircraftCategory>? qualifiedTypes = snapshot.UsesDynamicCategoryQualification
+            ? (IReadOnlyList<AircraftCategory>?)snapshot.QualifiedAircraftTypes ?? Array.Empty<AircraftCategory>()
             : null;
 
         return new GovernmentContractAircraftMetrics(

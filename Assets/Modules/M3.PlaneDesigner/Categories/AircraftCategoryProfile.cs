@@ -88,12 +88,9 @@ public sealed class AircraftCategoryProfile
 
     public double MaxRequiredSpeedMetersPerSecond => MaxRequiredSpeedKilometersPerHour / 3.6d;
 
-    public bool HasPassengerCapacityRequirement => Category is
-        AircraftCategory.TurbopropRegional or
-        AircraftCategory.RegionalJet or
-        AircraftCategory.MediumTransportNarrowBody or
-        AircraftCategory.HeavyTransportWideBody or
-        AircraftCategory.BusinessVipJet;
+    public bool HasPassengerCapacityRequirement =>
+        AircraftCategoryRequirementBalance.GetPolicy(Category).RoleRequirement ==
+        AircraftCategoryRoleRequirement.PassengerCabin;
 
     public int GetMinimumPassengerCapacity(double kilogramsPerPassenger = PlaneDesignerBalance.Categories.PayloadKilogramsPerPassenger)
     {
