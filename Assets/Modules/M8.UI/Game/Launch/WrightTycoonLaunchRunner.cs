@@ -188,6 +188,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private int _contractQuantityFilterMax = 500;
     private EngineVersionDevelopmentContext? _engineVersionDevelopment;
     private TypeVersionDevelopmentContext? _typeVersionDevelopment;
+    private string _editingEngineResearchId = string.Empty;
+    private string _editingFamilyResearchId = string.Empty;
+    private string _editingTypeResearchId = string.Empty;
 
     private bool _initialized;
     private bool _showHistoricalArchive;
@@ -980,6 +983,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _contractQuantityFilterMax = 500;
         _engineVersionDevelopment = null;
         _typeVersionDevelopment = null;
+        _editingEngineResearchId = string.Empty;
+        _editingFamilyResearchId = string.Empty;
+        _editingTypeResearchId = string.Empty;
         _historicalCampaignState.ReplaceFiredEventIds(null);
         ApplyHistoricalCampaignEventsUpToCurrentDate();
         NormalizeSelectedAircraftCategoryForHistoricalCampaign();
@@ -2266,6 +2272,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         var activeEngineVersionDevelopment = _engineVersionDevelopment;
         var isVersionDevelopment = activeEngineVersionDevelopment is not null;
+        var isEditingSavedEngine = TryGetEditingSavedEngine(out var editingSavedEngine, out _);
         if (isVersionDevelopment)
         {
             DrawSection("Developing New Engine Version");
@@ -2280,12 +2287,24 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _engineVersionDevelopment = null;
             }
         }
+        else if (isEditingSavedEngine)
+        {
+            DrawSection("Editing Saved Engine");
+            GUILayout.Label($"Editing: {BuildEngineDisplayName(editingSavedEngine.Name, editingSavedEngine.Definition.EngineType, editingSavedEngine.Parameters)}");
+            GUILayout.Label("Saving replaces this unapproved engine and updates dependent unapproved aircraft types.");
+            if (GUILayout.Button("Cancel Editing", GUILayout.Height(26f)))
+            {
+                _editingEngineResearchId = string.Empty;
+            }
+        }
 
         _engineDesignName = DrawText("Design Name", _engineDesignName);
         EngineType requestedType;
-        if (isVersionDevelopment)
+        if (isVersionDevelopment || isEditingSavedEngine)
         {
-            requestedType = activeEngineVersionDevelopment!.LockedEngineType;
+            requestedType = isVersionDevelopment
+                ? activeEngineVersionDevelopment!.LockedEngineType
+                : editingSavedEngine.Definition.EngineType;
             SyncEngineSelectorsFromDefinition(requestedType);
             if (_engineDesignerFamily == EngineDesignerFamily.Piston)
             {
@@ -2436,7 +2455,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         RebuildEnginePreview();
 
         GUILayout.BeginHorizontal();
-        var saveButtonLabel = isVersionDevelopment ? "Save New Engine Version" : "Save Engine";
+        var saveButtonLabel = isVersionDevelopment
+            ? "Save New Engine Version"
+            : isEditingSavedEngine
+                ? "Update Engine"
+                : "Save Engine";
         if (GUILayout.Button(saveButtonLabel, GUILayout.Height(30f)))
         {
             SaveCurrentEngine();
@@ -2446,6 +2469,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             _engineParameters = isVersionDevelopment
                 ? activeEngineVersionDevelopment!.SourceParameters.Clone()
+                : isEditingSavedEngine
+                    ? editingSavedEngine.Parameters.Clone()
                 : CreateDefaultEngineParameters(_engineDefinitions[_selectedEngineDefinitionIndex]);
             _enginePreviewError = string.Empty;
             RebuildEnginePreview();
@@ -2497,7 +2522,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label(BuildEngineDisplayName(_savedEngines[i].Name, _savedEngines[i].Definition.EngineType, _savedEngines[i].Parameters));
             if (GUILayout.Button("Load", GUILayout.Width(60f)))
             {
+                ClearDesignEditingModes();
                 LoadSavedEngine(i);
+            }
+
+            if (GUILayout.Button("Edit", GUILayout.Width(60f)))
+            {
+                OpenEngineDesignerForExistingEngine(i);
             }
 
             if (GUILayout.Button("Delete", GUILayout.Width(60f)))
@@ -2510,6 +2541,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (toDelete >= 0 && toDelete < _savedEngines.Count)
         {
+            if (string.Equals(_savedEngines[toDelete].ResearchId, _editingEngineResearchId, StringComparison.Ordinal))
+            {
+                _editingEngineResearchId = string.Empty;
+            }
+
             _savedEngines.RemoveAt(toDelete);
             if (_savedEngines.Count == 0)
             {
@@ -2674,6 +2710,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawSection("Airframe + Family/Type (M3 + M4)");
         var activeTypeVersionDevelopment = _typeVersionDevelopment;
         var isTypeVersionDevelopment = activeTypeVersionDevelopment is not null;
+        var isEditingSavedType = TryGetEditingSavedType(out var editingSavedType, out _);
+        var isEditingSavedFamily = TryGetEditingSavedFamily(out var editingSavedFamily, out _);
+        var lockedFamilyDefinition = isTypeVersionDevelopment
+            ? activeTypeVersionDevelopment!.SourceFamilyDefinition
+            : isEditingSavedType
+                ? editingSavedType.CatalogItem.Aircraft.FamilyDefinition
+                : null;
+        var isFamilyLocked = lockedFamilyDefinition is not null;
 
         if (_savedEngines.Count == 0)
         {
@@ -2708,17 +2752,31 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _typeVersionDevelopment = null;
             }
         }
+        else if (isEditingSavedType)
+        {
+            DrawSection("Editing Saved Aircraft Type");
+            GUILayout.Label($"Editing: {editingSavedType.Name}");
+            GUILayout.Label("Family is fixed. Saving replaces this unapproved type instead of creating a copy.");
+            if (GUILayout.Button("Cancel Editing", GUILayout.Height(26f)))
+            {
+                _editingTypeResearchId = string.Empty;
+            }
+        }
 
         DrawSection("Family");
-        if (isTypeVersionDevelopment)
+        if (isFamilyLocked)
         {
-            GUILayout.Label($"Family Name (locked): {activeTypeVersionDevelopment!.SourceFamilyDisplayName}");
-            GUILayout.Label($"Family ID (locked): {activeTypeVersionDevelopment.SourceFamilyId}");
+            GUILayout.Label($"Family Name (locked): {lockedFamilyDefinition!.DisplayName}");
+            GUILayout.Label($"Family ID (locked): {lockedFamilyDefinition.Id}");
             GUILayout.Label($"Engines: {FormatUiInteger(_lockedEngineCount)} | Structure: {_lockedStructure} | Material: {_lockedMaterial}");
             GUILayout.Label($"Allowed Engine Family: {_familyAllowedEngineFamily}");
         }
         else
         {
+            if (isEditingSavedFamily)
+            {
+                GUILayout.Label($"Editing saved family: {editingSavedFamily.Name}");
+            }
             _familyName = DrawText("Family Name", _familyName);
             GUILayout.Label($"Family ID (auto): {BuildFamilyId()}");
             _familyConstructionStandard = DrawConstructionStandardSelector("Construction Standard", _familyConstructionStandard);
@@ -2770,7 +2828,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _baseAirframeParameters.MaterialType = _lockedMaterial;
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Save Family", GUILayout.Height(28f)))
+            var saveFamilyLabel = isEditingSavedFamily ? "Update Family" : "Save Family";
+            if (GUILayout.Button(saveFamilyLabel, GUILayout.Height(28f)))
             {
                 SaveCurrentFamily();
             }
@@ -2805,11 +2864,25 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                     GUILayout.BeginHorizontal();
                     if (GUILayout.Button("Load Family", GUILayout.Height(26f)))
                     {
+                        ClearDesignEditingModes();
                         LoadSavedFamily(_selectedSavedFamilyIndex);
+                    }
+
+                    if (GUILayout.Button("Edit", GUILayout.Width(90f), GUILayout.Height(26f)))
+                    {
+                        OpenFamilyDesignerForExistingFamily(_selectedSavedFamilyIndex);
                     }
 
                     if (GUILayout.Button("Delete Family", GUILayout.Height(26f)))
                     {
+                        if (string.Equals(
+                                _savedFamilies[_selectedSavedFamilyIndex].FamilyId,
+                                _editingFamilyResearchId,
+                                StringComparison.Ordinal))
+                        {
+                            _editingFamilyResearchId = string.Empty;
+                        }
+
                         _savedFamilies.RemoveAt(_selectedSavedFamilyIndex);
                         if (_savedFamilies.Count == 0)
                         {
@@ -2827,10 +2900,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         DrawSection("Type");
-        if (!isTypeVersionDevelopment)
-        {
-            NormalizeSelectedAircraftCategoryForHistoricalCampaign();
-        }
+        NormalizeSelectedAircraftCategoryForHistoricalCampaign();
         _typeName = BuildTypeDisplayName();
         GUILayout.Label($"Type Name: {_typeName}");
         GUILayout.Label($"Type ID (auto): {BuildTypeId()}");
@@ -2986,7 +3056,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _aircraftDesignName = DrawText("Saved Aircraft Name", _aircraftDesignName);
 
-        var saveTypeButtonLabel = isTypeVersionDevelopment ? "Save Type Version" : "Save Aircraft Design";
+        var saveTypeButtonLabel = isTypeVersionDevelopment
+            ? "Save Type Version"
+            : isEditingSavedType
+                ? "Update Aircraft Type"
+                : "Save Aircraft Design";
         if (GUILayout.Button(saveTypeButtonLabel, GUILayout.Height(30f)))
         {
             SaveCurrentAircraftDesign();
@@ -3007,10 +3081,26 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
             if (_selectedSavedAircraftDesignIndex >= 0 && _selectedSavedAircraftDesignIndex < _savedAircraftDesigns.Count)
             {
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Load Selected", GUILayout.Height(26f)))
+                {
+                    OpenTypeDesignerForExistingDesign(_selectedSavedAircraftDesignIndex);
+                }
+
+                if (GUILayout.Button("Edit", GUILayout.Width(90f), GUILayout.Height(26f)))
+                {
+                    OpenTypeDesignerForExistingDesign(_selectedSavedAircraftDesignIndex, requestEditing: true);
+                }
+
                 if (GUILayout.Button("Delete Selected Aircraft Design", GUILayout.Height(26f)))
                 {
                     var deletedIndex = _selectedSavedAircraftDesignIndex;
                     var designToDelete = _savedAircraftDesigns[_selectedSavedAircraftDesignIndex];
+                    if (string.Equals(designToDelete.TypeResearchId, _editingTypeResearchId, StringComparison.Ordinal))
+                    {
+                        _editingTypeResearchId = string.Empty;
+                    }
+
                     var warehouseUnits = _productionFactory?.GetWarehouseUnits(designToDelete.CatalogItem.DesignId) ?? 0;
                     if (warehouseUnits > 0)
                     {
@@ -3066,6 +3156,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         }
                     }
                 }
+
+                GUILayout.EndHorizontal();
             }
         }
 
@@ -3085,13 +3177,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        var resetFamilyAndTypeLabel = isTypeVersionDevelopment ? "Reset Type To Source" : "Reset Family + Type Config";
+        var resetFamilyAndTypeLabel = isTypeVersionDevelopment || isEditingSavedType
+            ? "Reset Type To Source"
+            : "Reset Family + Type Config";
         if (GUILayout.Button(resetFamilyAndTypeLabel, GUILayout.Height(30f)))
         {
             var sourceTypeIndex = isTypeVersionDevelopment
                 ? FindSavedAircraftDesignIndexByTypeResearchId(activeTypeVersionDevelopment!.SourceTypeResearchId)
-                : -1;
-            if (isTypeVersionDevelopment)
+                : isEditingSavedType
+                    ? FindSavedAircraftDesignIndexByTypeResearchId(editingSavedType.TypeResearchId)
+                    : -1;
+            if (isTypeVersionDevelopment || isEditingSavedType)
             {
                 if (sourceTypeIndex >= 0
                     && TryLoadSavedAircraftDesignIntoTypeDesigner(sourceTypeIndex, out _, out _))
@@ -6993,10 +7089,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
             if (GUILayout.Button("Open Engine Designer", GUILayout.Height(24f)))
             {
-                _engineVersionDevelopment = null;
-                _typeVersionDevelopment = null;
-                LoadSavedEngine(index);
-                _tab = 0;
+                OpenEngineDesignerForExistingEngine(index);
             }
 
             if (GUILayout.Button("New Version", GUILayout.Height(24f)))
@@ -7070,7 +7163,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
                 if (GUILayout.Button("Type Designer", GUILayout.Width(150f), GUILayout.Height(24f)))
                 {
-                    OpenTypeDesignerForExistingDesign(typeIndex);
+                    OpenTypeDesignerForExistingDesign(typeIndex, requestEditing: true);
                 }
 
                 if (GUILayout.Button("New Version", GUILayout.Width(160f), GUILayout.Height(24f)))
@@ -7284,6 +7377,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             saved.DevelopmentStartedYear,
             _currentDate.Year);
         _typeVersionDevelopment = null;
+        _editingEngineResearchId = string.Empty;
+        _editingFamilyResearchId = string.Empty;
+        _editingTypeResearchId = string.Empty;
         RebuildEnginePreview();
         _tab = 0;
         _researchActionMessage =
@@ -7291,23 +7387,83 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "Engineering quote uses 90% base discount and 50% of technology progress since baseline.";
     }
 
-    private void OpenTypeDesignerForExistingDesign(int designIndex)
+    private void OpenEngineDesignerForExistingEngine(int engineIndex)
     {
+        if (engineIndex < 0 || engineIndex >= _savedEngines.Count)
+        {
+            return;
+        }
+
+        ClearDesignEditingModes();
+        LoadSavedEngine(engineIndex);
+        var saved = _savedEngines[engineIndex];
+        if (CanEditSavedEngine(saved))
+        {
+            _editingEngineResearchId = saved.ResearchId;
+            _researchActionMessage = $"Editing unapproved engine '{saved.Name}'. Saving will replace it.";
+        }
+        else
+        {
+            _researchActionMessage =
+                $"Engine '{saved.Name}' or one of its dependent types is already approved. " +
+                "Loaded as a template; saving creates a new engine.";
+        }
+
+        _tab = 0;
+    }
+
+    private void OpenFamilyDesignerForExistingFamily(int familyIndex)
+    {
+        if (familyIndex < 0 || familyIndex >= _savedFamilies.Count)
+        {
+            return;
+        }
+
+        ClearDesignEditingModes();
+        LoadSavedFamily(familyIndex);
+        var saved = _savedFamilies[familyIndex];
+        if (CanEditSavedFamily(saved))
+        {
+            _editingFamilyResearchId = saved.FamilyId;
+            _factoryActionMessage = $"Editing unapproved family '{saved.Name}'. Saving will replace it.";
+        }
+        else
+        {
+            _factoryActionMessage = $"Family '{saved.Name}' is already approved or used by an approved type. Loaded as a template.";
+        }
+
+        _tab = 1;
+    }
+
+    private void OpenTypeDesignerForExistingDesign(int designIndex, bool requestEditing = false)
+    {
+        ClearDesignEditingModes();
         if (!TryLoadSavedAircraftDesignIntoTypeDesigner(designIndex, out var savedDesign, out var errorMessage))
         {
             _factoryActionMessage = errorMessage;
             return;
         }
 
-        _typeVersionDevelopment = null;
-        _engineVersionDevelopment = null;
         _aircraftDesignName = savedDesign.Name;
         _tab = 1;
-        _factoryActionMessage = $"Loaded type '{savedDesign.Name}' into Airframe + Type Designer.";
+        if (requestEditing && CanEditSavedType(savedDesign))
+        {
+            _editingTypeResearchId = savedDesign.TypeResearchId;
+            _factoryActionMessage = $"Editing unapproved type '{savedDesign.Name}'. Saving will replace it.";
+        }
+        else if (requestEditing)
+        {
+            _factoryActionMessage = $"Type '{savedDesign.Name}' is already approved. Loaded as a template; saving creates a new type.";
+        }
+        else
+        {
+            _factoryActionMessage = $"Loaded type '{savedDesign.Name}' as a template. Saving creates a new type.";
+        }
     }
 
     private void BeginTypeVersionDevelopment(int designIndex)
     {
+        ClearDesignEditingModes();
         if (!TryLoadSavedAircraftDesignIntoTypeDesigner(designIndex, out var savedDesign, out var errorMessage))
         {
             _factoryActionMessage = errorMessage;
@@ -7330,6 +7486,138 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _factoryActionMessage =
             $"Developing new type version from '{savedDesign.Name}'. " +
             ResolveTypeVersionDevelopmentPricingMessage(savedDesign);
+    }
+
+    private void ClearDesignEditingModes()
+    {
+        _engineVersionDevelopment = null;
+        _typeVersionDevelopment = null;
+        _editingEngineResearchId = string.Empty;
+        _editingFamilyResearchId = string.Empty;
+        _editingTypeResearchId = string.Empty;
+    }
+
+    private bool CanEditSavedEngine(SavedEngineDesign savedEngine)
+    {
+        var hasResearchStatus = TryGetResearchStatus(
+            ResearchSubjectType.Engine,
+            savedEngine.ResearchId,
+            out var status);
+        var engineIsEditable = ResearchEditPolicy.CanEdit(
+            hasResearchStatus ? status : null,
+            savedEngine.ApprovedYear.HasValue);
+        if (!engineIsEditable)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+        {
+            var design = _savedAircraftDesigns[index];
+            if (string.Equals(design.EngineResearchId, savedEngine.ResearchId, StringComparison.Ordinal)
+                && !CanEditSavedType(design))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool CanEditSavedFamily(SavedFamilyDesign savedFamily)
+    {
+        if (TryGetResearchStatus(ResearchSubjectType.AircraftFamily, savedFamily.FamilyId, out var status)
+            && status != ResearchStatus.Proposed)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+        {
+            var design = _savedAircraftDesigns[index];
+            if (string.Equals(design.FamilyResearchId, savedFamily.FamilyId, StringComparison.Ordinal)
+                && !CanEditSavedType(design))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool CanEditSavedType(SavedAircraftDesign savedDesign) =>
+        ResearchEditPolicy.CanEdit(
+            TryGetResearchStatus(ResearchSubjectType.AircraftType, savedDesign.TypeResearchId, out var status)
+                ? status
+                : null,
+            savedDesign.ApprovedYear.HasValue);
+
+    private bool TryGetResearchStatus(
+        ResearchSubjectType subjectType,
+        string subjectId,
+        out ResearchStatus status)
+    {
+        status = ResearchStatus.Proposed;
+        if (_researchBoard is null || string.IsNullOrWhiteSpace(subjectId))
+        {
+            return false;
+        }
+
+        var projects = _researchBoard.GetAllProjects();
+        for (var index = 0; index < projects.Count; index++)
+        {
+            var project = projects[index];
+            if (project.SubjectType == subjectType
+                && string.Equals(project.SubjectId, subjectId, StringComparison.Ordinal))
+            {
+                status = project.Status;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryGetEditingSavedEngine(out SavedEngineDesign savedEngine, out int index)
+    {
+        index = FindSavedEngineIndexByResearchId(_editingEngineResearchId);
+        if (index >= 0 && index < _savedEngines.Count)
+        {
+            savedEngine = _savedEngines[index];
+            return true;
+        }
+
+        savedEngine = null!;
+        return false;
+    }
+
+    private bool TryGetEditingSavedFamily(out SavedFamilyDesign savedFamily, out int index)
+    {
+        for (index = 0; index < _savedFamilies.Count; index++)
+        {
+            if (string.Equals(_savedFamilies[index].FamilyId, _editingFamilyResearchId, StringComparison.Ordinal))
+            {
+                savedFamily = _savedFamilies[index];
+                return true;
+            }
+        }
+
+        index = -1;
+        savedFamily = null!;
+        return false;
+    }
+
+    private bool TryGetEditingSavedType(out SavedAircraftDesign savedDesign, out int index)
+    {
+        index = FindSavedAircraftDesignIndexByTypeResearchId(_editingTypeResearchId);
+        if (index >= 0 && index < _savedAircraftDesigns.Count)
+        {
+            savedDesign = _savedAircraftDesigns[index];
+            return true;
+        }
+
+        savedDesign = null!;
+        return false;
     }
 
     private bool TryLoadSavedAircraftDesignIntoTypeDesigner(
@@ -8190,6 +8478,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         var activeTypeVersionDevelopment = _typeVersionDevelopment;
         var isTypeVersionDevelopment = activeTypeVersionDevelopment is not null;
+        var isEditingSavedType = TryGetEditingSavedType(out var editingSavedType, out var editingTypeIndex);
+        if (isEditingSavedType && !CanEditSavedType(editingSavedType))
+        {
+            _aircraftPreviewError = "This aircraft type has already been approved and can no longer be edited.";
+            _editingTypeResearchId = string.Empty;
+            return;
+        }
+
         RebuildAircraftPreview();
         if (_aircraftPreview is null)
         {
@@ -8213,12 +8509,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             ? $"{_aircraftPreview.FamilyDefinition.DisplayName} {_aircraftPreview.TypeDefinition.DisplayName}"
             : _aircraftDesignName.Trim();
 
-        var familyResearchId = isTypeVersionDevelopment
+        var familyResearchId = isEditingSavedType
+            ? editingSavedType.FamilyResearchId
+            : isTypeVersionDevelopment
             ? activeTypeVersionDevelopment!.SourceFamilyDefinition.Id
             : _aircraftPreview.FamilyDefinition.Id;
         var baseId = $"{familyResearchId}.{BuildTypeId()}";
-        var uniqueId = CreateUniqueAircraftDesignId(baseId);
-        var typeResearchId = $"type.{uniqueId}";
+        var uniqueId = isEditingSavedType
+            ? editingSavedType.CatalogItem.DesignId
+            : CreateUniqueAircraftDesignId(baseId);
+        var typeResearchId = isEditingSavedType
+            ? editingSavedType.TypeResearchId
+            : $"type.{uniqueId}";
 
         if (_aircraftFactory is null)
         {
@@ -8226,7 +8528,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        var familyDefinitionForCatalog = isTypeVersionDevelopment
+        var familyDefinitionForCatalog = isEditingSavedType
+            ? editingSavedType.CatalogItem.Aircraft.FamilyDefinition
+            : isTypeVersionDevelopment
             ? activeTypeVersionDevelopment!.SourceFamilyDefinition
             : _aircraftPreview.FamilyDefinition;
         familyDefinitionForCatalog = ResolveFamilyDefinitionWithSavedEngineTechnology(
@@ -8243,9 +8547,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             aircraftForCatalog.FamilyDefinition.RequiredFactoryToolLevel,
             1);
 
-        int? approvedYear = null;
-        int? frozenYear = null;
-        int? frozenMonth = null;
+        int? approvedYear = isEditingSavedType ? editingSavedType.ApprovedYear : null;
+        int? frozenYear = isEditingSavedType ? editingSavedType.FrozenYear : null;
+        int? frozenMonth = isEditingSavedType ? editingSavedType.FrozenMonth : null;
         if (isTypeVersionDevelopment && !string.IsNullOrWhiteSpace(activeTypeVersionDevelopment!.SourceTypeResearchId))
         {
             var sourceTypeIndex = FindSavedAircraftDesignIndexByTypeResearchId(activeTypeVersionDevelopment.SourceTypeResearchId);
@@ -8264,24 +8568,51 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             familyResearchId,
             typeResearchId,
             ResolveValidAircraftPictureId(_selectedAircraftPictureId),
-            activeTypeVersionDevelopment?.SourceDevelopmentStartedYear ?? _currentDate.Year,
-            activeTypeVersionDevelopment?.VariantDevelopmentStartedYear ?? _currentDate.Year,
-            activeTypeVersionDevelopment?.SourceDevelopmentStartedYear,
-            activeTypeVersionDevelopment?.SourceTypeResearchId ?? string.Empty,
+            isEditingSavedType
+                ? editingSavedType.DevelopmentStartedYear
+                : activeTypeVersionDevelopment?.SourceDevelopmentStartedYear ?? _currentDate.Year,
+            isEditingSavedType
+                ? editingSavedType.VariantDevelopmentStartedYear
+                : activeTypeVersionDevelopment?.VariantDevelopmentStartedYear ?? _currentDate.Year,
+            isEditingSavedType
+                ? editingSavedType.TypeVersionDevelopmentBaselineYear
+                : activeTypeVersionDevelopment?.SourceDevelopmentStartedYear,
+            isEditingSavedType
+                ? editingSavedType.SourceTypeResearchId
+                : activeTypeVersionDevelopment?.SourceTypeResearchId ?? string.Empty,
             approvedYear,
             frozenYear,
             frozenMonth);
-        _savedAircraftDesigns.Add(savedDesign);
-        _selectedSavedAircraftDesignIndex = _savedAircraftDesigns.Count - 1;
-
-        if (!isTypeVersionDevelopment)
+        if (isEditingSavedType)
         {
-            RegisterFamilyResearchProposal(aircraftForCatalog.FamilyDefinition.Id, aircraftForCatalog.FamilyDefinition.DisplayName, aircraftForCatalog);
+            _savedAircraftDesigns[editingTypeIndex] = savedDesign;
+            _selectedSavedAircraftDesignIndex = editingTypeIndex;
+        }
+        else
+        {
+            _savedAircraftDesigns.Add(savedDesign);
+            _selectedSavedAircraftDesignIndex = _savedAircraftDesigns.Count - 1;
+        }
+
+        var autoSavedFamily = EnsureFamilySaved(
+            familyResearchId,
+            aircraftForCatalog.FamilyDefinition,
+            isTypeVersionDevelopment ? activeTypeVersionDevelopment!.SourceFamilyDisplayName : _familyName);
+
+        if ((!isTypeVersionDevelopment && !isEditingSavedType) || autoSavedFamily)
+        {
+            RegisterFamilyResearchProposal(familyResearchId, aircraftForCatalog.FamilyDefinition.DisplayName, aircraftForCatalog);
         }
 
         RegisterTypeResearchProposal(typeResearchId, aircraftForCatalog.TypeDefinition.DisplayName, aircraftForCatalog);
 
-        if (isTypeVersionDevelopment)
+        if (isEditingSavedType)
+        {
+            _editingTypeResearchId = string.Empty;
+            _factoryActionMessage =
+                $"Updated unapproved aircraft type '{name}' ({FormatQualifiedCategorySummary(catalogItem.Aircraft)}).";
+        }
+        else if (isTypeVersionDevelopment)
         {
             _typeVersionDevelopment = null;
             _factoryActionMessage =
@@ -8292,8 +8623,44 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             _factoryActionMessage =
                 $"Saved aircraft design '{name}' ({FormatQualifiedCategorySummary(catalogItem.Aircraft)}) for production. " +
+                (autoSavedFamily ? "Its missing family was saved automatically. " : string.Empty) +
                 "Type is blocked until engine/family/type research is approved and completed.";
         }
+    }
+
+    private bool EnsureFamilySaved(
+        string familyResearchId,
+        AircraftFamilyDefinition familyDefinition,
+        string suggestedName)
+    {
+        for (var index = 0; index < _savedFamilies.Count; index++)
+        {
+            if (string.Equals(_savedFamilies[index].FamilyId, familyResearchId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        var name = string.IsNullOrWhiteSpace(suggestedName)
+            || string.Equals(suggestedName.Trim(), familyResearchId, StringComparison.Ordinal)
+            ? familyDefinition.DisplayName
+            : suggestedName.Trim();
+        var baseAirframe = familyDefinition.BaseAirframeParameters;
+        _savedFamilies.Add(new SavedFamilyDesign(
+            name,
+            familyResearchId,
+            familyDefinition.LockedEngineCount,
+            familyDefinition.LockedStructureType,
+            familyDefinition.LockedMaterialType,
+            familyDefinition.ReferenceWingAreaSquareMeters ?? baseAirframe.WingAreaSquareMeters,
+            baseAirframe.WingAspectRatio,
+            familyDefinition.LockedWingPosition ?? baseAirframe.WingPosition,
+            familyDefinition.LockedWingShape ?? baseAirframe.WingShape,
+            baseAirframe.WingProfile,
+            familyDefinition.AllowedEngineFamily,
+            familyDefinition.ConstructionStandard));
+        _selectedSavedFamilyIndex = _savedFamilies.Count - 1;
+        return true;
     }
 
     private void SaveCurrentFamily()
@@ -8305,13 +8672,21 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
+        var isEditingSavedFamily = TryGetEditingSavedFamily(out var editingSavedFamily, out var editingFamilyIndex);
+        if (isEditingSavedFamily && !CanEditSavedFamily(editingSavedFamily))
+        {
+            _factoryActionMessage = "This family is already approved or used by an approved type and can no longer be edited.";
+            _editingFamilyResearchId = string.Empty;
+            return;
+        }
+
         var name = string.IsNullOrWhiteSpace(_familyName)
             ? $"Family {_savedFamilies.Count + 1}"
             : _familyName.Trim();
         var familyDisplayName = BuildFamilyDisplayName(name, _lockedEngineCount, _lockedMaterial, _lockedStructure, _familyAllowedEngineFamily);
 
-        var familyId = BuildFamilyId();
-        _savedFamilies.Add(new SavedFamilyDesign(
+        var familyId = isEditingSavedFamily ? editingSavedFamily.FamilyId : BuildFamilyId();
+        var savedFamily = new SavedFamilyDesign(
             name,
             familyId,
             _lockedEngineCount,
@@ -8323,20 +8698,174 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _baseAirframeParameters.WingShape,
             NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile),
             _familyAllowedEngineFamily,
-            _familyConstructionStandard));
-        _selectedSavedFamilyIndex = _savedFamilies.Count - 1;
+            _familyConstructionStandard);
+        if (isEditingSavedFamily)
+        {
+            _savedFamilies[editingFamilyIndex] = savedFamily;
+            _selectedSavedFamilyIndex = editingFamilyIndex;
+        }
+        else
+        {
+            _savedFamilies.Add(savedFamily);
+            _selectedSavedFamilyIndex = _savedFamilies.Count - 1;
+        }
 
         RebuildAircraftPreview();
+        if (isEditingSavedFamily)
+        {
+            if (_aircraftPreview is null)
+            {
+                _savedFamilies[editingFamilyIndex] = editingSavedFamily;
+                _factoryActionMessage = $"Family update rejected: {_aircraftPreviewError}";
+                return;
+            }
+
+            if (!TryGetSelectedCompatibleSavedEngine(out var selectedEngine, out var engineSelectionError))
+            {
+                _savedFamilies[editingFamilyIndex] = editingSavedFamily;
+                _factoryActionMessage = $"Family update rejected: {engineSelectionError}";
+                return;
+            }
+
+            if (_aircraftFactory is null)
+            {
+                _savedFamilies[editingFamilyIndex] = editingSavedFamily;
+                _factoryActionMessage = "Family update rejected: Aircraft factory is not initialized.";
+                return;
+            }
+
+            var updatedFamilyDefinition = CopyFamilyDefinitionWithIdentity(
+                BuildFamily(selectedEngine),
+                familyId,
+                familyDisplayName);
+            try
+            {
+                var proposalAircraft = _aircraftFactory.CreateAircraft(
+                    updatedFamilyDefinition,
+                    BuildTypeForAircraft(updatedFamilyDefinition));
+                RebuildAircraftDesignsUsingFamily(familyId, updatedFamilyDefinition);
+                RegisterFamilyResearchProposal(familyId, familyDisplayName, proposalAircraft);
+            }
+            catch (Exception ex)
+            {
+                _savedFamilies[editingFamilyIndex] = editingSavedFamily;
+                _factoryActionMessage = $"Family update rejected: {ex.Message}";
+                return;
+            }
+
+            _editingFamilyResearchId = string.Empty;
+            _factoryActionMessage = $"Updated unapproved family '{familyDisplayName}' and its dependent type previews.";
+            return;
+        }
+
         if (_aircraftPreview is not null)
         {
             RegisterFamilyResearchProposal(familyId, familyDisplayName, _aircraftPreview);
-            _factoryActionMessage =
-                $"Saved family '{familyDisplayName}'. Family research proposal added and awaits approval/completion.";
+            _factoryActionMessage = $"Saved family '{familyDisplayName}'. Family research proposal added and awaits approval/completion.";
             return;
         }
 
         _factoryActionMessage = $"Saved family '{familyDisplayName}'.";
     }
+
+    private void RebuildAircraftDesignsUsingFamily(
+        string familyResearchId,
+        AircraftFamilyDefinition updatedFamilyDefinition)
+    {
+        if (_aircraftFactory is null)
+        {
+            return;
+        }
+
+        var updates = new List<(int Index, SavedAircraftDesign Design, Aircraft Aircraft)>();
+        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+        {
+            var savedDesign = _savedAircraftDesigns[index];
+            if (!string.Equals(savedDesign.FamilyResearchId, familyResearchId, StringComparison.Ordinal)
+                || !CanEditSavedType(savedDesign)
+                || !TryGetSavedEngineByResearchId(savedDesign.EngineResearchId, out var savedEngine))
+            {
+                continue;
+            }
+
+            var familyForEngine = updatedFamilyDefinition.WithInstalledEngine(
+                savedEngine.Definition.Id,
+                savedEngine.Definition.EngineType,
+                savedEngine.Parameters,
+                ResolveInstalledEngineTechnologyModifiers(savedEngine));
+            var rebuiltAircraft = _aircraftFactory.CreateAircraft(
+                familyForEngine,
+                savedDesign.CatalogItem.Aircraft.TypeDefinition);
+            var rebuiltCatalogItem = new FactoryAircraftTypeCatalogItem(
+                savedDesign.CatalogItem.DesignId,
+                savedDesign.CatalogItem.DisplayName,
+                rebuiltAircraft,
+                savedDesign.CatalogItem.RequiredFactoryToolLevel,
+                savedDesign.CatalogItem.RequiredLineToolLevel);
+            var rebuiltDesign = CopySavedAircraftDesign(savedDesign, rebuiltCatalogItem, savedDesign.EngineResearchId);
+            updates.Add((index, rebuiltDesign, rebuiltAircraft));
+        }
+
+        for (var index = 0; index < updates.Count; index++)
+        {
+            var update = updates[index];
+            _savedAircraftDesigns[update.Index] = update.Design;
+            RegisterTypeResearchProposal(
+                update.Design.TypeResearchId,
+                update.Aircraft.TypeDefinition.DisplayName,
+                update.Aircraft);
+        }
+    }
+
+    private static AircraftFamilyDefinition CopyFamilyDefinitionWithIdentity(
+        AircraftFamilyDefinition source,
+        string familyId,
+        string displayName) =>
+        new()
+        {
+            Id = familyId,
+            DisplayName = displayName,
+            EngineDefinitionId = source.EngineDefinitionId,
+            AirframeDefinitionId = source.AirframeDefinitionId,
+            LockedEngineType = source.LockedEngineType,
+            AllowedEngineFamily = source.AllowedEngineFamily,
+            ConstructionStandard = source.ConstructionStandard,
+            EngineClassification = source.EngineClassification,
+            LockedStructureType = source.LockedStructureType,
+            LockedMaterialType = source.LockedMaterialType,
+            LockedEngineCount = source.LockedEngineCount,
+            ReferenceWingAreaSquareMeters = source.ReferenceWingAreaSquareMeters,
+            WingAspectRatio = source.WingAspectRatio,
+            LockedWingShape = source.LockedWingShape,
+            LockedWingPosition = source.LockedWingPosition,
+            Category = source.Category,
+            RequiredFactoryToolLevel = source.RequiredFactoryToolLevel,
+            InstalledEngineTechnologyModifiers = source.InstalledEngineTechnologyModifiers,
+            BaseEngineParameters = source.BaseEngineParameters.Clone(),
+            BaseAirframeParameters = source.BaseAirframeParameters.Clone(),
+            BaseDevelopmentCost = source.BaseDevelopmentCost,
+            BaseDevelopmentManDays = source.BaseDevelopmentManDays,
+        };
+
+    private static SavedAircraftDesign CopySavedAircraftDesign(
+        SavedAircraftDesign source,
+        FactoryAircraftTypeCatalogItem catalogItem,
+        string engineResearchId,
+        string? name = null) =>
+        new(
+            name ?? source.Name,
+            catalogItem,
+            engineResearchId,
+            source.FamilyResearchId,
+            source.TypeResearchId,
+            source.AircraftPictureId,
+            source.DevelopmentStartedYear,
+            source.VariantDevelopmentStartedYear,
+            source.TypeVersionDevelopmentBaselineYear,
+            source.SourceTypeResearchId,
+            source.ApprovedYear,
+            source.FrozenYear,
+            source.FrozenMonth);
 
     private void LoadSavedFamily(int index)
     {
@@ -9183,6 +9712,25 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
     }
 
+    private AircraftFamilyDefinition ResolveFamilyDefinitionForCurrentDesigner(SavedEngineDesign savedEngine)
+    {
+        if (_typeVersionDevelopment is not null)
+        {
+            return ResolveFamilyDefinitionWithSavedEngineTechnology(
+                savedEngine.ResearchId,
+                _typeVersionDevelopment.SourceFamilyDefinition);
+        }
+
+        if (TryGetEditingSavedType(out var editingSavedType, out _))
+        {
+            return ResolveFamilyDefinitionWithSavedEngineTechnology(
+                savedEngine.ResearchId,
+                editingSavedType.CatalogItem.Aircraft.FamilyDefinition);
+        }
+
+        return BuildFamily(savedEngine);
+    }
+
     private void RebuildAircraftPreview()
     {
         _aircraftPreview = null;
@@ -9208,11 +9756,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 return;
             }
 
-            var family = _typeVersionDevelopment is not null
-                ? ResolveFamilyDefinitionWithSavedEngineTechnology(
-                    saved.ResearchId,
-                    _typeVersionDevelopment.SourceFamilyDefinition)
-                : BuildFamily(saved);
+            var family = ResolveFamilyDefinitionForCurrentDesigner(saved);
             var type = BuildTypeForAircraft(family);
             _aircraftPreview = _aircraftFactory.CreateAircraft(family, type);
         }
@@ -9231,14 +9775,24 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         var activeVersionDevelopment = _engineVersionDevelopment;
+        var isEditingSavedEngine = TryGetEditingSavedEngine(out var editingSavedEngine, out var editingEngineIndex);
+        if (isEditingSavedEngine && !CanEditSavedEngine(editingSavedEngine))
+        {
+            _enginePreviewError = "This engine has already been approved and can no longer be edited.";
+            _editingEngineResearchId = string.Empty;
+            return;
+        }
+
         var name = string.IsNullOrWhiteSpace(_engineDesignName)
             ? $"Engine-{_savedEngines.Count + 1}"
             : _engineDesignName.Trim();
-        var researchId = CreateUniqueEngineResearchId(name);
+        var researchId = isEditingSavedEngine
+            ? editingSavedEngine.ResearchId
+            : CreateUniqueEngineResearchId(name);
 
-        int? approvedYear = null;
-        int? frozenYear = null;
-        int? frozenMonth = null;
+        int? approvedYear = isEditingSavedEngine ? editingSavedEngine.ApprovedYear : null;
+        int? frozenYear = isEditingSavedEngine ? editingSavedEngine.FrozenYear : null;
+        int? frozenMonth = isEditingSavedEngine ? editingSavedEngine.FrozenMonth : null;
         if (activeVersionDevelopment is not null && !string.IsNullOrWhiteSpace(activeVersionDevelopment.SourceResearchId))
         {
             var sourceEngineIndex = FindSavedEngineIndexByResearchId(activeVersionDevelopment.SourceResearchId);
@@ -9254,20 +9808,96 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             name,
             researchId,
             _enginePreview,
-            activeVersionDevelopment?.SourceDevelopmentStartedYear ?? _currentDate.Year,
-            activeVersionDevelopment?.VariantDevelopmentStartedYear ?? _currentDate.Year,
-            activeVersionDevelopment?.SourceDevelopmentStartedYear,
-            activeVersionDevelopment?.SourceResearchId ?? string.Empty,
+            isEditingSavedEngine
+                ? editingSavedEngine.DevelopmentStartedYear
+                : activeVersionDevelopment?.SourceDevelopmentStartedYear ?? _currentDate.Year,
+            isEditingSavedEngine
+                ? editingSavedEngine.VariantDevelopmentStartedYear
+                : activeVersionDevelopment?.VariantDevelopmentStartedYear ?? _currentDate.Year,
+            isEditingSavedEngine
+                ? editingSavedEngine.VersionDevelopmentBaselineYear
+                : activeVersionDevelopment?.SourceDevelopmentStartedYear,
+            isEditingSavedEngine
+                ? editingSavedEngine.SourceResearchId
+                : activeVersionDevelopment?.SourceResearchId ?? string.Empty,
             approvedYear,
             frozenYear,
             frozenMonth);
-        _savedEngines.Add(savedDesign);
-        _selectedSavedEngineIndex = _savedEngines.Count - 1;
+        if (isEditingSavedEngine)
+        {
+            _savedEngines[editingEngineIndex] = savedDesign;
+            _selectedSavedEngineIndex = editingEngineIndex;
+        }
+        else
+        {
+            _savedEngines.Add(savedDesign);
+            _selectedSavedEngineIndex = _savedEngines.Count - 1;
+        }
+
+        if (isEditingSavedEngine)
+        {
+            try
+            {
+                RebuildAircraftDesignsUsingEngine(researchId);
+            }
+            catch (Exception ex)
+            {
+                _savedEngines[editingEngineIndex] = editingSavedEngine;
+                _enginePreviewError = $"Engine update rejected: {ex.Message}";
+                return;
+            }
+
+            _editingEngineResearchId = string.Empty;
+            _researchActionMessage = $"Updated unapproved engine '{name}' and its dependent type previews.";
+        }
 
         RegisterEngineResearchProposal(savedDesign, _enginePreview);
+
         if (activeVersionDevelopment is not null)
         {
             _engineVersionDevelopment = null;
+        }
+    }
+
+    private void RebuildAircraftDesignsUsingEngine(string engineResearchId)
+    {
+        if (_aircraftFactory is null || string.IsNullOrWhiteSpace(engineResearchId))
+        {
+            return;
+        }
+
+        var updates = new List<(int Index, SavedAircraftDesign Design, Aircraft Aircraft)>();
+        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+        {
+            var savedDesign = _savedAircraftDesigns[index];
+            if (!string.Equals(savedDesign.EngineResearchId, engineResearchId, StringComparison.Ordinal)
+                || !CanEditSavedType(savedDesign))
+            {
+                continue;
+            }
+
+            var familyDefinition = ResolveFamilyDefinitionWithSavedEngineTechnology(savedDesign);
+            var rebuiltAircraft = savedDesign.TryGetFrozenDate(out var frozenDate)
+                ? BuildAircraftForDate(familyDefinition, savedDesign.CatalogItem.Aircraft.TypeDefinition, frozenDate)
+                : _aircraftFactory.CreateAircraft(familyDefinition, savedDesign.CatalogItem.Aircraft.TypeDefinition);
+            var rebuiltCatalogItem = new FactoryAircraftTypeCatalogItem(
+                savedDesign.CatalogItem.DesignId,
+                savedDesign.CatalogItem.DisplayName,
+                rebuiltAircraft,
+                savedDesign.CatalogItem.RequiredFactoryToolLevel,
+                savedDesign.CatalogItem.RequiredLineToolLevel);
+            var rebuiltDesign = CopySavedAircraftDesign(savedDesign, rebuiltCatalogItem, engineResearchId);
+            updates.Add((index, rebuiltDesign, rebuiltAircraft));
+        }
+
+        for (var index = 0; index < updates.Count; index++)
+        {
+            var update = updates[index];
+            _savedAircraftDesigns[update.Index] = update.Design;
+            RegisterTypeResearchProposal(
+                update.Design.TypeResearchId,
+                update.Aircraft.TypeDefinition.DisplayName,
+                update.Aircraft);
         }
     }
 
@@ -11645,11 +12275,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 return false;
             }
 
-            var family = _typeVersionDevelopment is not null
-                ? ResolveFamilyDefinitionWithSavedEngineTechnology(
-                    savedEngine.ResearchId,
-                    _typeVersionDevelopment.SourceFamilyDefinition)
-                : BuildFamily(savedEngine);
+            var family = ResolveFamilyDefinitionForCurrentDesigner(savedEngine);
             var type = BuildTypeForAircraft(family, wingAreaSquareMetersOverride: wingAreaSquareMeters);
             aircraft = _aircraftFactory.CreateAircraft(family, type);
             return true;
