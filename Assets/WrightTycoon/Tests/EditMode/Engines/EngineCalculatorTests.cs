@@ -37,6 +37,64 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    public void DirectInjection_ImprovesSpecificFuelConsumptionByTenPercent()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreatePistonDefinition();
+        var carburetor = new EngineParameters
+        {
+            DisplacementLiters = 18d,
+            CompressionRatio = 8.2d,
+            BoostType = BoostType.None,
+            PistonInjectionType = PistonInjectionType.Carburetor,
+            OptimizationAltitudeMeters = 1500d,
+            CoolingEfficiency = 0.78d,
+        };
+        var directInjection = carburetor.Clone();
+        directInjection.PistonInjectionType = PistonInjectionType.DirectInjection;
+
+        var carburetorPoint = calculator.Calculate(definition, carburetor, atmosphere).GetPerformanceAtAltitude(0d);
+        var directInjectionPoint = calculator.Calculate(definition, directInjection, atmosphere).GetPerformanceAtAltitude(0d);
+        var carburetorSpecificFuel = carburetorPoint.FuelConsumptionKilogramsPerHour / carburetorPoint.Output;
+        var directInjectionSpecificFuel = directInjectionPoint.FuelConsumptionKilogramsPerHour / directInjectionPoint.Output;
+
+        Assert.That(directInjectionSpecificFuel / carburetorSpecificFuel, Is.EqualTo(0.9d).Within(0.000001d));
+        Assert.That(directInjectionPoint.FuelConsumptionKilogramsPerHour, Is.GreaterThan(carburetorPoint.FuelConsumptionKilogramsPerHour));
+    }
+
+    [Test]
+    public void BoostHardware_AppliesConfiguredSpecificFuelConsumptionEffects()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreatePistonDefinition();
+        var naturallyAspirated = new EngineParameters
+        {
+            DisplacementLiters = 18d,
+            CompressionRatio = 8.2d,
+            BoostType = BoostType.None,
+            PistonInjectionType = PistonInjectionType.DirectInjection,
+            OptimizationAltitudeMeters = 1500d,
+            CoolingEfficiency = 0.78d,
+        };
+        var supercharged = naturallyAspirated.Clone();
+        supercharged.BoostType = BoostType.Supercharger;
+        var turbocharged = naturallyAspirated.Clone();
+        turbocharged.BoostType = BoostType.Turbo;
+
+        var naturallyAspiratedPoint = calculator.Calculate(definition, naturallyAspirated, atmosphere).GetPerformanceAtAltitude(0d);
+        var superchargedPoint = calculator.Calculate(definition, supercharged, atmosphere).GetPerformanceAtAltitude(0d);
+        var turbochargedPoint = calculator.Calculate(definition, turbocharged, atmosphere).GetPerformanceAtAltitude(0d);
+        var naturallyAspiratedSpecificFuel = naturallyAspiratedPoint.FuelConsumptionKilogramsPerHour / naturallyAspiratedPoint.Output;
+        var superchargedSpecificFuel = superchargedPoint.FuelConsumptionKilogramsPerHour / superchargedPoint.Output;
+        var turbochargedSpecificFuel = turbochargedPoint.FuelConsumptionKilogramsPerHour / turbochargedPoint.Output;
+
+        Assert.That(superchargedSpecificFuel / naturallyAspiratedSpecificFuel, Is.EqualTo(1d).Within(0.000001d));
+        Assert.That(turbochargedSpecificFuel / naturallyAspiratedSpecificFuel, Is.EqualTo(1.08d).Within(0.000001d));
+    }
+
+    [Test]
     public void TurbojetThrust_ScalesWithTurbineDiameterSquared()
     {
         var calculator = new EngineCalculator();

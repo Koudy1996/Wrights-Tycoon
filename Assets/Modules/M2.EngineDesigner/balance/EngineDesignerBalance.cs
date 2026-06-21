@@ -92,8 +92,8 @@ public static class EngineDesignerBalance
 
         public const double TurboBoostPowerFactor = 1.28d;
         public const double SuperchargerBoostPowerFactor = 1.2d;
-        public const double TurboBoostFuelFactor = 1.18d;
-        public const double SuperchargerBoostFuelFactor = 1.12d;
+        public const double TurboBoostFuelFactor = 1.08d;
+        public const double SuperchargerBoostFuelFactor = 1d;
         public const double TurbojetFuelConsumptionMultiplier = 1.2d;
         public const double TurboBoostJetFactor = 1.05d;
         public const double SuperchargerBoostJetFactor = 1.03d;
@@ -103,6 +103,7 @@ public static class EngineDesignerBalance
         public const double SuperchargerBoostPistonReliabilityPenalty = 0.045d;
 
         public const double CarburetorPowerFactor = 0.88d;
+        public const double DirectInjectionFuelConsumptionFactor = 0.9d;
         public const double CarburetorCostDiscount = 6200d;
         public const double CarburetorProductionManDayDiscount = 6d;
 

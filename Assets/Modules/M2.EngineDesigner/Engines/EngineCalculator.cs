@@ -122,6 +122,9 @@ public sealed class EngineCalculator : IEngineCalculator
             ? Numeric.Clamp(System.Math.Pow(parameters.MaximumSpeed / 50000d, 0.24d), 0.75d, 1.65d)
             : Numeric.Clamp(System.Math.Pow(parameters.MaximumSpeed / 2500d, 0.2d), 0.8d, 1.55d);
         var boostFuelFactor = GetBoostFuelFactor(parameters.BoostType);
+        var injectionFuelFactor = !isJet && parameters.PistonInjectionType == PistonInjectionType.DirectInjection
+            ? EngineDesignerBalance.Engine.DirectInjectionFuelConsumptionFactor
+            : 1d;
         var coolingFuelFactor = 1d + ((1d - effectiveCoolingEfficiency) * 0.1d);
         var jetAfterburnerFuelFactor = outputKind == EngineOutputKind.ThrustNewtons
             ? GetJetAfterburnerFuelFlowFactor(parameters)
@@ -154,6 +157,7 @@ public sealed class EngineCalculator : IEngineCalculator
                     * definition.PropFuelConsumptionPerKilowattHour
                     * compressionFuelFactor
                     * boostFuelFactor
+                    * injectionFuelFactor
                     * coolingFuelFactor
                     * speedFuelFactor
                     * (1d + (System.Math.Max(0d, parameters.CylinderCount - 12) * 0.006d));

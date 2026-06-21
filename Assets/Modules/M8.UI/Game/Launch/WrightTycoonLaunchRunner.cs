@@ -269,13 +269,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private static readonly ModifierTooltipDefinition BoostSuperchargerTooltip = new(
         "modifier.engine.boost",
         "Boost: Supercharger",
-        positiveLines: new[] { "More power, good mid-altitude" },
+        positiveLines: new[] { "More power, good mid-altitude", "No specific fuel consumption penalty" },
         negativeLines: new[] { "Higher weight, reliability penalty" });
     private static readonly ModifierTooltipDefinition BoostTurboTooltip = new(
         "modifier.engine.boost",
         "Boost: Turbo",
         positiveLines: new[] { "Strong all-altitude power" },
-        negativeLines: new[] { "Higher frontal area, weight, reliability penalty" });
+        negativeLines: new[] { "8% higher specific fuel consumption", "Higher frontal area, weight, reliability penalty" });
     private static readonly ModifierTooltipDefinition InjectionCarburetorTooltip = new(
         "modifier.engine.injection",
         "Injection: Carburetor",
@@ -284,7 +284,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private static readonly ModifierTooltipDefinition InjectionDirectTooltip = new(
         "modifier.engine.injection",
         "Injection: Direct Injection",
-        positiveLines: new[] { "Better power output" },
+        positiveLines: new[] { "Better power output", "10% lower specific fuel consumption" },
         negativeLines: new[] { "Higher cost and production time" });
     private static readonly ModifierTooltipDefinition PistonCompressionTooltip = new(
         "modifier.engine.compression.piston",
@@ -4747,6 +4747,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         DrawSuccessfulGovernmentContractsSummary();
+        DrawActiveGovernmentDeliveryContracts();
 
         GUILayout.BeginHorizontal();
         GUI.enabled = activeContract is not null;
@@ -4808,6 +4809,72 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawMetric("Final Probability", evaluation.FinalProbability * 100d, "0.00");
             DrawMetric("Random Roll", evaluation.RandomRoll * 100d, "0.00");
             DrawMetric("Bonus Probability", evaluation.BonusProbability * 100d, "0.00");
+            GUILayout.EndVertical();
+        }
+    }
+
+    private void DrawActiveGovernmentDeliveryContracts()
+    {
+        if (_governmentContractBoard is null || _productionFactory is null)
+        {
+            return;
+        }
+
+        DrawSection("Active Delivery Contracts");
+        var activeDeliveries = _governmentContractBoard.ActiveDeliveryContracts;
+        if (activeDeliveries.Count == 0)
+        {
+            GUILayout.Label("No active government delivery contract.");
+            return;
+        }
+
+        for (var index = 0; index < activeDeliveries.Count; index++)
+        {
+            var activeDelivery = activeDeliveries[index];
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label($"{activeDelivery.DeliveryId} | Source: {ResolveAircraftDesignName(activeDelivery.AircraftDesignId)}");
+            TryDrawAircraftPictureByDesignId(activeDelivery.AircraftDesignId, 220f, 130f);
+            GUILayout.Label($"Status: {activeDelivery.Status}");
+            GUILayout.Label($"Active Window: {FormatSimulationDate(activeDelivery.StartedOn)} -> {FormatSimulationDate(activeDelivery.EndsOn)}");
+            DrawMetric("Required Units", activeDelivery.TotalUnitsRequired, "0");
+            DrawMetric("Delivered Units", activeDelivery.DeliveredUnits, "0");
+            DrawMetric("Remaining Units", activeDelivery.RemainingUnits, "0");
+            DrawMetric("Unit Price", activeDelivery.UnitPrice, "0.00");
+            DrawMetric("Completion Bonus", activeDelivery.TotalContractValue * GovernmentContractBalance.DeliveryCompletionBonusShare, "0.00");
+            DrawMetric("Total Contract Value", activeDelivery.TotalContractValue, "0.00");
+
+            var availableInWarehouse = _productionFactory.GetWarehouseUnits(activeDelivery.AircraftDesignId);
+            DrawMetric("Warehouse Units (Selected Type)", availableInWarehouse, "0");
+
+            if (!_governmentDeliveryQuantityInputById.TryGetValue(activeDelivery.DeliveryId, out var quantityInput)
+                || string.IsNullOrWhiteSpace(quantityInput))
+            {
+                quantityInput = "1";
+            }
+
+            quantityInput = DrawText("Deliver Units", quantityInput, activeDelivery.DeliveryId);
+            _governmentDeliveryQuantityInputById[activeDelivery.DeliveryId] = quantityInput;
+            var parsedQuantity = TryParsePositiveInt(quantityInput, out var requestedUnits)
+                ? requestedUnits
+                : 0;
+
+            GUILayout.BeginHorizontal();
+            var canDeliverManually = availableInWarehouse > 0 && activeDelivery.RemainingUnits > 0;
+            GUI.enabled = canDeliverManually && parsedQuantity > 0;
+            if (GUILayout.Button("Deliver Aircraft", GUILayout.Height(24f)))
+            {
+                ProcessGovernmentDelivery(activeDelivery.DeliveryId, parsedQuantity);
+            }
+
+            GUI.enabled = canDeliverManually;
+            if (GUILayout.Button("Deliver All In Warehouse", GUILayout.Height(24f)))
+            {
+                var allUnits = System.Math.Min(availableInWarehouse, activeDelivery.RemainingUnits);
+                ProcessGovernmentDelivery(activeDelivery.DeliveryId, allUnits);
+            }
+
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
             GUILayout.EndVertical();
         }
     }
@@ -4968,65 +5035,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         else
         {
             DrawGovernmentEvaluationDetails(latestFailedEvaluation);
-        }
-
-        DrawSection("Delivery Contracts");
-        var activeDeliveries = _governmentContractBoard.ActiveDeliveryContracts;
-        if (activeDeliveries.Count == 0)
-        {
-            GUILayout.Label("No active government delivery contract.");
-        }
-        else
-        {
-            for (var index = 0; index < activeDeliveries.Count; index++)
-            {
-                var activeDelivery = activeDeliveries[index];
-                GUILayout.BeginVertical(GUI.skin.box);
-                GUILayout.Label($"{activeDelivery.DeliveryId} | Source: {ResolveAircraftDesignName(activeDelivery.AircraftDesignId)}");
-                TryDrawAircraftPictureByDesignId(activeDelivery.AircraftDesignId, 220f, 130f);
-                GUILayout.Label($"Status: {activeDelivery.Status}");
-                GUILayout.Label($"Active Window: {FormatSimulationDate(activeDelivery.StartedOn)} -> {FormatSimulationDate(activeDelivery.EndsOn)}");
-                DrawMetric("Required Units", activeDelivery.TotalUnitsRequired, "0");
-                DrawMetric("Delivered Units", activeDelivery.DeliveredUnits, "0");
-                DrawMetric("Remaining Units", activeDelivery.RemainingUnits, "0");
-                DrawMetric("Unit Price", activeDelivery.UnitPrice, "0.00");
-                DrawMetric("Completion Bonus", activeDelivery.TotalContractValue * GovernmentContractBalance.DeliveryCompletionBonusShare, "0.00");
-                DrawMetric("Total Contract Value", activeDelivery.TotalContractValue, "0.00");
-
-                var availableInWarehouse = _productionFactory.GetWarehouseUnits(activeDelivery.AircraftDesignId);
-                DrawMetric("Warehouse Units (Selected Type)", availableInWarehouse, "0");
-
-                if (!_governmentDeliveryQuantityInputById.TryGetValue(activeDelivery.DeliveryId, out var quantityInput)
-                    || string.IsNullOrWhiteSpace(quantityInput))
-                {
-                    quantityInput = "1";
-                }
-
-                quantityInput = DrawText("Deliver Units", quantityInput, activeDelivery.DeliveryId);
-                _governmentDeliveryQuantityInputById[activeDelivery.DeliveryId] = quantityInput;
-                var parsedQuantity = TryParsePositiveInt(quantityInput, out var requestedUnits)
-                    ? requestedUnits
-                    : 0;
-
-                GUILayout.BeginHorizontal();
-                var canDeliverManually = availableInWarehouse > 0 && activeDelivery.RemainingUnits > 0;
-                GUI.enabled = canDeliverManually && parsedQuantity > 0;
-                if (GUILayout.Button("Deliver Aircraft", GUILayout.Height(24f)))
-                {
-                    ProcessGovernmentDelivery(activeDelivery.DeliveryId, parsedQuantity);
-                }
-
-                GUI.enabled = canDeliverManually;
-                if (GUILayout.Button("Deliver All In Warehouse", GUILayout.Height(24f)))
-                {
-                    var allUnits = System.Math.Min(availableInWarehouse, activeDelivery.RemainingUnits);
-                    ProcessGovernmentDelivery(activeDelivery.DeliveryId, allUnits);
-                }
-
-                GUI.enabled = true;
-                GUILayout.EndHorizontal();
-                GUILayout.EndVertical();
-            }
         }
 
         if (_governmentContractBoard.ClosedDeliveryContracts.Count > 0)
@@ -7125,6 +7133,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var orderedFamilyIds = familyIds
             .OrderBy(ResolveFamilyDisplayNameForMyMachines, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        var typeVersionSources = BuildTypeVersionSourceMap();
 
         for (var familyIndex = 0; familyIndex < orderedFamilyIds.Length; familyIndex++)
         {
@@ -7134,47 +7143,52 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label($"Family: {familyDisplayName}");
             GUILayout.Label($"ID: {familyId}");
 
-            var hasType = false;
-            for (var typeIndex = 0; typeIndex < _savedAircraftDesigns.Count; typeIndex++)
+            var rootTypeIndices = new List<int>();
+            for (var designIndex = 0; designIndex < _savedAircraftDesigns.Count; designIndex++)
             {
-                var savedDesign = _savedAircraftDesigns[typeIndex];
+                var savedDesign = _savedAircraftDesigns[designIndex];
                 if (!string.Equals(savedDesign.FamilyResearchId, familyId, StringComparison.Ordinal))
                 {
                     continue;
                 }
 
-                hasType = true;
-                GUILayout.BeginHorizontal(GUI.skin.box);
-                TryDrawAircraftPictureById(savedDesign.AircraftPictureId, 96f, 60f);
-                var categories = FormatQualifiedCategorySummary(savedDesign.CatalogItem.Aircraft);
-                GUILayout.BeginVertical();
-                GUILayout.Label(
-                    $"{savedDesign.Name} | {GetAircraftDesignResearchStatus(savedDesign)} | " +
-                    $"Approved Year: {FormatApprovedYear(savedDesign.ApprovedYear)}");
-                GUILayout.Label($"Qualified Categories: {categories}");
-                GUILayout.Label($"Picture: {savedDesign.AircraftPictureId}");
-                GUILayout.EndVertical();
-
-                if (GUILayout.Button("Select", GUILayout.Width(90f), GUILayout.Height(24f)))
+                var rootTypeId = ResearchVersionLineage.ResolveRootSubjectId(
+                    savedDesign.TypeResearchId,
+                    typeVersionSources);
+                if (string.Equals(rootTypeId, savedDesign.TypeResearchId, StringComparison.Ordinal))
                 {
-                    _selectedSavedAircraftDesignIndex = typeIndex;
-                    _selectedAircraftPictureId = ResolveValidAircraftPictureId(savedDesign.AircraftPictureId);
+                    rootTypeIndices.Add(designIndex);
                 }
-
-                if (GUILayout.Button("Type Designer", GUILayout.Width(150f), GUILayout.Height(24f)))
-                {
-                    OpenTypeDesignerForExistingDesign(typeIndex, requestEditing: true);
-                }
-
-                if (GUILayout.Button("New Version", GUILayout.Width(160f), GUILayout.Height(24f)))
-                {
-                    BeginTypeVersionDevelopment(typeIndex);
-                }
-
-                GUILayout.EndHorizontal();
             }
 
-            if (!hasType)
+            for (var rootIndex = 0; rootIndex < rootTypeIndices.Count; rootIndex++)
+            {
+                var rootDesignIndex = rootTypeIndices[rootIndex];
+                var rootDesign = _savedAircraftDesigns[rootDesignIndex];
+                DrawMyMachinesTypeEntry(rootDesignIndex, isVersion: false);
+
+                for (var versionIndex = 0; versionIndex < _savedAircraftDesigns.Count; versionIndex++)
+                {
+                    if (versionIndex == rootDesignIndex)
+                    {
+                        continue;
+                    }
+
+                    var version = _savedAircraftDesigns[versionIndex];
+                    if (!string.Equals(version.FamilyResearchId, familyId, StringComparison.Ordinal)
+                        || !string.Equals(
+                            ResearchVersionLineage.ResolveRootSubjectId(version.TypeResearchId, typeVersionSources),
+                            rootDesign.TypeResearchId,
+                            StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    DrawMyMachinesTypeEntry(versionIndex, isVersion: true);
+                }
+            }
+
+            if (rootTypeIndices.Count == 0)
             {
                 GUILayout.Label("No saved types under this family.");
             }
@@ -7253,6 +7267,61 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             DrawError("Selected engine parameters could not be evaluated.");
         }
+    }
+
+    private Dictionary<string, string> BuildTypeVersionSourceMap()
+    {
+        var sources = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+        {
+            var savedDesign = _savedAircraftDesigns[index];
+            sources[savedDesign.TypeResearchId] = savedDesign.SourceTypeResearchId;
+        }
+
+        return sources;
+    }
+
+    private void DrawMyMachinesTypeEntry(int typeIndex, bool isVersion)
+    {
+        var savedDesign = _savedAircraftDesigns[typeIndex];
+        GUILayout.BeginHorizontal();
+        if (isVersion)
+        {
+            GUILayout.Space(32f);
+        }
+
+        GUILayout.BeginVertical(GUI.skin.box);
+        GUILayout.Label(isVersion ? $"Version: {savedDesign.Name}" : $"Type: {savedDesign.Name}");
+        GUILayout.BeginHorizontal();
+        TryDrawAircraftPictureById(savedDesign.AircraftPictureId, 96f, 60f);
+        var categories = FormatQualifiedCategorySummary(savedDesign.CatalogItem.Aircraft);
+        GUILayout.BeginVertical();
+        GUILayout.Label(
+            $"{GetAircraftDesignResearchStatus(savedDesign)} | " +
+            $"Approved Year: {FormatApprovedYear(savedDesign.ApprovedYear)}");
+        GUILayout.Label($"Qualified Categories: {categories}");
+        GUILayout.Label($"Picture: {savedDesign.AircraftPictureId}");
+        GUILayout.EndVertical();
+
+        if (GUILayout.Button("Select", GUILayout.Width(90f), GUILayout.Height(24f)))
+        {
+            _selectedSavedAircraftDesignIndex = typeIndex;
+            _selectedAircraftPictureId = ResolveValidAircraftPictureId(savedDesign.AircraftPictureId);
+        }
+
+        if (GUILayout.Button("Type Designer", GUILayout.Width(150f), GUILayout.Height(24f)))
+        {
+            OpenTypeDesignerForExistingDesign(typeIndex, requestEditing: true);
+        }
+
+        if (GUILayout.Button("New Version", GUILayout.Width(160f), GUILayout.Height(24f)))
+        {
+            BeginTypeVersionDevelopment(typeIndex);
+        }
+
+        GUILayout.EndHorizontal();
+        GUILayout.EndVertical();
+        GUILayout.EndHorizontal();
     }
 
     private void DrawMyMachinesSelectedTypeReport()
