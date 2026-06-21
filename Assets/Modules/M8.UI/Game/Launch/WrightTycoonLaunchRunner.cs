@@ -140,6 +140,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private int _selectedSavedAircraftDesignIndex = -1;
     private int _engineCompareReferenceIndex = -1;
     private int _typeCompareReferenceIndex = -1;
+    private bool _typeCompareEnabled;
+    private TypeCompareTarget _typeCompareTarget = TypeCompareTarget.SavedType;
+    private int _typeCompareCategoryIndex;
     private int _lockedEngineCount = 1;
     private EngineDesignerFamily _engineDesignerFamily = EngineDesignerFamily.Piston;
     private AircraftAllowedEngineFamily _familyAllowedEngineFamily = AircraftAllowedEngineFamily.Propeller;
@@ -941,6 +944,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _selectedSavedEngineIndex = -1;
         _selectedSavedFamilyIndex = -1;
         _selectedSavedAircraftDesignIndex = -1;
+        _typeCompareEnabled = false;
+        _typeCompareReferenceIndex = -1;
+        _typeCompareTarget = TypeCompareTarget.SavedType;
+        _typeCompareCategoryIndex = 0;
         _lastFactoryReport = null;
         _currentDate = startDate ?? SimulationDate.WrightTycoonStart;
         _elapsedMonths = 0;
@@ -3025,9 +3032,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        var compareTypeButtonLabel = _typeCompareReferenceIndex >= 0
+        var compareTypeButtonLabel = _typeCompareEnabled
             ? "Stop Compare"
-            : "Compare Version";
+            : "Compare";
         if (GUILayout.Button(compareTypeButtonLabel, GUILayout.Height(28f)))
         {
             ToggleTypeCompareMode();
@@ -3035,22 +3042,50 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.EndHorizontal();
 
-        if (_typeCompareReferenceIndex >= 0)
+        if (_typeCompareEnabled)
         {
-            if (_savedAircraftDesigns.Count == 0)
+            DrawSection("Compare");
+            var compareTargetLabels = new[] { "Saved Type", "Market Category" };
+            _typeCompareTarget = (TypeCompareTarget)GUILayout.Toolbar(
+                (int)_typeCompareTarget,
+                compareTargetLabels,
+                GUILayout.Height(26f));
+
+            if (_typeCompareTarget == TypeCompareTarget.SavedType)
             {
-                _typeCompareReferenceIndex = -1;
+                if (_savedAircraftDesigns.Count == 0)
+                {
+                    DrawError("No saved aircraft type is available. Select Market Category instead.");
+                }
+                else
+                {
+                    var compareLabels = _savedAircraftDesigns
+                        .Select(design =>
+                            $"{design.Name} | " +
+                            $"{FormatQualifiedCategorySummary(design.CatalogItem.Aircraft)} | " +
+                            $"{ResolveSavedEngineDisplayNameForAircraftDesign(design)}")
+                        .ToArray();
+                    _typeCompareReferenceIndex = Mathf.Clamp(_typeCompareReferenceIndex, 0, compareLabels.Length - 1);
+                    _typeCompareReferenceIndex = DrawListSelector("Reference Type", _typeCompareReferenceIndex, compareLabels);
+                }
             }
             else
             {
-                DrawSection("Compare Version");
-                var compareLabels = _savedAircraftDesigns
-                    .Select(design =>
-                        $"{design.Name} | " +
-                        $"{FormatQualifiedCategorySummary(design.CatalogItem.Aircraft)} | " +
-                        $"{ResolveSavedEngineDisplayNameForAircraftDesign(design)}")
+                var categoryProfiles = GetUnlockedAircraftCategoriesForCurrentState()
+                    .Select(category => AircraftCategoryCatalog.GetProfileForYear(category, _currentDate.Year))
                     .ToArray();
-                _typeCompareReferenceIndex = DrawListSelector("Reference Variant", _typeCompareReferenceIndex, compareLabels);
+                if (categoryProfiles.Length == 0)
+                {
+                    DrawError("No market category is currently available.");
+                }
+                else
+                {
+                    _typeCompareCategoryIndex = Mathf.Clamp(_typeCompareCategoryIndex, 0, categoryProfiles.Length - 1);
+                    _typeCompareCategoryIndex = DrawListSelector(
+                        "Reference Category",
+                        _typeCompareCategoryIndex,
+                        categoryProfiles.Select(profile => profile.DisplayName).ToArray());
+                }
             }
         }
 
@@ -3255,8 +3290,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     {
         GUILayout.BeginHorizontal(GUI.skin.box);
         GUILayout.Label(label, GUILayout.Width(220f));
-        GUILayout.Label($"Original: {originalValue}", GUILayout.Width(280f));
-        GUILayout.Label($"New: {newValue}");
+        GUILayout.Label($"Reference: {originalValue}", GUILayout.Width(280f));
+        GUILayout.Label($"Current: {newValue}");
         GUILayout.EndHorizontal();
     }
 
@@ -3386,14 +3421,34 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawTypePerformanceComparisonRows(sourceDesign.CatalogItem.Aircraft, _aircraftPreview);
         }
 
+        if (!_typeCompareEnabled)
+        {
+            return;
+        }
+
+        if (_typeCompareTarget == TypeCompareTarget.MarketCategory)
+        {
+            if (!TryGetSelectedTypeCompareCategoryProfile(out var categoryProfile))
+            {
+                DrawError("Selected market category is unavailable.");
+                return;
+            }
+
+            DrawSection("Compared Market Category");
+            GUILayout.Label($"Reference: {categoryProfile.DisplayName} ({FormatUiInteger(_currentDate.Year)})");
+            DrawTypeCategoryComparisonRows(categoryProfile, _aircraftPreview);
+            return;
+        }
+
         if (_typeCompareReferenceIndex < 0 || _typeCompareReferenceIndex >= _savedAircraftDesigns.Count)
         {
+            DrawError("Selected saved type is unavailable for comparison.");
             return;
         }
 
         var reference = _savedAircraftDesigns[_typeCompareReferenceIndex];
         var referenceAircraft = reference.CatalogItem.Aircraft;
-        DrawSection("Compared Version (Selected)");
+        DrawSection("Compared Saved Type");
         GUILayout.Label($"Reference: {reference.Name}");
         DrawTypeParameterComparisonRows(
             referenceAircraft.Airframe.Parameters,
@@ -3406,6 +3461,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 _aircraftPreview.Engine.Definition.EngineType,
                 _aircraftPreview.Engine.Parameters));
         DrawTypePerformanceComparisonRows(referenceAircraft, _aircraftPreview);
+    }
+
+    private bool TryGetSelectedTypeCompareCategoryProfile(out AircraftCategoryProfile profile)
+    {
+        var categories = GetUnlockedAircraftCategoriesForCurrentState();
+        if (categories.Count == 0)
+        {
+            profile = null!;
+            return false;
+        }
+
+        _typeCompareCategoryIndex = Mathf.Clamp(_typeCompareCategoryIndex, 0, categories.Count - 1);
+        profile = AircraftCategoryCatalog.GetProfileForYear(
+            categories[_typeCompareCategoryIndex],
+            _currentDate.Year);
+        return true;
     }
 
     private static void DrawEngineParameterComparisonRows(
@@ -3577,6 +3648,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private static void DrawTypePerformanceComparisonRows(Aircraft originalAircraft, Aircraft newAircraft)
     {
+        DrawVersionComparisonRow(
+            "Construction Standard",
+            originalAircraft.FamilyDefinition.ConstructionStandard.ToString(),
+            newAircraft.FamilyDefinition.ConstructionStandard.ToString());
+        DrawVersionComparisonRow(
+            "Navigation Equipment",
+            originalAircraft.TypeDefinition.NavigationEquipment.ToString(),
+            newAircraft.TypeDefinition.NavigationEquipment.ToString());
+        DrawVersionComparisonRow(
+            "Role Module",
+            FormatAircraftRoleModule(originalAircraft),
+            FormatAircraftRoleModule(newAircraft));
+
         var altitudes = originalAircraft.Performance.MaxSpeedByAltitude
             .Select(entry => entry.AltitudeMeters)
             .Concat(newAircraft.Performance.MaxSpeedByAltitude.Select(entry => entry.AltitudeMeters))
@@ -3624,6 +3708,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             FormatUiNumber(originalAircraft.Performance.RangeKilometers, "0.0"),
             FormatUiNumber(newAircraft.Performance.RangeKilometers, "0.0"));
         DrawVersionComparisonRow(
+            "Certified Range (km)",
+            FormatUiNumber(
+                AircraftNavigationRangePolicy.GetCertifiedRangeKilometers(
+                    originalAircraft.TypeDefinition.NavigationEquipment,
+                    originalAircraft.Performance.RangeKilometers),
+                "0.0"),
+            FormatUiNumber(
+                AircraftNavigationRangePolicy.GetCertifiedRangeKilometers(
+                    newAircraft.TypeDefinition.NavigationEquipment,
+                    newAircraft.Performance.RangeKilometers),
+                "0.0"));
+        DrawVersionComparisonRow(
             "Optimal Cruise Speed (km/h)",
             FormatUiNumber(originalAircraft.Performance.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0"),
             FormatUiNumber(newAircraft.Performance.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0"));
@@ -3635,6 +3731,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "Useful Weight (kg)",
             FormatUiNumber(originalAircraft.Performance.PayloadCapacity.Kilograms, "0.0"),
             FormatUiNumber(newAircraft.Performance.PayloadCapacity.Kilograms, "0.0"));
+        DrawVersionComparisonRow(
+            "Passengers",
+            originalAircraft.TypeDefinition.HasPassengerCabin
+                ? FormatUiInteger(originalAircraft.Performance.PassengerCapacity)
+                : "No passenger cabin",
+            newAircraft.TypeDefinition.HasPassengerCabin
+                ? FormatUiInteger(newAircraft.Performance.PassengerCapacity)
+                : "No passenger cabin");
         DrawVersionComparisonRow(
             "Maximum Takeoff Weight (kg)",
             FormatUiNumber(originalAircraft.Performance.MaximumTakeoffWeightKilograms, "0.0"),
@@ -3652,6 +3756,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             FormatUiNumber(originalAircraft.Performance.OverallReliability, "0.000"),
             FormatUiNumber(newAircraft.Performance.OverallReliability, "0.000"));
         DrawVersionComparisonRow(
+            "Drag Coefficient (Cd)",
+            FormatUiNumber(originalAircraft.Airframe.Performance.DragCoefficient, "0.000"),
+            FormatUiNumber(newAircraft.Airframe.Performance.DragCoefficient, "0.000"));
+        DrawVersionComparisonRow(
+            "Maneuverability",
+            FormatUiNumber(originalAircraft.Airframe.Performance.Maneuverability, "0.0"),
+            FormatUiNumber(newAircraft.Airframe.Performance.Maneuverability, "0.0"));
+        DrawVersionComparisonRow(
+            "Runway Length (m)",
+            FormatUiNumber(GetRunwayLengthMeters(originalAircraft.Airframe.Parameters.RunwayType), "0"),
+            FormatUiNumber(GetRunwayLengthMeters(newAircraft.Airframe.Parameters.RunwayType), "0"));
+        DrawVersionComparisonRow(
             "Production Cost",
             FormatUiNumber(originalAircraft.Performance.TotalProductionCost, "0"),
             FormatUiNumber(newAircraft.Performance.TotalProductionCost, "0"));
@@ -3660,6 +3776,128 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             FormatUiNumber(originalAircraft.Performance.TotalProductionManDays, "0.0"),
             FormatUiNumber(newAircraft.Performance.TotalProductionManDays, "0.0"));
     }
+
+    private static string FormatAircraftRoleModule(Aircraft aircraft) =>
+        ResolveRoleModuleSelection(
+            aircraft.TypeDefinition.HasPassengerCabin,
+            aircraft.TypeDefinition.HasCargoSpace,
+            aircraft.TypeDefinition.HasSpecialEquipment,
+            aircraft.TypeDefinition.HasCombatEquipment).ToString();
+
+    private void DrawTypeCategoryComparisonRows(AircraftCategoryProfile profile, Aircraft currentAircraft)
+    {
+        var currentSpeed = TryGetAircraftMaxSpeedAtAltitude(currentAircraft, 0d, out var speedMetersPerSecond)
+            ? $"{FormatUiNumber(speedMetersPerSecond * 3.6d, "0.0")} km/h"
+            : "N/A";
+        var certifiedRange = AircraftNavigationRangePolicy.GetCertifiedRangeKilometers(
+            currentAircraft.TypeDefinition.NavigationEquipment,
+            currentAircraft.Performance.RangeKilometers);
+        var roleModule = ResolveRoleModuleSelection(
+            currentAircraft.TypeDefinition.HasPassengerCabin,
+            currentAircraft.TypeDefinition.HasCargoSpace,
+            currentAircraft.TypeDefinition.HasSpecialEquipment,
+            currentAircraft.TypeDefinition.HasCombatEquipment);
+        var allowedRunways = ContractBalance.ResolveAllowedRunwayLengthMeters(profile.Category);
+        var categoryCompliance = _categoryComplianceEvaluator.Evaluate(currentAircraft, profile);
+
+        DrawReferenceComparisonRow("Category", "Requirement", profile.DisplayName, "Current", FormatQualifiedCategorySummary(currentAircraft));
+        DrawReferenceComparisonRow(
+            "Qualification",
+            "Requirement",
+            "All category requirements",
+            "Current",
+            categoryCompliance.IsCompliant ? "QUALIFIES" : "DOES NOT QUALIFY");
+        DrawReferenceComparisonRow(
+            "Construction Standard",
+            "Requirement",
+            AircraftCategoryRequirementBalance.GetConstructionDescription(profile.Category),
+            "Current",
+            currentAircraft.FamilyDefinition.ConstructionStandard.ToString());
+        DrawReferenceComparisonRow(
+            "Role Module",
+            "Requirement",
+            AircraftCategoryRequirementBalance.GetRoleDescription(profile.Category),
+            "Current",
+            roleModule.ToString());
+        DrawReferenceComparisonRow(
+            "Crew Members",
+            "Category",
+            FormatComparisonRange(profile.MinCrew, profile.MaxCrew),
+            "Current",
+            FormatUiInteger(currentAircraft.Airframe.Parameters.CrewCount));
+        DrawReferenceComparisonRow(
+            "Maximum Weight (kg)",
+            "Category",
+            FormatComparisonRange(profile.MinMaximumWeightKilograms, profile.MaxMaximumWeightKilograms, "0.0"),
+            "Current",
+            FormatUiNumber(currentAircraft.Performance.TotalWeight.Kilograms, "0.0"));
+        DrawReferenceComparisonRow(
+            "Max Speed @0m (km/h)",
+            "Category",
+            FormatComparisonRange(profile.MinRequiredSpeedKilometersPerHour, profile.MaxRequiredSpeedKilometersPerHour, "0.0"),
+            "Current",
+            currentSpeed);
+        DrawReferenceComparisonRow(
+            "Certified Range (km)",
+            "Category",
+            FormatComparisonRange(profile.MinRequiredRangeKilometers, profile.MaxRequiredRangeKilometers, "0.0"),
+            "Current",
+            FormatUiNumber(certifiedRange, "0.0"));
+        DrawReferenceComparisonRow(
+            "Useful Weight (kg)",
+            "Category",
+            FormatComparisonRange(profile.MinRequiredPayloadKilograms, profile.MaxRequiredPayloadKilograms, "0.0"),
+            "Current",
+            FormatUiNumber(currentAircraft.Performance.PayloadCapacity.Kilograms, "0.0"));
+        DrawReferenceComparisonRow(
+            "Maneuverability",
+            "Category",
+            FormatComparisonRange(profile.MinRequiredManeuverability, profile.MaxRequiredManeuverability, "0.0"),
+            "Current",
+            FormatUiNumber(currentAircraft.Airframe.Performance.Maneuverability, "0.0"));
+        DrawReferenceComparisonRow(
+            "Runway Length (m)",
+            "Category",
+            string.Join(" / ", allowedRunways.Select(value => FormatUiNumber(value, "0"))),
+            "Current",
+            FormatUiNumber(GetRunwayLengthMeters(currentAircraft.Airframe.Parameters.RunwayType), "0"));
+
+        if (profile.HasPassengerCapacityRequirement)
+        {
+            DrawReferenceComparisonRow(
+                "Passengers",
+                "Category",
+                FormatComparisonRange(profile.GetMinimumPassengerCapacity(), profile.GetMaximumPassengerCapacity()),
+                "Current",
+                currentAircraft.TypeDefinition.HasPassengerCabin
+                    ? FormatUiInteger(currentAircraft.Performance.PassengerCapacity)
+                    : "No passenger cabin");
+        }
+    }
+
+    private static void DrawReferenceComparisonRow(
+        string label,
+        string referenceLabel,
+        string referenceValue,
+        string currentLabel,
+        string currentValue)
+    {
+        GUILayout.BeginHorizontal(GUI.skin.box);
+        GUILayout.Label(label, GUILayout.Width(220f));
+        GUILayout.Label($"{referenceLabel}: {referenceValue}", GUILayout.Width(320f));
+        GUILayout.Label($"{currentLabel}: {currentValue}");
+        GUILayout.EndHorizontal();
+    }
+
+    private static string FormatComparisonRange(int minimum, int maximum) =>
+        minimum == maximum
+            ? FormatUiInteger(minimum)
+            : $"{FormatUiInteger(minimum)} - {FormatUiInteger(maximum)}";
+
+    private static string FormatComparisonRange(double minimum, double maximum, string format) =>
+        System.Math.Abs(maximum - minimum) <= 0.000001d
+            ? FormatUiNumber(minimum, format)
+            : $"{FormatUiNumber(minimum, format)} - {FormatUiNumber(maximum, format)}";
 
     private static bool TryGetAircraftMaxSpeedAtAltitude(
         Aircraft aircraft,
@@ -7400,15 +7638,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void ToggleTypeCompareMode()
     {
-        if (_typeCompareReferenceIndex >= 0)
+        if (_typeCompareEnabled)
         {
-            _typeCompareReferenceIndex = -1;
+            _typeCompareEnabled = false;
             return;
         }
 
+        _typeCompareEnabled = true;
         if (_savedAircraftDesigns.Count == 0)
         {
             _typeCompareReferenceIndex = -1;
+            _typeCompareTarget = TypeCompareTarget.MarketCategory;
             return;
         }
 
@@ -14561,6 +14801,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public LegacyVector2State? Position { get; set; }
 
         public LegacyVector2State? Size { get; set; }
+    }
+
+    private enum TypeCompareTarget
+    {
+        SavedType = 0,
+        MarketCategory = 1,
     }
 
     private sealed class DemandNotebookStateEntry
