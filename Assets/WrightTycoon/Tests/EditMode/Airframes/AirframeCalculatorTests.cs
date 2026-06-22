@@ -10,6 +10,24 @@ namespace WrightTycoon.Core.Tests.Airframes;
 public sealed class AirframeCalculatorTests
 {
     [Test]
+    public void PrecisionEngineering_ReducesAirframeWeightAndDragButLowersReliability()
+    {
+        var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
+        var definition = CreateDefinition();
+        var baseline = CreateParameters();
+        baseline.PrecisionEngineeringLevel = 0;
+        var precise = baseline.Clone();
+        precise.PrecisionEngineeringLevel = 10;
+
+        var baselineReport = calculator.Calculate(definition, baseline);
+        var preciseReport = calculator.Calculate(definition, precise);
+
+        Assert.That(preciseReport.TotalWeight.Kilograms, Is.LessThan(baselineReport.TotalWeight.Kilograms));
+        Assert.That(preciseReport.DragCoefficient, Is.LessThan(baselineReport.DragCoefficient));
+        Assert.That(preciseReport.ReliabilityModifier, Is.LessThan(baselineReport.ReliabilityModifier));
+    }
+
+    [Test]
     public void LargerWingArea_IncreasesReferenceLiftAndDrag()
     {
         var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());

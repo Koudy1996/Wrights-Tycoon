@@ -89,6 +89,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
             ? parameters.WingAreaSquareMeters / definition.ReferenceWingAreaSquareMeters
             : 1d;
         var aspectRatioEffects = ResolveAspectRatioEffects(parameters.WingAspectRatio);
+        var precisionEffects = PrecisionEngineeringBalance.GetEffects(parameters.PrecisionEngineeringLevel);
 
         var structuralAreaScale = Numeric.Clamp(
             System.Math.Pow(
@@ -126,16 +127,17 @@ public sealed class AirframeCalculator : IAirframeCalculator
             _ => PlaneDesignerBalance.Airframe.WingPositionMassFactorLow,
         };
 
-        var preMaterialWeightKg = (structuralMass
-                                   + wingMass
-                                   + wingReinforcementMass
-                                   + wingSystemsMass
+        var precisionEligibleMass = structuralMass
+            + wingMass
+            + wingReinforcementMass
+            + wingSystemsMass
+            + fuelTankAndSystemMass
+            + fuelLoadSupportMass
+            + installationMass
+            + systemsMass;
+        var preMaterialWeightKg = ((precisionEligibleMass * precisionEffects.WeightMultiplier)
                                    + fuelMass
-                                   + fuelTankAndSystemMass
-                                   + fuelLoadSupportMass
-                                   + crewMass
-                                   + installationMass
-                                   + systemsMass)
+                                   + crewMass)
                                   * structureWeightFactor
                                   * wingPositionMassFactor;
         var materialWeightFactor = ResolveMaterialWeightFactor(parameters.MaterialType, preMaterialWeightKg);
@@ -314,6 +316,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
         dragCoefficient *= aspectRatioEffects.DragMultiplier;
         dragCoefficient *= constructionStandardEffects.DragMultiplier;
         dragCoefficient *= aerodynamicCleanlinessDragFactor;
+        dragCoefficient *= precisionEffects.DragMultiplier;
         if (parameters.HasBackupSystems)
         {
             dragCoefficient *= PlaneDesignerBalance.Airframe.BackupSystemsDragMultiplier;
@@ -469,6 +472,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
         }
 
         reliabilityModifier += constructionStandardEffects.ReliabilityDelta;
+        reliabilityModifier *= precisionEffects.ReliabilityMultiplier;
         reliabilityModifier = Numeric.Clamp(reliabilityModifier, 0.65d, 1.2d);
 
         var seaLevelDensity = _atmosphereModel.GetDensityAtAltitude(0d);

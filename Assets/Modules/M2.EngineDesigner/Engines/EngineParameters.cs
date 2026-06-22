@@ -26,6 +26,8 @@ public sealed class EngineParameters
 
     public double CoolingEfficiency { get; set; } = 0.75d;
 
+    public int PrecisionEngineeringLevel { get; set; }
+
     public double EfficiencyOptimizationsPercent { get; set; }
 
     public bool HasAfterburner { get; set; }
@@ -43,6 +45,7 @@ public sealed class EngineParameters
             BypassRatio = BypassRatio,
             MaximumSpeed = MaximumSpeed,
             CoolingEfficiency = CoolingEfficiency,
+            PrecisionEngineeringLevel = PrecisionEngineeringLevel,
             EfficiencyOptimizationsPercent = EfficiencyOptimizationsPercent,
             HasAfterburner = HasAfterburner,
         };
@@ -69,6 +72,14 @@ public sealed class EngineParameters
         if (!Numeric.AlmostEqual(cooling, CoolingEfficiency))
         {
             throw new System.ArgumentOutOfRangeException(nameof(CoolingEfficiency), "Cooling efficiency must be within [0, 1].");
+        }
+
+        if (PrecisionEngineeringLevel < PrecisionEngineeringBalance.MinimumLevel
+            || PrecisionEngineeringLevel > PrecisionEngineeringBalance.MaximumLevel)
+        {
+            throw new System.ArgumentOutOfRangeException(
+                nameof(PrecisionEngineeringLevel),
+                $"Precision engineering level must be within [{PrecisionEngineeringBalance.MinimumLevel}, {PrecisionEngineeringBalance.MaximumLevel}].");
         }
 
         var optimization = Numeric.Clamp(

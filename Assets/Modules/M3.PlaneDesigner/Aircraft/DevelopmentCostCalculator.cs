@@ -48,10 +48,12 @@ public sealed class DevelopmentCostCalculator
         AddNumericChange(baseEngine.TurbineDiameterMeters, variantEngine.TurbineDiameterMeters, 2.5d, ref changedCount, ref magnitude);
         AddNumericChange(baseEngine.BypassRatio, variantEngine.BypassRatio, 12d, ref changedCount, ref magnitude);
         AddNumericChange(baseEngine.CoolingEfficiency, variantEngine.CoolingEfficiency, 1d, ref changedCount, ref magnitude);
+        AddNumericChange(baseEngine.PrecisionEngineeringLevel, variantEngine.PrecisionEngineeringLevel, 10d, ref changedCount, ref magnitude);
         AddEnumChange(baseEngine.BoostType, variantEngine.BoostType, 1.1d, ref changedCount, ref magnitude);
 
         AddNumericChange(baseAirframe.WingAreaSquareMeters, variantAirframe.WingAreaSquareMeters, 70d, ref changedCount, ref magnitude);
         AddNumericChange(baseAirframe.FuelAmountLiters, variantAirframe.FuelAmountLiters, 2500d, ref changedCount, ref magnitude);
+        AddNumericChange(baseAirframe.PrecisionEngineeringLevel, variantAirframe.PrecisionEngineeringLevel, 10d, ref changedCount, ref magnitude);
         AddNumericChange(
             baseAirframe.PayloadLimitKilograms ?? 0d,
             variantAirframe.PayloadLimitKilograms ?? 0d,

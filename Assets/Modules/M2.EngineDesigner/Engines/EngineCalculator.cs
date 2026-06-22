@@ -60,6 +60,7 @@ public sealed class EngineCalculator : IEngineCalculator
         ValidateContextualInputs(definition.EngineType, parameters);
         var effectiveParameters = NormalizeParametersForEngineType(definition.EngineType, parameters);
         var effectiveTechnologyModifiers = HistoricalCampaignTechnologyModifiers.Sanitize(technologyModifiers);
+        var precisionEffects = PrecisionEngineeringBalance.GetEffects(effectiveParameters.PrecisionEngineeringLevel);
 
         var isJet = IsJetFamily(definition.EngineType);
         var outputKind = isJet ? EngineOutputKind.ThrustNewtons : EngineOutputKind.PowerKilowatts;
@@ -70,6 +71,8 @@ public sealed class EngineCalculator : IEngineCalculator
             ? effectiveTechnologyModifiers.EnginePerformanceMultiplier
             : effectiveTechnologyModifiers.PistonEnginePerformanceMultiplier;
         baseSeaLevelOutput *= enginePerformanceMultiplier;
+        var fuelReferenceSeaLevelOutput = baseSeaLevelOutput;
+        baseSeaLevelOutput *= precisionEffects.OutputMultiplier;
         var seaLevelOutput = ApplyJetAfterburnerOutputFactor(baseSeaLevelOutput, outputKind, effectiveParameters);
 
         var altitudePerformance = BuildAltitudePerformance(
@@ -78,13 +81,27 @@ public sealed class EngineCalculator : IEngineCalculator
             atmosphereModel,
             outputKind,
             seaLevelOutput,
-            baseSeaLevelOutput,
+            fuelReferenceSeaLevelOutput,
             effectiveTechnologyModifiers);
 
-        var reliability = CalculateReliability(definition, effectiveParameters);
-        var weight = CalculateWeight(definition, effectiveParameters, seaLevelOutput, outputKind);
-        var costBreakdown = CalculateCostBreakdown(definition, effectiveParameters, seaLevelOutput, outputKind, weight);
-        var productionManDaysBreakdown = CalculateProductionManDaysBreakdown(definition, effectiveParameters, weight);
+        var reliability = Numeric.Clamp(
+            CalculateReliability(definition, effectiveParameters) * precisionEffects.ReliabilityMultiplier,
+            MinimumReliability,
+            MaximumReliability);
+        var unadjustedWeight = CalculateWeight(definition, effectiveParameters, seaLevelOutput, outputKind);
+        var weight = Mass.FromKilograms(unadjustedWeight.Kilograms * precisionEffects.WeightMultiplier);
+        var costBreakdown = CalculateCostBreakdown(
+            definition,
+            effectiveParameters,
+            seaLevelOutput,
+            outputKind,
+            weight,
+            precisionEffects);
+        var productionManDaysBreakdown = CalculateProductionManDaysBreakdown(
+            definition,
+            effectiveParameters,
+            weight,
+            precisionEffects);
         var cost = costBreakdown.Total;
         var productionMd = productionManDaysBreakdown.Total;
         var engineCoreDiameterMeters = CalculateEngineCoreDiameterMeters(definition.EngineType, effectiveParameters);
@@ -493,7 +510,8 @@ public sealed class EngineCalculator : IEngineCalculator
         EngineParameters parameters,
         double seaLevelOutput,
         EngineOutputKind outputKind,
-        Mass weight)
+        Mass weight,
+        PrecisionEngineeringEffects precisionEffects)
     {
         var normalizedOutput = outputKind == EngineOutputKind.PowerKilowatts
             ? seaLevelOutput
@@ -538,6 +556,12 @@ public sealed class EngineCalculator : IEngineCalculator
                 EngineDesignerBalance.Engine.JetAfterburnerCostMultiplier);
         }
 
+        AddMultiplierAdjustment(
+            items,
+            $"Precision engineering (level {precisionEffects.Level})",
+            ref totalCost,
+            precisionEffects.ProductionCostMultiplier);
+
         AddMinimumAdjustment(items, "Minimum engine cost", ref totalCost, definition.BaseCost * 0.2d);
         return new ProductionBreakdown(items);
     }
@@ -545,7 +569,8 @@ public sealed class EngineCalculator : IEngineCalculator
     private static ProductionBreakdown CalculateProductionManDaysBreakdown(
         EngineDefinition definition,
         EngineParameters parameters,
-        Mass weight)
+        Mass weight,
+        PrecisionEngineeringEffects precisionEffects)
     {
         var isJet = IsJetFamily(definition.EngineType);
         var boostMd = parameters.BoostType switch
@@ -584,6 +609,12 @@ public sealed class EngineCalculator : IEngineCalculator
                 ref productionManDays,
                 EngineDesignerBalance.Engine.JetAfterburnerProductionManDaysMultiplier);
         }
+
+        AddMultiplierAdjustment(
+            items,
+            $"Precision engineering (level {precisionEffects.Level})",
+            ref productionManDays,
+            precisionEffects.ProductionManDaysMultiplier);
 
         AddMinimumAdjustment(
             items,

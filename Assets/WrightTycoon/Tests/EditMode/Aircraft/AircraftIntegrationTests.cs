@@ -19,6 +19,45 @@ namespace WrightTycoon.Core.Tests.Aircraft;
 public sealed class AircraftIntegrationTests
 {
     [Test]
+    public void AirframePrecisionEngineering_RaisesWholeAircraftProductionAndTypeDevelopmentBurden()
+    {
+        var factory = CreateFactory();
+        var family = CreateFamily("fam.precision", 2, AircraftCategory.MediumTransportNarrowBody);
+        var baselineType = new AircraftTypeDefinition
+        {
+            Id = "type.precision.base",
+            FamilyId = family.Id,
+            DisplayName = "Baseline Precision",
+            AirframeDelta = new AirframeParameterDelta { PrecisionEngineeringLevelOverride = 0 },
+        };
+        var preciseType = new AircraftTypeDefinition
+        {
+            Id = "type.precision.high",
+            FamilyId = family.Id,
+            DisplayName = "High Precision",
+            AirframeDelta = new AirframeParameterDelta { PrecisionEngineeringLevelOverride = 10 },
+        };
+
+        var baseline = factory.CreateAircraft(family, baselineType);
+        var precise = factory.CreateAircraft(family, preciseType);
+
+        Assert.That(
+            precise.Performance.TotalProductionCost / baseline.Performance.TotalProductionCost,
+            Is.EqualTo(1.15d).Within(0.000001d));
+        Assert.That(
+            precise.Performance.TotalProductionManDays / baseline.Performance.TotalProductionManDays,
+            Is.EqualTo(1.15d).Within(0.000001d));
+        Assert.That(precise.Performance.TotalWeight.Kilograms, Is.LessThan(baseline.Performance.TotalWeight.Kilograms));
+        Assert.That(precise.Performance.OverallReliability, Is.LessThan(baseline.Performance.OverallReliability));
+
+        var researchCalculator = new ResearchCalculator();
+        var baselineQuote = researchCalculator.CalculateTypeQuote(baseline);
+        var preciseQuote = researchCalculator.CalculateTypeQuote(precise);
+        Assert.That(preciseQuote.ResearchCost, Is.GreaterThan(baselineQuote.ResearchCost));
+        Assert.That(preciseQuote.ResearchTimeMonths, Is.GreaterThan(baselineQuote.ResearchTimeMonths));
+    }
+
+    [Test]
     public void SpeedWeightFactorCurve_IsContinuousAroundFormerThresholds()
     {
         var factorAt99 = EvaluateSpeedWeightFactor(99d);

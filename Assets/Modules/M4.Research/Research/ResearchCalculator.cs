@@ -35,7 +35,10 @@ public sealed class ResearchCalculator
         var months = RoundToInt(Lerp(ResearchBalance.Engine.TimeMonthsMin, ResearchBalance.Engine.TimeMonthsMax, complexity));
         var cost = RoundCurrency(engine.Performance.Cost * multiplier);
         var baseQuote = new ResearchQuote(cost, months, complexity);
-        return ApplyResearchModifierEffects(baseQuote, modifierPoints);
+        var modifiedQuote = ApplyResearchModifierEffects(baseQuote, modifierPoints);
+        return ApplyPrecisionEngineeringDevelopmentEffects(
+            modifiedQuote,
+            engine.Parameters.PrecisionEngineeringLevel);
     }
 
     public ResearchQuote CalculateFamilyQuote(AircraftModel aircraft, TypeResearchModifierPoints? modifierPoints = null)
@@ -47,7 +50,10 @@ public sealed class ResearchCalculator
 
         var cost = RoundCurrency(aircraft.Performance.TotalProductionCost * ResearchBalance.Family.CostMultiplier);
         var baseQuote = new ResearchQuote(cost, ResearchBalance.Family.TimeMonths, ResearchBalance.Family.ComplexityReference);
-        return ApplyResearchModifierEffects(baseQuote, modifierPoints);
+        var modifiedQuote = ApplyResearchModifierEffects(baseQuote, modifierPoints);
+        return ApplyPrecisionEngineeringDevelopmentEffects(
+            modifiedQuote,
+            aircraft.Airframe.Parameters.PrecisionEngineeringLevel);
     }
 
     public ResearchQuote CalculateTypeQuote(AircraftModel aircraft, TypeResearchModifierPoints? modifierPoints = null)
@@ -91,7 +97,18 @@ public sealed class ResearchCalculator
         var baseCost = RoundCurrency(aircraft.Performance.TotalProductionCost * baseMultiplier);
         var baseQuote = new ResearchQuote(baseCost, baseMonths, complexity);
         var effectiveModifierPoints = modifierPoints ?? aircraft.TypeDefinition.ResearchModifiers;
-        return ApplyResearchModifierEffects(baseQuote, effectiveModifierPoints);
+        var modifiedQuote = ApplyResearchModifierEffects(baseQuote, effectiveModifierPoints);
+        return ApplyPrecisionEngineeringDevelopmentEffects(
+            modifiedQuote,
+            aircraft.Airframe.Parameters.PrecisionEngineeringLevel);
+    }
+
+    private static ResearchQuote ApplyPrecisionEngineeringDevelopmentEffects(ResearchQuote quote, int level)
+    {
+        var effects = PrecisionEngineeringBalance.GetEffects(level);
+        var cost = RoundCurrency(quote.ResearchCost * effects.DevelopmentCostMultiplier);
+        var months = System.Math.Max(1, RoundToInt(quote.ResearchTimeMonths * effects.DevelopmentTimeMultiplier));
+        return new ResearchQuote(cost, months, quote.ComplexityNormalized);
     }
 
     private static ResearchQuote ApplyResearchModifierEffects(ResearchQuote baseQuote, TypeResearchModifierPoints? modifierPoints)

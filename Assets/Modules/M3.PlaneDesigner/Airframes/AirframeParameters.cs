@@ -39,6 +39,8 @@ public sealed class AirframeParameters
 
     public double FuelAmountLiters { get; set; } = 800d;
 
+    public int PrecisionEngineeringLevel { get; set; }
+
     public double? PayloadLimitKilograms { get; set; }
 
     public int CrewCount { get; set; } = 2;
@@ -66,6 +68,7 @@ public sealed class AirframeParameters
             LandingGearType = LandingGearType,
             EngineCowling = EngineCowling,
             FuelAmountLiters = FuelAmountLiters,
+            PrecisionEngineeringLevel = PrecisionEngineeringLevel,
             PayloadLimitKilograms = PayloadLimitKilograms,
             CrewCount = CrewCount,
             AerodynamicCleanlinessPercent = AerodynamicCleanlinessPercent,
@@ -98,6 +101,14 @@ public sealed class AirframeParameters
             throw new ArgumentOutOfRangeException(
                 nameof(FuelAmountLiters),
                 $"Fuel amount must be within [{PlaneDesignerBalance.Airframe.FuelMinLiters}, {PlaneDesignerBalance.Airframe.FuelMaxLiters}] liters.");
+        }
+
+        if (PrecisionEngineeringLevel < PrecisionEngineeringBalance.MinimumLevel
+            || PrecisionEngineeringLevel > PrecisionEngineeringBalance.MaximumLevel)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(PrecisionEngineeringLevel),
+                $"Precision engineering level must be within [{PrecisionEngineeringBalance.MinimumLevel}, {PrecisionEngineeringBalance.MaximumLevel}].");
         }
 
         if (PayloadLimitKilograms.HasValue && PayloadLimitKilograms.Value < 0d)

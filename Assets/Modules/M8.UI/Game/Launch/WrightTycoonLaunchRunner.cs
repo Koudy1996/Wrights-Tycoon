@@ -177,6 +177,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private double _typeCowling = 0.55d;
     private double _typeAerodynamicCleanlinessPercent;
     private double _typeFuelLiters = 1500d;
+    private int _typePrecisionEngineeringLevel;
     private AircraftNavigationEquipment _typeNavigationEquipment = AircraftNavigationEquipment.None;
     private bool _typeHasPassengerCabin;
     private bool _typeHasCargoSpace;
@@ -1671,6 +1672,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             TypeCowling = _typeCowling,
             TypeAerodynamicCleanlinessPercent = _typeAerodynamicCleanlinessPercent,
             TypeFuelLiters = _typeFuelLiters,
+            TypePrecisionEngineeringLevel = _typePrecisionEngineeringLevel,
             TypeNavigationEquipment = _typeNavigationEquipment,
             TypeHasPassengerCabin = _typeHasPassengerCabin,
             TypeHasCargoSpace = _typeHasCargoSpace,
@@ -1918,6 +1920,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeCowling = Mathf.Clamp((float)data.TypeCowling, 0.1f, 0.9f);
         _typeAerodynamicCleanlinessPercent = Mathf.Clamp((float)data.TypeAerodynamicCleanlinessPercent, (float)PlaneDesignerBalance.Airframe.AerodynamicCleanlinessMinPercent, (float)PlaneDesignerBalance.Airframe.AerodynamicCleanlinessMaxPercent);
         _typeFuelLiters = Mathf.Clamp((float)data.TypeFuelLiters, (float)PlaneDesignerBalance.Airframe.FuelMinLiters, (float)PlaneDesignerBalance.Airframe.FuelMaxLiters);
+        _typePrecisionEngineeringLevel = Mathf.Clamp(
+            data.TypePrecisionEngineeringLevel,
+            PrecisionEngineeringBalance.MinimumLevel,
+            PrecisionEngineeringBalance.MaximumLevel);
         _typeNavigationEquipment = Enum.IsDefined(typeof(AircraftNavigationEquipment), data.TypeNavigationEquipment)
             ? data.TypeNavigationEquipment
             : ResolveDefaultTypeRoleConfiguration(_selectedAircraftCategory).NavigationEquipment;
@@ -2461,6 +2467,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             1d,
             "0.00",
             useLinearScale: true);
+        _engineParameters.PrecisionEngineeringLevel = DrawIntSlider(
+            "Precision Engineering",
+            _engineParameters.PrecisionEngineeringLevel,
+            PrecisionEngineeringBalance.MinimumLevel,
+            PrecisionEngineeringBalance.MaximumLevel,
+            useLinearScale: true);
+        DrawPrecisionEngineeringEffects(_engineParameters.PrecisionEngineeringLevel, isEngine: true);
 
         RebuildEnginePreview();
 
@@ -3015,6 +3028,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             PlaneDesignerBalance.Airframe.FuelMinLiters,
             PlaneDesignerBalance.Airframe.FuelMaxLiters,
             "0");
+        _typePrecisionEngineeringLevel = DrawIntSlider(
+            "Precision Engineering",
+            _typePrecisionEngineeringLevel,
+            PrecisionEngineeringBalance.MinimumLevel,
+            PrecisionEngineeringBalance.MaximumLevel,
+            useLinearScale: true);
+        DrawPrecisionEngineeringEffects(_typePrecisionEngineeringLevel, isEngine: false);
         if (isTypeVersionDevelopment)
         {
             DrawTypeVersionComparison(activeTypeVersionDevelopment!);
@@ -3520,6 +3540,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "Cooling Efficiency",
             FormatUiNumber(originalParameters.CoolingEfficiency, "0.00"),
             FormatUiNumber(newParameters.CoolingEfficiency, "0.00"));
+        DrawVersionComparisonRow(
+            "Precision Engineering",
+            FormatUiInteger(originalParameters.PrecisionEngineeringLevel),
+            FormatUiInteger(newParameters.PrecisionEngineeringLevel));
     }
 
     private static void DrawEnginePerformanceComparisonRows(Engine originalEngine, Engine newEngine)
@@ -3650,6 +3674,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "Fuel (L)",
             FormatUiNumber(originalAirframe.FuelAmountLiters, "0"),
             FormatUiNumber(newAirframe.FuelAmountLiters, "0"));
+        DrawVersionComparisonRow(
+            "Precision Engineering",
+            FormatUiInteger(originalAirframe.PrecisionEngineeringLevel),
+            FormatUiInteger(newAirframe.PrecisionEngineeringLevel));
         DrawVersionComparisonRow(
             "Payload Limit (kg)",
             originalAirframe.PayloadLimitKilograms.HasValue
@@ -7518,6 +7546,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawParameterValueRow("Compression Ratio", FormatUiNumber(selected.Parameters.CompressionRatio, "0.00"));
         DrawParameterValueRow("Maximum Speed (RPM)", FormatUiNumber(selected.Parameters.MaximumSpeed, "0"));
         DrawParameterValueRow("Cooling Efficiency", FormatUiNumber(selected.Parameters.CoolingEfficiency, "0.00"));
+        DrawParameterValueRow("Precision Engineering", FormatUiInteger(selected.Parameters.PrecisionEngineeringLevel));
 
         try
         {
@@ -7646,6 +7675,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawParameterValueRow("Cowling", FormatUiNumber(aircraft.Airframe.Parameters.EngineCowling, "0.00"));
         DrawParameterValueRow("Aerodynamic Cleanliness (%)", FormatUiNumber(aircraft.Airframe.Parameters.AerodynamicCleanlinessPercent, "0.0"));
         DrawParameterValueRow("Fuel (L)", FormatUiNumber(aircraft.Airframe.Parameters.FuelAmountLiters, "0"));
+        DrawParameterValueRow("Precision Engineering", FormatUiInteger(aircraft.Airframe.Parameters.PrecisionEngineeringLevel));
 
         DrawParameterValueRow("Range (km)", FormatUiNumber(aircraft.Performance.RangeKilometers, "0.0"));
         DrawParameterValueRow("Cruise Speed (km/h)", FormatUiNumber(aircraft.Performance.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0"));
@@ -8026,6 +8056,10 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             PlaneDesignerBalance.Airframe.CrewMax);
         _typeWingAreaSquareMeters = ClampTypeWingArea(baseAirframe.WingAreaSquareMeters + typeDelta.WingAreaSquareMetersDelta);
         _typeFuelLiters = baseAirframe.FuelAmountLiters + typeDelta.FuelAmountLitersDelta;
+        _typePrecisionEngineeringLevel = Mathf.Clamp(
+            typeDelta.PrecisionEngineeringLevelOverride ?? baseAirframe.PrecisionEngineeringLevel,
+            PrecisionEngineeringBalance.MinimumLevel,
+            PrecisionEngineeringBalance.MaximumLevel);
         _typePayloadLimitEnabled = typeDelta.PayloadLimitKilogramsOverride.HasValue;
         _typePayloadLimitKilograms = _typePayloadLimitEnabled
             ? Math.Clamp(
@@ -10716,6 +10750,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             WingAreaSquareMetersDelta = wingAreaDelta,
             FuelAmountLitersDelta = fuelDelta,
+            PrecisionEngineeringLevelOverride = _typePrecisionEngineeringLevel,
             PayloadLimitKilogramsOverride = payloadLimitOverride,
             CrewCountDelta = crewDelta,
             EngineCowlingDelta = cowlingDelta,
@@ -12300,6 +12335,20 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _intSliderHadFocus[key] = hasFocus;
         return currentValue;
+    }
+
+    private static void DrawPrecisionEngineeringEffects(int level, bool isEngine)
+    {
+        var effects = PrecisionEngineeringBalance.GetEffects(level);
+        var benefitPercent = (effects.OutputMultiplier - 1d) * 100d;
+        var penaltyPercent = (effects.ProductionCostMultiplier - 1d) * 100d;
+        var developmentPercent = (effects.DevelopmentCostMultiplier - 1d) * 100d;
+        var benefitLabel = isEngine
+            ? $"output +{FormatUiNumber(benefitPercent, "0.0")}% | weight -{FormatUiNumber(benefitPercent, "0.0")}%"
+            : $"structural weight/drag -{FormatUiNumber(benefitPercent, "0.0")}%";
+        GUILayout.Label(
+            $"Effects: {benefitLabel} | production +{FormatUiNumber(penaltyPercent, "0.0")}% | "
+            + $"reliability -{FormatUiNumber(penaltyPercent, "0.0")}% | development +{FormatUiNumber(developmentPercent, "0.0")}%");
     }
 
     private void FindBestWingAreaForMaximumPayloadCapacity(double minWingArea, double maxWingArea)
@@ -14007,6 +14056,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _typeCowling = _baseAirframeParameters.EngineCowling;
         _typeAerodynamicCleanlinessPercent = _baseAirframeParameters.AerodynamicCleanlinessPercent;
         _typeFuelLiters = _baseAirframeParameters.FuelAmountLiters;
+        _typePrecisionEngineeringLevel = _baseAirframeParameters.PrecisionEngineeringLevel;
         _typePayloadLimitEnabled = _baseAirframeParameters.PayloadLimitKilograms.HasValue;
         _typePayloadLimitKilograms = _typePayloadLimitEnabled
             ? Math.Clamp(
@@ -14882,6 +14932,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public double TypeAerodynamicCleanlinessPercent { get; set; }
 
         public double TypeFuelLiters { get; set; }
+
+        public int TypePrecisionEngineeringLevel { get; set; }
 
         public AircraftNavigationEquipment TypeNavigationEquipment { get; set; }
 

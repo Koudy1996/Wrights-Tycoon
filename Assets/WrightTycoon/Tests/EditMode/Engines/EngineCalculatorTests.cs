@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using NUnit.Framework;
+using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Engines;
 using WrightTycoon.Core.Physics;
+using WrightTycoon.Core.Research;
 using WrightTycoon.Core.Units;
 
 namespace WrightTycoon.Core.Tests.Engines;
@@ -9,6 +11,59 @@ namespace WrightTycoon.Core.Tests.Engines;
 [TestFixture]
 public sealed class EngineCalculatorTests
 {
+    [Test]
+    public void PrecisionEngineering_UsesDiminishingBenefitsAndEscalatingPenalties()
+    {
+        var levelOne = PrecisionEngineeringBalance.GetEffects(1);
+        var levelTen = PrecisionEngineeringBalance.GetEffects(10);
+
+        Assert.That(levelOne.OutputMultiplier, Is.EqualTo(1.02d).Within(0.000001d));
+        Assert.That(levelOne.ProductionCostMultiplier, Is.EqualTo(1.01d).Within(0.000001d));
+        Assert.That(levelOne.DevelopmentCostMultiplier, Is.EqualTo(1.02d).Within(0.000001d));
+        Assert.That(levelTen.OutputMultiplier, Is.EqualTo(1.15d).Within(0.000001d));
+        Assert.That(levelTen.WeightMultiplier, Is.EqualTo(0.85d).Within(0.000001d));
+        Assert.That(levelTen.ProductionCostMultiplier, Is.EqualTo(1.15d).Within(0.000001d));
+        Assert.That(levelTen.ReliabilityMultiplier, Is.EqualTo(0.85d).Within(0.000001d));
+        Assert.That(levelTen.DevelopmentTimeMultiplier, Is.EqualTo(1.30d).Within(0.000001d));
+    }
+
+    [Test]
+    public void PrecisionEngineering_ImprovesEnginePerformanceButRaisesProductionAndDevelopmentBurden()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreatePistonDefinition();
+        var baseline = new EngineParameters
+        {
+            DisplacementLiters = 18d,
+            CompressionRatio = 8.2d,
+            BoostType = BoostType.None,
+            OptimizationAltitudeMeters = 1500d,
+            CoolingEfficiency = 0.78d,
+            PrecisionEngineeringLevel = 0,
+        };
+        var precise = baseline.Clone();
+        precise.PrecisionEngineeringLevel = 10;
+
+        var baselineReport = calculator.Calculate(definition, baseline, atmosphere);
+        var preciseReport = calculator.Calculate(definition, precise, atmosphere);
+        var baselinePoint = baselineReport.GetPerformanceAtAltitude(0d);
+        var precisePoint = preciseReport.GetPerformanceAtAltitude(0d);
+
+        Assert.That(precisePoint.Output / baselinePoint.Output, Is.EqualTo(1.15d).Within(0.000001d));
+        Assert.That(precisePoint.FuelConsumptionKilogramsPerHour, Is.EqualTo(baselinePoint.FuelConsumptionKilogramsPerHour).Within(0.000001d));
+        Assert.That(preciseReport.Weight.Kilograms, Is.LessThan(baselineReport.Weight.Kilograms));
+        Assert.That(preciseReport.Cost, Is.GreaterThan(baselineReport.Cost));
+        Assert.That(preciseReport.ProductionManDays, Is.GreaterThan(baselineReport.ProductionManDays));
+        Assert.That(preciseReport.Reliability, Is.LessThan(baselineReport.Reliability));
+
+        var researchCalculator = new ResearchCalculator();
+        var baselineQuote = researchCalculator.CalculateEngineQuote(new Engine(definition, baseline, baselineReport));
+        var preciseQuote = researchCalculator.CalculateEngineQuote(new Engine(definition, precise, preciseReport));
+        Assert.That(preciseQuote.ResearchCost, Is.GreaterThan(baselineQuote.ResearchCost));
+        Assert.That(preciseQuote.ResearchTimeMonths, Is.GreaterThan(baselineQuote.ResearchTimeMonths));
+    }
+
     [Test]
     public void BoostedPistonEngine_IncreasesPowerAndFuelButReducesReliability()
     {

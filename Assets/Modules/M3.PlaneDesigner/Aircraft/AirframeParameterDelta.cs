@@ -10,6 +10,8 @@ public sealed class AirframeParameterDelta
 
     public double FuelAmountLitersDelta { get; init; }
 
+    public int? PrecisionEngineeringLevelOverride { get; init; }
+
     public double? PayloadLimitKilogramsOverride { get; init; }
 
     public int CrewCountDelta { get; init; }
