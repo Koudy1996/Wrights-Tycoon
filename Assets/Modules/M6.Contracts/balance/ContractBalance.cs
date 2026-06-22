@@ -74,11 +74,9 @@ public static class ContractBalance
     public const int PricingEstimatedEngineCountMax = 4;
 
     public const double PricingMinimumUnitCostFloor = 25000d;
-    public const double SmallOrderContractMarkup = 0.30d;
-    public const double LargeOrderContractMarkup = 0.25d;
+    public const double SmallOrderContractMarkup = 0.25d;
+    public const double LargeOrderContractMarkup = 0.18d;
     public const double CampaignAdjustedMarkupFloor = 0.02d;
-    public const double MediumRunwayContractPriceMultiplier = 1.05d;
-    public const double ShortRunwayContractPriceMultiplier = 1.10d;
     public const int CampaignWeightedCategoryPoolBaseCopies = 4;
     public const int CampaignWeightedCategoryPoolMinimumCopies = 1;
     public const int CampaignWeightedCategoryPoolMaximumCopies = 12;
@@ -257,29 +255,25 @@ public static class ContractBalance
     public static double ResolveRequiredRunwayLengthMeters(AircraftCategory category) =>
         ResolveRequiredRunwayLengthMeters(category, runwayOptionRoll: 0d);
 
-    public static double ResolveCommercialRunwayPriceMultiplier(
-        AircraftCategory? category,
-        double? maximumRequiredRunwayLengthMeters)
+    public static (double Min, double Max) ResolveReferenceStructuralIndexRange(AircraftCategory category) => category switch
     {
-        if (!maximumRequiredRunwayLengthMeters.HasValue
-            || category == AircraftCategory.LightSportAndRecreational)
-        {
-            return 1d;
-        }
-
-        var runwayLength = maximumRequiredRunwayLengthMeters.Value;
-        if (runwayLength <= PlaneDesignerBalance.Airframe.RunwayShortLengthMeters)
-        {
-            return ShortRunwayContractPriceMultiplier;
-        }
-
-        if (runwayLength <= PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters)
-        {
-            return MediumRunwayContractPriceMultiplier;
-        }
-
-        return 1d;
-    }
+        AircraftCategory.LightSportAndRecreational => (15.6d, 35d),
+        AircraftCategory.LightMultiRolePiston => (25d, 75d),
+        AircraftCategory.TurbopropRegional => (75d, 180d),
+        AircraftCategory.RegionalJet => (120d, 375d),
+        AircraftCategory.MediumTransportNarrowBody => (180d, 700d),
+        AircraftCategory.HeavyTransportWideBody => (850d, 1500d),
+        AircraftCategory.SpecialCivil => (35d, 375d),
+        AircraftCategory.BusinessVipJet => (35d, 180d),
+        AircraftCategory.MilitaryTactical => (75d, 375d),
+        AircraftCategory.MilitaryStrategicSupport => (375d, 1150d),
+        AircraftCategory.LightCargo => (35d, 75d),
+        AircraftCategory.MediumCargo => (120d, 375d),
+        AircraftCategory.HeavyCargo => (375d, 1150d),
+        AircraftCategory.LongRangeCargo => (750d, 1500d),
+        AircraftCategory.Bomber => (375d, 1150d),
+        _ => (ProductionEconomyBalance.Airframe.ReferenceStructuralIndex, 180d),
+    };
 
     public static double ResolveRequiredRunwayLengthMeters(AircraftCategory category, double runwayOptionRoll)
     {

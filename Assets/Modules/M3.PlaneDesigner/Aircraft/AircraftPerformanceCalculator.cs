@@ -39,6 +39,21 @@ public sealed class AircraftPerformanceCalculator
         AircraftCategory category,
         AircraftNavigationEquipment navigationEquipment)
     {
+        return Calculate(
+            engine,
+            airframe,
+            category,
+            navigationEquipment,
+            AircraftCategoryRoleRequirement.Unrestricted);
+    }
+
+    public AircraftPerformanceReport Calculate(
+        Engine engine,
+        Airframe airframe,
+        AircraftCategory category,
+        AircraftNavigationEquipment navigationEquipment,
+        AircraftCategoryRoleRequirement roleModule)
+    {
         if (engine is null)
         {
             throw new ArgumentNullException(nameof(engine));
@@ -134,7 +149,7 @@ public sealed class AircraftPerformanceCalculator
             maximumWeightKilograms = wetWeightKilograms + usefulWeightKilograms;
         }
 
-        var cruiseAltitudeMeters = engine.Definition.EngineType is EngineType.Jet or EngineType.Turbojet or EngineType.Turbofan
+        var cruiseAltitudeMeters = engine.Definition.EngineType is EngineType.Turbojet or EngineType.Turbofan
             ? PlaneDesignerBalance.Performance.JetCruiseAltitudeMeters
             : PlaneDesignerBalance.Performance.PropCruiseAltitudeMeters;
         var cruiseDensity = _atmosphereModel.GetDensityAtAltitude(cruiseAltitudeMeters).KilogramsPerCubicMeter;
@@ -193,21 +208,31 @@ public sealed class AircraftPerformanceCalculator
             engineCount,
             categoryProfile.ReliabilityModifierDelta + navigationEffects.ReliabilityDelta);
 
-        var totalProductionCost = (airframe.Performance.ProductionCost
-            + (engine.Performance.Cost * engineCount)
-            + navigationEffects.ProductionCostAdd)
-            * precisionEffects.ProductionCostMultiplier;
-        var totalProductionManDays = (airframe.Performance.ProductionManDays
-            + (engine.Performance.ProductionManDays * engineCount)
-            + navigationEffects.ProductionManDaysAdd)
-            * precisionEffects.ProductionManDaysMultiplier;
+        var rolePartsAdjustment = airframe.Performance.ProductionCost
+            * ProductionEconomyBalance.GetRolePartsRate(roleModule);
+        var roleManDaysAdjustment = airframe.Performance.ProductionManDays
+            * ProductionEconomyBalance.GetRoleManDaysRate(roleModule);
+        var navigationParts = CalculateNavigationParts(navigationEquipment, airframe.Performance.ProductionCost);
+        var navigationManDays = CalculateNavigationManDays(navigationEquipment, airframe.Performance.ProductionManDays);
+        var unscaledAirframeProductionCost = airframe.Performance.ProductionCost + rolePartsAdjustment + navigationParts;
+        var unscaledAirframeProductionManDays = airframe.Performance.ProductionManDays + roleManDaysAdjustment + navigationManDays;
+        var unscaledEnginesProductionCost = engine.Performance.Cost * engineCount;
+        var unscaledEnginesProductionManDays = engine.Performance.ProductionManDays * engineCount;
+        var airframeProductionCost = unscaledAirframeProductionCost * precisionEffects.ProductionCostMultiplier;
+        var airframeProductionManDays = unscaledAirframeProductionManDays * precisionEffects.ProductionManDaysMultiplier;
+        var enginesProductionCost = unscaledEnginesProductionCost * precisionEffects.ProductionCostMultiplier;
+        var enginesProductionManDays = unscaledEnginesProductionManDays * precisionEffects.ProductionManDaysMultiplier;
+        var totalProductionCost = airframeProductionCost + enginesProductionCost;
+        var totalProductionManDays = airframeProductionManDays + enginesProductionManDays;
         var costBreakdown = BuildAircraftProductionBreakdown(
             airframe.Performance.CostBreakdown,
             airframe.Performance.ProductionCost,
             engine.Performance.CostBreakdown,
             engine.Performance.Cost,
             engineCount,
-            navigationEffects.ProductionCostAdd,
+            rolePartsAdjustment,
+            $"Role module ({roleModule})",
+            navigationParts,
             "Navigation equipment",
             precisionEffects.ProductionCostMultiplier,
             precisionEffects.Level);
@@ -217,7 +242,9 @@ public sealed class AircraftPerformanceCalculator
             engine.Performance.ProductionManDaysBreakdown,
             engine.Performance.ProductionManDays,
             engineCount,
-            navigationEffects.ProductionManDaysAdd,
+            roleManDaysAdjustment,
+            $"Role module ({roleModule})",
+            navigationManDays,
             "Navigation equipment",
             precisionEffects.ProductionManDaysMultiplier,
             precisionEffects.Level);
@@ -242,7 +269,11 @@ public sealed class AircraftPerformanceCalculator
             cruiseFuelBurnKilogramsPerHour,
             cruiseFuelBurnKilogramsPerHour,
             costBreakdown,
-            productionManDaysBreakdown);
+            productionManDaysBreakdown,
+            airframeProductionCost,
+            airframeProductionManDays,
+            enginesProductionCost,
+            enginesProductionManDays);
     }
 
     private static ProductionBreakdown BuildAircraftProductionBreakdown(
@@ -251,6 +282,8 @@ public sealed class AircraftPerformanceCalculator
         ProductionBreakdown? engineBreakdown,
         double engineTotal,
         int engineCount,
+        double roleAmount,
+        string roleLabel,
         double navigationAmount,
         string navigationLabel,
         double precisionMultiplier,
@@ -285,7 +318,15 @@ public sealed class AircraftPerformanceCalculator
             }
         }
 
-        items.Add(new ProductionBreakdownItem(navigationLabel, navigationAmount));
+        if (System.Math.Abs(roleAmount) > Numeric.Epsilon)
+        {
+            items.Add(new ProductionBreakdownItem(roleLabel, roleAmount));
+        }
+
+        if (System.Math.Abs(navigationAmount) > Numeric.Epsilon)
+        {
+            items.Add(new ProductionBreakdownItem(navigationLabel, navigationAmount));
+        }
         var subtotal = 0d;
         for (var index = 0; index < items.Count; index++)
         {
@@ -296,6 +337,38 @@ public sealed class AircraftPerformanceCalculator
             $"Precision engineering (level {precisionLevel})",
             subtotal * (precisionMultiplier - 1d)));
         return new ProductionBreakdown(items);
+    }
+
+    private static double CalculateNavigationParts(
+        AircraftNavigationEquipment navigationEquipment,
+        double airframeParts)
+    {
+        return navigationEquipment switch
+        {
+            AircraftNavigationEquipment.BasicNavigationSuite => System.Math.Max(
+                ProductionEconomyBalance.Airframe.BasicNavigationMinimumParts,
+                airframeParts * ProductionEconomyBalance.Airframe.BasicNavigationPartsRate),
+            AircraftNavigationEquipment.AdvancedNavigationSuite => System.Math.Max(
+                ProductionEconomyBalance.Airframe.AdvancedNavigationMinimumParts,
+                airframeParts * ProductionEconomyBalance.Airframe.AdvancedNavigationPartsRate),
+            _ => 0d,
+        };
+    }
+
+    private static double CalculateNavigationManDays(
+        AircraftNavigationEquipment navigationEquipment,
+        double airframeManDays)
+    {
+        return navigationEquipment switch
+        {
+            AircraftNavigationEquipment.BasicNavigationSuite => System.Math.Max(
+                ProductionEconomyBalance.Airframe.BasicNavigationMinimumManDays,
+                airframeManDays * ProductionEconomyBalance.Airframe.BasicNavigationManDaysRate),
+            AircraftNavigationEquipment.AdvancedNavigationSuite => System.Math.Max(
+                ProductionEconomyBalance.Airframe.AdvancedNavigationMinimumManDays,
+                airframeManDays * ProductionEconomyBalance.Airframe.AdvancedNavigationManDaysRate),
+            _ => 0d,
+        };
     }
 
     private static double GetThrustAtAltitude(Engine engine, double altitudeMeters)

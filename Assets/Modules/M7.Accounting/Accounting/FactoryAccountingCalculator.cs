@@ -21,7 +21,7 @@ public sealed class FactoryAccountingCalculator
             throw new ArgumentNullException(nameof(catalog));
         }
 
-        var fixedProductionLineExpenses = report.LineReports.Count * FactoryBalance.FixedMonthlyCostPerProductionLine;
+        var fixedProductionLineExpenses = 0d;
 
         var variablePlaneStaffExpenses = 0d;
         var variablePlaneBuildExpenses = 0d;
@@ -30,6 +30,17 @@ public sealed class FactoryAccountingCalculator
         foreach (var line in report.LineReports)
         {
             variablePlaneStaffExpenses += line.Employees * FactoryBalance.PlaneStaffMonthlyCostPerEmployee;
+
+            if (string.IsNullOrWhiteSpace(line.AssignedDesignId)
+                || !catalog.TryGetValue(line.AssignedDesignId, out var assignedDesign))
+            {
+                fixedProductionLineExpenses += FactoryBalance.UnassignedLineMonthlyStandbyCost;
+            }
+            else
+            {
+                fixedProductionLineExpenses += assignedDesign.Aircraft.Performance.CompleteProductionCost
+                    * FactoryBalance.AssignedLineMonthlyAircraftCostShare;
+            }
 
             if (line.ProducedUnits <= 0 || string.IsNullOrWhiteSpace(line.AssignedDesignId))
             {
@@ -43,8 +54,14 @@ public sealed class FactoryAccountingCalculator
 
             var producedUnits = line.ProducedUnits;
             var aircraft = design.Aircraft;
-            variablePlaneBuildExpenses += producedUnits * aircraft.Airframe.Performance.ProductionCost;
-            variableEngineBuildExpenses += producedUnits * aircraft.Airframe.Parameters.EngineCount * aircraft.Engine.Performance.Cost;
+            var airframeParts = aircraft.Performance.AirframeProductionCost > 0d
+                ? aircraft.Performance.AirframeProductionCost
+                : aircraft.Airframe.Performance.ProductionCost;
+            var engineParts = aircraft.Performance.EnginesProductionCost > 0d
+                ? aircraft.Performance.EnginesProductionCost
+                : aircraft.Airframe.Parameters.EngineCount * aircraft.Engine.Performance.Cost;
+            variablePlaneBuildExpenses += producedUnits * airframeParts;
+            variableEngineBuildExpenses += producedUnits * engineParts;
         }
 
         var variableEngineStaffExpenses = report.EngineFactoryReport.TotalAutoAssignedEmployees
@@ -86,7 +103,7 @@ public sealed class FactoryAccountingCalculator
                 continue;
             }
 
-            var unitCost = design.Aircraft.Performance.TotalProductionCost;
+            var unitCost = design.Aircraft.Performance.CompleteProductionCost;
             var totalValue = unitCost * warehouseEntry.Value;
             valuation[warehouseEntry.Key] = new InventoryValueEntry(
                 warehouseEntry.Key,

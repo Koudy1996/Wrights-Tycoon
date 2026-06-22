@@ -283,8 +283,7 @@ public static class AircraftEngineFamilyCompatibility
 
     private static bool IsJetEngine(EngineType engineType)
     {
-        return engineType == EngineType.Jet
-            || engineType == EngineType.Turbojet
+        return engineType == EngineType.Turbojet
             || engineType == EngineType.Turbofan;
     }
 }
@@ -312,8 +311,7 @@ public static class AircraftEngineClassificationCompatibility
 
     private static bool IsJetEngine(EngineType engineType)
     {
-        return engineType == EngineType.Jet
-            || engineType == EngineType.Turbojet
+        return engineType == EngineType.Turbojet
             || engineType == EngineType.Turbofan;
     }
 }

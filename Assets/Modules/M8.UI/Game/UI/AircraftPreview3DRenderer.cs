@@ -317,7 +317,7 @@ public sealed class AircraftPreview3DRenderer : IDisposable
     private int ScorePackPrefab(string prefabName, AirframeParameters parameters, EngineType engineType, double bypassRatio)
     {
         var name = prefabName.ToLowerInvariant();
-        var isJet = engineType is EngineType.Jet or EngineType.Turbojet or EngineType.Turbofan;
+        var isJet = engineType is EngineType.Turbojet or EngineType.Turbofan;
         var isHighBypass = engineType == EngineType.Turbofan && bypassRatio > 10d;
         var score = 0;
 
@@ -622,7 +622,7 @@ public sealed class AircraftPreview3DRenderer : IDisposable
         float scale = 1f)
     {
         var offsets = GetEngineOffsets(engineCount, span * scale);
-        var isJet = engineType is EngineType.Jet or EngineType.Turbojet or EngineType.Turbofan;
+        var isJet = engineType is EngineType.Turbojet or EngineType.Turbofan;
         var isHighBypass = engineType == EngineType.Turbofan && bypassRatio > 10d;
 
         var radius = isJet

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using WrightTycoon.Core.Units;
 using WrightTycoon.Core.Production;
+using WrightTycoon.Core.Balance;
 
 namespace WrightTycoon.Core.Engines;
 
@@ -43,6 +44,10 @@ public sealed class EnginePerformanceReport
     public Mass Weight { get; }
 
     public double Cost { get; }
+
+    public double LaborCost => ProductionEconomyBalance.CalculateLaborCost(ProductionManDays);
+
+    public double CompleteProductionCost => ProductionEconomyBalance.CalculateCompleteCost(Cost, ProductionManDays);
 
     public double ProductionManDays { get; }
 

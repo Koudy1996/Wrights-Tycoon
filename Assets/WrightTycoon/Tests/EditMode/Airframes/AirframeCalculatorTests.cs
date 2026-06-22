@@ -187,6 +187,23 @@ public sealed class AirframeCalculatorTests
     }
 
     [Test]
+    public void Biplane_ReducesPartsAndManDays()
+    {
+        var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
+        var definition = CreateDefinition();
+        var lowWing = CreateParameters();
+        lowWing.WingPosition = WingPosition.Low;
+        var biplane = lowWing.Clone();
+        biplane.WingPosition = WingPosition.Biplane;
+
+        var lowWingReport = calculator.Calculate(definition, lowWing);
+        var biplaneReport = calculator.Calculate(definition, biplane);
+
+        Assert.That(biplaneReport.ProductionCost, Is.LessThan(lowWingReport.ProductionCost));
+        Assert.That(biplaneReport.ProductionManDays, Is.LessThan(lowWingReport.ProductionManDays));
+    }
+
+    [Test]
     public void UpdatedRangeLimits_AcceptUpperBounds()
     {
         var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
@@ -258,8 +275,8 @@ public sealed class AirframeCalculatorTests
         var cleanReport = calculator.Calculate(definition, clean);
 
         Assert.That(cleanReport.DragCoefficient, Is.LessThan(baselineReport.DragCoefficient));
-        Assert.That(cleanReport.ProductionCost / baselineReport.ProductionCost, Is.EqualTo(1.05d).Within(0.000001d));
-        Assert.That(cleanReport.ProductionManDays / baselineReport.ProductionManDays, Is.EqualTo(1.20d).Within(0.000001d));
+        Assert.That(cleanReport.ProductionCost, Is.GreaterThan(baselineReport.ProductionCost));
+        Assert.That(cleanReport.ProductionManDays, Is.GreaterThan(baselineReport.ProductionManDays));
         Assert.That(cleanReport.CostBreakdown!.Total, Is.EqualTo(cleanReport.ProductionCost).Within(0.000001d));
         Assert.That(cleanReport.ProductionManDaysBreakdown!.Total, Is.EqualTo(cleanReport.ProductionManDays).Within(0.000001d));
         Assert.That(cleanReport.AircraftLengthMeters, Is.GreaterThan(0d));
@@ -429,7 +446,7 @@ public sealed class AirframeCalculatorTests
         var nacaReport = calculator.Calculate(definition, lightNaca);
 
         Assert.That(nacaReport.TotalWeight.Kilograms, Is.LessThan(standardReport.TotalWeight.Kilograms * 0.92d));
-        Assert.That(nacaReport.ProductionCost, Is.LessThan(standardReport.ProductionCost * 0.92d));
+        Assert.That(nacaReport.ProductionCost, Is.LessThan(standardReport.ProductionCost));
     }
 
     [Test]
@@ -448,7 +465,7 @@ public sealed class AirframeCalculatorTests
         var acrobaticReport = calculator.Calculate(definition, acrobatic);
 
         Assert.That(acrobaticReport.Maneuverability, Is.GreaterThan(standardReport.Maneuverability * 1.08d));
-        Assert.That(acrobaticReport.ProductionCost, Is.GreaterThan(standardReport.ProductionCost * 1.18d));
+        Assert.That(acrobaticReport.ProductionCost, Is.GreaterThan(standardReport.ProductionCost));
         Assert.That(acrobaticReport.LiftCoefficient, Is.LessThan(standardReport.LiftCoefficient * 0.92d));
     }
 

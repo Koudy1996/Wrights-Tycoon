@@ -155,7 +155,6 @@ public static class EngineDesignerBalance
         public const double ComplexityPenaltyInline = 0.03d;
         public const double ComplexityPenaltyV = 0.04d;
         public const double ComplexityPenaltyRadial = 0.05d;
-        public const double ComplexityPenaltyJet = 0.08d;
         public const double ComplexityPenaltyTurbojet = 0.1d;
         public const double ComplexityPenaltyTurbofan = 0.12d;
     }

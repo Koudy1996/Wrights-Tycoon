@@ -392,70 +392,85 @@ public sealed class AirframeCalculator : IAirframeCalculator
         maneuverability *= constructionStandardEffects.ManeuverabilityMultiplier;
         maneuverability = Numeric.Clamp(maneuverability, 1d, 100d);
 
+        var pricingPayloadKilograms = parameters.PayloadLimitKilograms
+            ?? System.Math.Max(
+                ProductionEconomyBalance.Airframe.DefaultPayloadKilograms,
+                definition.BaseStructuralWeightKilograms * ProductionEconomyBalance.Airframe.BaseWeightPayloadFactor);
+        var structuralIndex = ProductionEconomyBalance.CalculateStructuralIndex(
+            parameters.WingAreaSquareMeters,
+            pricingPayloadKilograms,
+            parameters.FuelAmountLiters);
+        var baseProductionCost = ProductionEconomyBalance.CalculateAirframeBaseParts(structuralIndex);
         var productionCostItems = new List<ProductionBreakdownItem>
         {
-            new("Base airframe (material/structure)", definition.BaseCost * materialCostFactor * structureCostFactor),
-            new("Wing area", parameters.WingAreaSquareMeters * 220d),
-            new("Engine installations", parameters.EngineCount * 350d),
-            new("Crew stations", parameters.CrewCount * 120d),
-            new("Landing gear", gearCostDelta),
-            new("Leading-edge flaps", hasLeadingEdgeFlaps ? 2600d : 0d),
+            new("Physical size (wing, payload and fuel capacity)", baseProductionCost),
         };
-        var productionCost = productionCostItems.Sum(item => item.Amount);
-        var wingProfileCostMultiplier = parameters.WingProfile switch
-        {
-            WingProfileType.Naca4DigitLight => 1d - PlaneDesignerBalance.Airframe.Naca4DigitLightProfileAirframeCostReductionRatio,
-            WingProfileType.SymmetricalAcrobatic => 1d + PlaneDesignerBalance.Airframe.SymmetricalAcrobaticProfileCostIncreaseRatio,
-            _ => 1d,
-        };
-        AddMultiplierAdjustment(productionCostItems, "Wing profile", ref productionCost, wingProfileCostMultiplier);
+        var productionCost = baseProductionCost;
+        AddMultiplierAdjustment(
+            productionCostItems,
+            $"Material ({parameters.MaterialType})",
+            ref productionCost,
+            GetMaterialProductionMultiplier(parameters.MaterialType, parts: true));
+        AddMultiplierAdjustment(
+            productionCostItems,
+            $"Structure ({parameters.StructureType})",
+            ref productionCost,
+            GetStructureProductionMultiplier(parameters.StructureType, parts: true));
         AddMultiplierAdjustment(
             productionCostItems,
             $"Construction standard ({parameters.ConstructionStandard})",
             ref productionCost,
             constructionStandardEffects.ProductionCostMultiplier);
+        var productionCostAddonBase = productionCost;
+        AddAirframeProductionAddons(
+            productionCostItems,
+            ref productionCost,
+            productionCostAddonBase,
+            parameters,
+            aerodynamicCleanlinessRatio,
+            parts: true);
         AddMultiplierAdjustment(
             productionCostItems,
             "Airframe technology",
             ref productionCost,
             1d / effectiveTechnologyModifiers.AirframeEfficiencyMultiplier);
-        AddMultiplierAdjustment(
-            productionCostItems,
-            "Aerodynamic cleanliness",
-            ref productionCost,
-            1d
-            + (aerodynamicCleanlinessRatio
-               * PlaneDesignerBalance.Airframe.AerodynamicCleanlinessMaxProductionCostIncreaseRatio));
         AddMinimumAdjustment(productionCostItems, "Minimum airframe cost", ref productionCost, 0d);
         var productionCostBreakdown = new ProductionBreakdown(productionCostItems);
 
+        var baseProductionManDays = ProductionEconomyBalance.CalculateAirframeBaseManDays(structuralIndex);
         var productionManDaysItems = new List<ProductionBreakdownItem>
         {
-            new("Base airframe structure", definition.BaseProductionManDays * structureMdFactor),
-            new("Wing area", parameters.WingAreaSquareMeters * 0.55d),
-            new("Engine installations", parameters.EngineCount * 1.8d),
-            new("Crew stations", parameters.CrewCount * 0.3d),
-            new("Landing gear", gearMdDelta),
-            new("Leading-edge flaps", hasLeadingEdgeFlaps ? 2.4d : 0d),
+            new("Physical size (wing, payload and fuel capacity)", baseProductionManDays),
         };
-        var productionManDays = productionManDaysItems.Sum(item => item.Amount);
+        var productionManDays = baseProductionManDays;
+        AddMultiplierAdjustment(
+            productionManDaysItems,
+            $"Material ({parameters.MaterialType})",
+            ref productionManDays,
+            GetMaterialProductionMultiplier(parameters.MaterialType, parts: false));
+        AddMultiplierAdjustment(
+            productionManDaysItems,
+            $"Structure ({parameters.StructureType})",
+            ref productionManDays,
+            GetStructureProductionMultiplier(parameters.StructureType, parts: false));
         AddMultiplierAdjustment(
             productionManDaysItems,
             $"Construction standard ({parameters.ConstructionStandard})",
             ref productionManDays,
             constructionStandardEffects.ProductionManDaysMultiplier);
+        var productionManDaysAddonBase = productionManDays;
+        AddAirframeProductionAddons(
+            productionManDaysItems,
+            ref productionManDays,
+            productionManDaysAddonBase,
+            parameters,
+            aerodynamicCleanlinessRatio,
+            parts: false);
         AddMultiplierAdjustment(
             productionManDaysItems,
             "Airframe technology",
             ref productionManDays,
             1d / effectiveTechnologyModifiers.AirframeEfficiencyMultiplier);
-        AddMultiplierAdjustment(
-            productionManDaysItems,
-            "Aerodynamic cleanliness",
-            ref productionManDays,
-            1d
-            + (aerodynamicCleanlinessRatio
-               * PlaneDesignerBalance.Airframe.AerodynamicCleanlinessMaxProductionManDaysIncreaseRatio));
         AddMinimumAdjustment(productionManDaysItems, "Minimum airframe production time", ref productionManDays, 0d);
         var productionManDaysBreakdown = new ProductionBreakdown(productionManDaysItems);
 
@@ -510,6 +525,149 @@ public sealed class AirframeCalculator : IAirframeCalculator
         items.Add(new ProductionBreakdownItem(label, adjustment));
         total += adjustment;
     }
+
+    private static void AddAirframeProductionAddons(
+        List<ProductionBreakdownItem> items,
+        ref double total,
+        double addonBase,
+        AirframeParameters parameters,
+        double cleanlinessRatio,
+        bool parts)
+    {
+        AddRateAdjustment(items, "Wing shape", ref total, addonBase, parameters.WingShape switch
+        {
+            WingShape.Swept => parts ? ProductionEconomyBalance.Airframe.SweptWingPartsRate : ProductionEconomyBalance.Airframe.SweptWingManDaysRate,
+            WingShape.Delta => parts ? ProductionEconomyBalance.Airframe.DeltaWingPartsRate : ProductionEconomyBalance.Airframe.DeltaWingManDaysRate,
+            _ => 0d,
+        });
+        AddRateAdjustment(items, "Wing position", ref total, addonBase, parameters.WingPosition switch
+        {
+            WingPosition.High => parts ? ProductionEconomyBalance.Airframe.HighWingPartsRate : ProductionEconomyBalance.Airframe.HighWingManDaysRate,
+            WingPosition.Biplane => parts ? ProductionEconomyBalance.Airframe.BiplanePartsRate : ProductionEconomyBalance.Airframe.BiplaneManDaysRate,
+            _ => 0d,
+        });
+        AddRateAdjustment(items, "Wing profile", ref total, addonBase, parameters.WingProfile switch
+        {
+            WingProfileType.Naca4DigitLight => parts ? ProductionEconomyBalance.Airframe.LightProfilePartsRate : ProductionEconomyBalance.Airframe.LightProfileManDaysRate,
+            WingProfileType.Laminar6SeriesAerodynamic => parts ? ProductionEconomyBalance.Airframe.LaminarProfilePartsRate : ProductionEconomyBalance.Airframe.LaminarProfileManDaysRate,
+            WingProfileType.SymmetricalAcrobatic => parts ? ProductionEconomyBalance.Airframe.AcrobaticProfilePartsRate : ProductionEconomyBalance.Airframe.AcrobaticProfileManDaysRate,
+            _ => 0d,
+        });
+        AddRateAdjustment(items, "Wing aspect ratio", ref total, addonBase, GetAspectRatioProductionRate(parameters.WingAspectRatio, parts));
+        AddRateAdjustment(items, "Tail", ref total, addonBase, parameters.TailType switch
+        {
+            TailType.TTail => parts ? ProductionEconomyBalance.Airframe.TTailPartsRate : ProductionEconomyBalance.Airframe.TTailManDaysRate,
+            TailType.VTail => parts ? ProductionEconomyBalance.Airframe.VTailPartsRate : ProductionEconomyBalance.Airframe.VTailManDaysRate,
+            TailType.Twin => parts ? ProductionEconomyBalance.Airframe.TwinTailPartsRate : ProductionEconomyBalance.Airframe.TwinTailManDaysRate,
+            _ => 0d,
+        });
+        AddRateAdjustment(items, "Flaps", ref total, addonBase, parameters.FlapType switch
+        {
+            FlapType.None => parts ? ProductionEconomyBalance.Airframe.NoFlapsPartsRate : ProductionEconomyBalance.Airframe.NoFlapsManDaysRate,
+            FlapType.Fowler => parts ? ProductionEconomyBalance.Airframe.FowlerFlapsPartsRate : ProductionEconomyBalance.Airframe.FowlerFlapsManDaysRate,
+            FlapType.LeadingEdge => parts ? ProductionEconomyBalance.Airframe.LeadingEdgeFlapsPartsRate : ProductionEconomyBalance.Airframe.LeadingEdgeFlapsManDaysRate,
+            _ => 0d,
+        });
+        if (parameters.HasLeadingEdgeFlaps && parameters.FlapType != FlapType.LeadingEdge)
+        {
+            AddRateAdjustment(
+                items,
+                "Leading-edge flaps",
+                ref total,
+                addonBase,
+                parts
+                    ? ProductionEconomyBalance.Airframe.LeadingEdgeFlapsPartsRate
+                    : ProductionEconomyBalance.Airframe.LeadingEdgeFlapsManDaysRate);
+        }
+        AddRateAdjustment(items, "Landing gear", ref total, addonBase, parameters.LandingGearType switch
+        {
+            LandingGearType.SemiRetractable => parts ? ProductionEconomyBalance.Airframe.SemiRetractableGearPartsRate : ProductionEconomyBalance.Airframe.SemiRetractableGearManDaysRate,
+            LandingGearType.Retractable => parts ? ProductionEconomyBalance.Airframe.RetractableGearPartsRate : ProductionEconomyBalance.Airframe.RetractableGearManDaysRate,
+            _ => 0d,
+        });
+        if (parameters.HasBackupSystems)
+        {
+            AddRateAdjustment(
+                items,
+                "Backup systems",
+                ref total,
+                addonBase,
+                parts ? ProductionEconomyBalance.Airframe.BackupSystemsPartsRate : ProductionEconomyBalance.Airframe.BackupSystemsManDaysRate);
+        }
+
+        AddRateAdjustment(
+            items,
+            "Aerodynamic cleanliness",
+            ref total,
+            addonBase,
+            cleanlinessRatio * (parts
+                ? ProductionEconomyBalance.Airframe.MaximumCleanlinessPartsRate
+                : ProductionEconomyBalance.Airframe.MaximumCleanlinessManDaysRate));
+        var additionalEngines = System.Math.Max(0, parameters.EngineCount - 1);
+        AddRateAdjustment(
+            items,
+            "Additional engine installations",
+            ref total,
+            addonBase,
+            additionalEngines * (parts
+                ? ProductionEconomyBalance.Airframe.AdditionalEngineInstallationPartsRate
+                : ProductionEconomyBalance.Airframe.AdditionalEngineInstallationManDaysRate));
+    }
+
+    private static void AddRateAdjustment(
+        List<ProductionBreakdownItem> items,
+        string label,
+        ref double total,
+        double addonBase,
+        double rate)
+    {
+        if (System.Math.Abs(rate) <= Numeric.Epsilon)
+        {
+            return;
+        }
+
+        var adjustment = addonBase * rate;
+        items.Add(new ProductionBreakdownItem(label, adjustment));
+        total += adjustment;
+    }
+
+    private static double GetAspectRatioProductionRate(double aspectRatio, bool parts)
+    {
+        if (aspectRatio <= 10d)
+        {
+            return 0d;
+        }
+
+        if (aspectRatio <= 15d)
+        {
+            return parts ? 0.06d : 0.08d;
+        }
+
+        if (aspectRatio <= 25d)
+        {
+            return parts ? 0.14d : 0.18d;
+        }
+
+        if (aspectRatio <= 35d)
+        {
+            return parts ? 0.24d : 0.30d;
+        }
+
+        return parts ? 0.40d : 0.50d;
+    }
+
+    private static double GetMaterialProductionMultiplier(MaterialType material, bool parts) => material switch
+    {
+        MaterialType.WoodFabric => parts ? ProductionEconomyBalance.Airframe.WoodPartsMultiplier : ProductionEconomyBalance.Airframe.WoodManDaysMultiplier,
+        MaterialType.Composite => parts ? ProductionEconomyBalance.Airframe.CompositePartsMultiplier : ProductionEconomyBalance.Airframe.CompositeManDaysMultiplier,
+        _ => 1d,
+    };
+
+    private static double GetStructureProductionMultiplier(StructureType structure, bool parts) => structure switch
+    {
+        StructureType.Truss => parts ? ProductionEconomyBalance.Airframe.TrussPartsMultiplier : ProductionEconomyBalance.Airframe.TrussManDaysMultiplier,
+        _ => 1d,
+    };
 
     private static void AddMinimumAdjustment(
         List<ProductionBreakdownItem> items,

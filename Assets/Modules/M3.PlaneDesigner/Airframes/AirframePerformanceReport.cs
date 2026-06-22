@@ -1,5 +1,6 @@
 using WrightTycoon.Core.Units;
 using WrightTycoon.Core.Production;
+using WrightTycoon.Core.Balance;
 
 namespace WrightTycoon.Core.Airframes;
 
@@ -18,4 +19,9 @@ public sealed record AirframePerformanceReport(
     double EffectiveDragAreaSquareMeters = 0d,
     double AerodynamicCleanlinessPercent = 0d,
     ProductionBreakdown? CostBreakdown = null,
-    ProductionBreakdown? ProductionManDaysBreakdown = null);
+    ProductionBreakdown? ProductionManDaysBreakdown = null)
+{
+    public double LaborCost => ProductionEconomyBalance.CalculateLaborCost(ProductionManDays);
+
+    public double CompleteProductionCost => ProductionEconomyBalance.CalculateCompleteCost(ProductionCost, ProductionManDays);
+}

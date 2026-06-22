@@ -16,29 +16,13 @@ public sealed class ResearchCalculator
             throw new ArgumentNullException(nameof(engine));
         }
 
-        var outputValue = ResolveSeaLevelOutputForComplexity(engine);
-        var outputNormalized = engine.Performance.OutputKind == EngineOutputKind.PowerKilowatts
-            ? Normalize(outputValue, ResearchBalance.Engine.OutputPowerMinKilowatts, ResearchBalance.Engine.OutputPowerMaxKilowatts)
-            : Normalize(outputValue, ResearchBalance.Engine.OutputThrustMinKiloNewtons, ResearchBalance.Engine.OutputThrustMaxKiloNewtons);
-        var weightNormalized = Normalize(engine.Performance.Weight.Kilograms, ResearchBalance.Engine.WeightMinKilograms, ResearchBalance.Engine.WeightMaxKilograms);
-        var costNormalized = Normalize(engine.Performance.Cost, ResearchBalance.Engine.CostMin, ResearchBalance.Engine.CostMax);
-        var manDaysNormalized = Normalize(engine.Performance.ProductionManDays, ResearchBalance.Engine.ManDaysMin, ResearchBalance.Engine.ManDaysMax);
-
-        var complexity = GetEngineTypeComplexityBase(engine.Definition.EngineType)
-            + (outputNormalized * ResearchBalance.Engine.ComplexityWeightOutput)
-            + (weightNormalized * ResearchBalance.Engine.ComplexityWeightWeight)
-            + (costNormalized * ResearchBalance.Engine.ComplexityWeightCost)
-            + (manDaysNormalized * ResearchBalance.Engine.ComplexityWeightManDays);
-        complexity = Numeric.Clamp(complexity, 0d, 1d);
+        var complexity = CalculateEngineComplexity(engine);
 
         var multiplier = Lerp(ResearchBalance.Engine.CostMultiplierMin, ResearchBalance.Engine.CostMultiplierMax, complexity);
         var months = RoundToInt(Lerp(ResearchBalance.Engine.TimeMonthsMin, ResearchBalance.Engine.TimeMonthsMax, complexity));
-        var cost = RoundCurrency(engine.Performance.Cost * multiplier);
+        var cost = RoundCurrency(engine.Performance.CompleteProductionCost * multiplier);
         var baseQuote = new ResearchQuote(cost, months, complexity);
-        var modifiedQuote = ApplyResearchModifierEffects(baseQuote, modifierPoints);
-        return ApplyPrecisionEngineeringDevelopmentEffects(
-            modifiedQuote,
-            engine.Parameters.PrecisionEngineeringLevel);
+        return ApplyResearchModifierEffects(baseQuote, modifierPoints);
     }
 
     public ResearchQuote CalculateFamilyQuote(AircraftModel aircraft, TypeResearchModifierPoints? modifierPoints = null)
@@ -48,12 +32,18 @@ public sealed class ResearchCalculator
             throw new ArgumentNullException(nameof(aircraft));
         }
 
-        var cost = RoundCurrency(aircraft.Performance.TotalProductionCost * ResearchBalance.Family.CostMultiplier);
-        var baseQuote = new ResearchQuote(cost, ResearchBalance.Family.TimeMonths, ResearchBalance.Family.ComplexityReference);
-        var modifiedQuote = ApplyResearchModifierEffects(baseQuote, modifierPoints);
-        return ApplyPrecisionEngineeringDevelopmentEffects(
-            modifiedQuote,
-            aircraft.Airframe.Parameters.PrecisionEngineeringLevel);
+        var complexity = CalculateFamilyComplexity(aircraft);
+        var complexityCostMultiplier = Lerp(
+            ResearchBalance.Family.ComplexityCostMultiplierMin,
+            ResearchBalance.Family.ComplexityCostMultiplierMax,
+            complexity);
+        var cost = RoundCurrency(
+            aircraft.Performance.AirframeCompleteProductionCost
+            * ResearchBalance.Family.CostMultiplier
+            * complexityCostMultiplier);
+        var months = RoundToInt(Lerp(ResearchBalance.Family.TimeMonthsMin, ResearchBalance.Family.TimeMonthsMax, complexity));
+        var baseQuote = new ResearchQuote(cost, months, complexity);
+        return ApplyResearchModifierEffects(baseQuote, modifierPoints);
     }
 
     public ResearchQuote CalculateTypeQuote(AircraftModel aircraft, TypeResearchModifierPoints? modifierPoints = null)
@@ -94,13 +84,104 @@ public sealed class ResearchCalculator
 
         var baseMultiplier = Lerp(ResearchBalance.Type.CostMultiplierMin, ResearchBalance.Type.CostMultiplierMax, complexity);
         var baseMonths = RoundToInt(Lerp(ResearchBalance.Type.TimeMonthsMin, ResearchBalance.Type.TimeMonthsMax, complexity));
-        var baseCost = RoundCurrency(aircraft.Performance.TotalProductionCost * baseMultiplier);
+        var baseCost = RoundCurrency(aircraft.Performance.CompleteProductionCost * baseMultiplier);
         var baseQuote = new ResearchQuote(baseCost, baseMonths, complexity);
         var effectiveModifierPoints = modifierPoints ?? aircraft.TypeDefinition.ResearchModifiers;
-        var modifiedQuote = ApplyResearchModifierEffects(baseQuote, effectiveModifierPoints);
-        return ApplyPrecisionEngineeringDevelopmentEffects(
-            modifiedQuote,
-            aircraft.Airframe.Parameters.PrecisionEngineeringLevel);
+        return ApplyResearchModifierEffects(baseQuote, effectiveModifierPoints);
+    }
+
+    private static double CalculateEngineComplexity(Engine engine)
+    {
+        var parameters = engine.Parameters;
+        var isJet = engine.Performance.OutputKind == EngineOutputKind.ThrustNewtons;
+        var size = isJet
+            ? Normalize(parameters.TurbineDiameterMeters, 0.8d, 3d)
+            : Numeric.Clamp(
+                (Normalize(parameters.CylinderCount, 4d, 18d)
+                 + Normalize(parameters.DisplacementLiters, 2.4d, 100d)) * 0.5d,
+                0d,
+                1d);
+        var compression = isJet
+            ? Normalize(parameters.CompressionRatio, 6d, 50d)
+            : Normalize(parameters.CompressionRatio, 6d, 20d);
+        var optionComplexity = 0d;
+        if (parameters.BoostType != BoostType.None)
+        {
+            optionComplexity += 0.08d;
+        }
+
+        if (parameters.PistonInjectionType == PistonInjectionType.DirectInjection && !isJet)
+        {
+            optionComplexity += 0.04d;
+        }
+
+        if (parameters.HasAfterburner)
+        {
+            optionComplexity += 0.12d;
+        }
+
+        if (isJet && engine.Definition.EngineType == EngineType.Turbofan)
+        {
+            optionComplexity += Numeric.Clamp(parameters.BypassRatio / 20d, 0d, 1d) * 0.12d;
+        }
+
+        var rpmReference = isJet
+            ? ProductionEconomyBalance.Engine.JetReferenceRpm
+            : ProductionEconomyBalance.Engine.PistonReferenceRpm;
+        var rpmComplexity = Numeric.Clamp((parameters.MaximumSpeed / rpmReference) - 1d, 0d, 1d);
+        var optimization = Numeric.Clamp(parameters.EfficiencyOptimizationsPercent / 30d, 0d, 1d);
+        var precision = Numeric.Clamp(parameters.PrecisionEngineeringLevel / 10d, 0d, 1d);
+        return Numeric.Clamp(
+            GetEngineTypeComplexityBase(engine.Definition.EngineType)
+            + (size * 0.15d)
+            + (compression * 0.15d)
+            + optionComplexity
+            + (rpmComplexity * 0.08d)
+            + (optimization * 0.10d)
+            + (precision * 0.15d),
+            0d,
+            1d);
+    }
+
+    private static double CalculateFamilyComplexity(AircraftModel aircraft)
+    {
+        var parameters = aircraft.Airframe.Parameters;
+        var payload = parameters.PayloadLimitKilograms
+            ?? System.Math.Max(
+                ProductionEconomyBalance.Airframe.DefaultPayloadKilograms,
+                aircraft.Airframe.Definition.BaseStructuralWeightKilograms * ProductionEconomyBalance.Airframe.BaseWeightPayloadFactor);
+        var structuralIndex = ProductionEconomyBalance.CalculateStructuralIndex(
+            parameters.WingAreaSquareMeters,
+            payload,
+            parameters.FuelAmountLiters);
+        var size = NormalizeLogarithmic(
+            structuralIndex,
+            ProductionEconomyBalance.Airframe.ReferenceStructuralIndex,
+            2000d);
+        var complexity = 0.20d + (size * 0.50d);
+        if (parameters.MaterialType == WrightTycoon.Core.Airframes.MaterialType.Composite)
+        {
+            complexity += 0.10d;
+        }
+
+        if (parameters.StructureType == WrightTycoon.Core.Airframes.StructureType.Monocoque)
+        {
+            complexity += 0.05d;
+        }
+
+        if (parameters.WingShape != WrightTycoon.Core.Airframes.WingShape.Straight)
+        {
+            complexity += 0.08d;
+        }
+
+        complexity += Numeric.Clamp(parameters.PrecisionEngineeringLevel / 10d, 0d, 1d) * 0.17d;
+        return Numeric.Clamp(complexity, 0d, 1d);
+    }
+
+    private static double NormalizeLogarithmic(double value, double minValue, double maxValue)
+    {
+        var clamped = Numeric.Clamp(value, minValue, maxValue);
+        return Normalize(System.Math.Log(clamped), System.Math.Log(minValue), System.Math.Log(maxValue));
     }
 
     private static ResearchQuote ApplyPrecisionEngineeringDevelopmentEffects(ResearchQuote quote, int level)
@@ -153,7 +234,6 @@ public sealed class ResearchCalculator
             EngineType.Inline => ResearchBalance.Engine.ComplexityTypeBaseInline,
             EngineType.V => ResearchBalance.Engine.ComplexityTypeBaseV,
             EngineType.Radial => ResearchBalance.Engine.ComplexityTypeBaseRadial,
-            EngineType.Jet => ResearchBalance.Engine.ComplexityTypeBaseJet,
             EngineType.Turbojet => ResearchBalance.Engine.ComplexityTypeBaseTurbojet,
             EngineType.Turbofan => ResearchBalance.Engine.ComplexityTypeBaseTurbofan,
             _ => ResearchBalance.Engine.ComplexityTypeBasePiston,

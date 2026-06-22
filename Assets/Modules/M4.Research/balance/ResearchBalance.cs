@@ -15,23 +15,22 @@ public static class ResearchBalance
 
     public static class Engine
     {
-        public const double CostMultiplierMin = 3d;
-        public const double CostMultiplierMax = 10d;
-        public const int TimeMonthsMin = 12;
-        public const int TimeMonthsMax = 60;
+        public const double CostMultiplierMin = 8d;
+        public const double CostMultiplierMax = 12d;
+        public const int TimeMonthsMin = 30;
+        public const int TimeMonthsMax = 80;
 
         public const double ComplexityWeightOutput = 0.38d;
         public const double ComplexityWeightWeight = 0.2d;
         public const double ComplexityWeightCost = 0.22d;
         public const double ComplexityWeightManDays = 0.2d;
 
-        public const double ComplexityTypeBasePiston = 0.12d;
-        public const double ComplexityTypeBaseInline = 0.16d;
-        public const double ComplexityTypeBaseV = 0.22d;
-        public const double ComplexityTypeBaseRadial = 0.3d;
-        public const double ComplexityTypeBaseJet = 0.38d;
-        public const double ComplexityTypeBaseTurbojet = 0.48d;
-        public const double ComplexityTypeBaseTurbofan = 0.62d;
+        public const double ComplexityTypeBasePiston = 0d;
+        public const double ComplexityTypeBaseInline = 0.03d;
+        public const double ComplexityTypeBaseV = 0.08d;
+        public const double ComplexityTypeBaseRadial = 0.05d;
+        public const double ComplexityTypeBaseTurbojet = 0.55d;
+        public const double ComplexityTypeBaseTurbofan = 0.70d;
 
         public const double OutputPowerMinKilowatts = 35d;
         public const double OutputPowerMaxKilowatts = 60000d;
@@ -47,17 +46,20 @@ public static class ResearchBalance
 
     public static class Family
     {
-        public const double CostMultiplier = 5d;
-        public const int TimeMonths = 36;
-        public const double ComplexityReference = 0.4d;
+        public const double CostMultiplier = 4.5d;
+        public const double ComplexityCostMultiplierMin = 0.8d;
+        public const double ComplexityCostMultiplierMax = 1.2d;
+        public const int TimeMonthsMin = 40;
+        public const int TimeMonthsMax = 80;
+        public const double ComplexityReference = 0.5d;
     }
 
     public static class Type
     {
-        public const double CostMultiplierMin = 3d;
-        public const double CostMultiplierMax = 10d;
-        public const int TimeMonthsMin = 12;
-        public const int TimeMonthsMax = 60;
+        public const double CostMultiplierMin = 2.8d;
+        public const double CostMultiplierMax = 4.2d;
+        public const int TimeMonthsMin = 30;
+        public const int TimeMonthsMax = 70;
 
         public const double ComplexityWeightMagnitude = 0.5d;
         public const double ComplexityWeightChangedCount = 0.25d;

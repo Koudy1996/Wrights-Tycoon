@@ -104,12 +104,38 @@ public sealed class AircraftFactory
             engine,
             airframe,
             familyDefinition.Category,
-            typeDefinition.NavigationEquipment);
+            typeDefinition.NavigationEquipment,
+            ResolveRoleModule(typeDefinition));
         var researchModifierEffects = TypeResearchModifierCalculator.Calculate(typeDefinition.ResearchModifiers);
         performance = ApplyTypeResearchModifierEffects(performance, researchModifierEffects);
         var development = _developmentCostCalculator.Calculate(familyDefinition, baseEngine, variantEngine, baseAirframe, variantAirframe);
 
         return new Aircraft(familyDefinition, typeDefinition, engine, airframe, performance, development);
+    }
+
+    private static AircraftCategoryRoleRequirement ResolveRoleModule(AircraftTypeDefinition typeDefinition)
+    {
+        if (typeDefinition.HasPassengerCabin)
+        {
+            return AircraftCategoryRoleRequirement.PassengerCabin;
+        }
+
+        if (typeDefinition.HasCargoSpace)
+        {
+            return AircraftCategoryRoleRequirement.CargoSpace;
+        }
+
+        if (typeDefinition.HasSpecialEquipment)
+        {
+            return AircraftCategoryRoleRequirement.SpecialEquipment;
+        }
+
+        if (typeDefinition.HasCombatEquipment)
+        {
+            return AircraftCategoryRoleRequirement.CombatEquipment;
+        }
+
+        return AircraftCategoryRoleRequirement.NoRoleModule;
     }
 
     private static EngineParameters ApplyEngineDelta(EngineParameters baseline, EngineParameterDelta? delta)
@@ -239,6 +265,10 @@ public sealed class AircraftFactory
         {
             TotalProductionCost = productionCost,
             TotalProductionManDays = productionManDays,
+            AirframeProductionCost = performance.AirframeProductionCost * effects.ProductionCostMultiplier,
+            AirframeProductionManDays = performance.AirframeProductionManDays * effects.ProductionManDaysMultiplier,
+            EnginesProductionCost = performance.EnginesProductionCost * effects.ProductionCostMultiplier,
+            EnginesProductionManDays = performance.EnginesProductionManDays * effects.ProductionManDaysMultiplier,
             OverallReliability = reliability,
         };
     }

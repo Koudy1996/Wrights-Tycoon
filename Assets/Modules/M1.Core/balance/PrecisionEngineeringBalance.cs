@@ -8,26 +8,41 @@ public static class PrecisionEngineeringBalance
     public const int MaximumLevel = 10;
     public const double FirstBenefitPerLevel = 0.02d;
     public const double LastBenefitPerLevel = 0.01d;
-    public const double FirstPenaltyPerLevel = 0.01d;
-    public const double LastPenaltyPerLevel = 0.02d;
+    public const double FirstProductionCostPenaltyPerLevel = 0.02d;
+    public const double LastProductionCostPenaltyPerLevel = 0.04d;
+    public const double FirstProductionManDaysPenaltyPerLevel = 0.03d;
+    public const double LastProductionManDaysPenaltyPerLevel = 0.06d;
+    public const double FirstReliabilityPenaltyPerLevel = 0.01d;
+    public const double LastReliabilityPenaltyPerLevel = 0.02d;
     public const double DevelopmentPenaltyScale = 2d;
 
     public static PrecisionEngineeringEffects GetEffects(int level)
     {
         var clampedLevel = System.Math.Clamp(level, MinimumLevel, MaximumLevel);
         var benefit = SumProgressiveRates(clampedLevel, FirstBenefitPerLevel, LastBenefitPerLevel);
-        var penalty = SumProgressiveRates(clampedLevel, FirstPenaltyPerLevel, LastPenaltyPerLevel);
+        var costPenalty = SumProgressiveRates(
+            clampedLevel,
+            FirstProductionCostPenaltyPerLevel,
+            LastProductionCostPenaltyPerLevel);
+        var manDaysPenalty = SumProgressiveRates(
+            clampedLevel,
+            FirstProductionManDaysPenaltyPerLevel,
+            LastProductionManDaysPenaltyPerLevel);
+        var reliabilityPenalty = SumProgressiveRates(
+            clampedLevel,
+            FirstReliabilityPenaltyPerLevel,
+            LastReliabilityPenaltyPerLevel);
 
         return new PrecisionEngineeringEffects(
             clampedLevel,
             1d + benefit,
             System.Math.Max(0.1d, 1d - benefit),
             System.Math.Max(0.1d, 1d - benefit),
-            1d + penalty,
-            1d + penalty,
-            System.Math.Max(0.1d, 1d - penalty),
-            1d + (penalty * DevelopmentPenaltyScale),
-            1d + (penalty * DevelopmentPenaltyScale));
+            1d + costPenalty,
+            1d + manDaysPenalty,
+            System.Math.Max(0.1d, 1d - reliabilityPenalty),
+            1d + (costPenalty * DevelopmentPenaltyScale),
+            1d + (costPenalty * DevelopmentPenaltyScale));
     }
 
     private static double SumProgressiveRates(int level, double firstRate, double lastRate)
@@ -35,11 +50,6 @@ public static class PrecisionEngineeringBalance
         if (level <= 0)
         {
             return 0d;
-        }
-
-        if (MaximumLevel <= 1)
-        {
-            return firstRate;
         }
 
         var total = 0d;

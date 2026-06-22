@@ -102,28 +102,38 @@ public sealed class GovernmentContractModuleTests
     }
 
     [Test]
-    public void PricingService_AppliesGovernmentRunwayPriceMultiplier_ExceptLightSport()
+    public void PricingService_DoesNotPriceRunwayRequirement()
     {
+        var service = new GovernmentContractPricingService();
+        var baseline = CreateRequirements();
+        var shortRunway = new GovernmentContractRequirements
+        {
+            RequiredAircraftType = baseline.RequiredAircraftType,
+            SpeedAltitudeBand = baseline.SpeedAltitudeBand,
+            MinimumMaximumSpeedMetersPerSecond = baseline.MinimumMaximumSpeedMetersPerSecond,
+            MinimumRangeKilometers = baseline.MinimumRangeKilometers,
+            MinimumPayloadKilograms = baseline.MinimumPayloadKilograms,
+            MinimumReliability = baseline.MinimumReliability,
+            MinimumManeuverability = baseline.MinimumManeuverability,
+            MinimumCrewSize = baseline.MinimumCrewSize,
+            MaximumRequiredRunwayLengthMeters = PlaneDesignerBalance.Airframe.RunwayShortLengthMeters,
+        };
+        var longRunway = new GovernmentContractRequirements
+        {
+            RequiredAircraftType = baseline.RequiredAircraftType,
+            SpeedAltitudeBand = baseline.SpeedAltitudeBand,
+            MinimumMaximumSpeedMetersPerSecond = baseline.MinimumMaximumSpeedMetersPerSecond,
+            MinimumRangeKilometers = baseline.MinimumRangeKilometers,
+            MinimumPayloadKilograms = baseline.MinimumPayloadKilograms,
+            MinimumReliability = baseline.MinimumReliability,
+            MinimumManeuverability = baseline.MinimumManeuverability,
+            MinimumCrewSize = baseline.MinimumCrewSize,
+            MaximumRequiredRunwayLengthMeters = PlaneDesignerBalance.Airframe.RunwayLongLengthMeters,
+        };
+
         Assert.That(
-            GovernmentContractBalance.ResolveRunwayPriceMultiplier(
-                AircraftCategory.RegionalJet,
-                PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters),
-            Is.EqualTo(GovernmentContractBalance.MediumRunwayPriceMultiplier).Within(1e-9d));
-        Assert.That(
-            GovernmentContractBalance.ResolveRunwayPriceMultiplier(
-                AircraftCategory.RegionalJet,
-                PlaneDesignerBalance.Airframe.RunwayShortLengthMeters),
-            Is.EqualTo(GovernmentContractBalance.ShortRunwayPriceMultiplier).Within(1e-9d));
-        Assert.That(
-            GovernmentContractBalance.ResolveRunwayPriceMultiplier(
-                AircraftCategory.RegionalJet,
-                PlaneDesignerBalance.Airframe.RunwayLongLengthMeters),
-            Is.EqualTo(1d).Within(1e-9d));
-        Assert.That(
-            GovernmentContractBalance.ResolveRunwayPriceMultiplier(
-                AircraftCategory.LightSportAndRecreational,
-                PlaneDesignerBalance.Airframe.RunwayShortLengthMeters),
-            Is.EqualTo(1d).Within(1e-9d));
+            service.CalculateQuote(shortRunway, 400).UnitPrice,
+            Is.EqualTo(service.CalculateQuote(longRunway, 400).UnitPrice).Within(0.01d));
     }
 
     [Test]

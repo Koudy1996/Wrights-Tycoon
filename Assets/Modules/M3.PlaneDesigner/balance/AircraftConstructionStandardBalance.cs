@@ -9,8 +9,8 @@ public static class AircraftConstructionStandardBalance
         {
             AircraftConstructionStandard.Ultralight => new AircraftConstructionStandardEffects(
                 WeightMultiplier: 0.88d,
-                ProductionCostMultiplier: 0.82d,
-                ProductionManDaysMultiplier: 0.85d,
+                ProductionCostMultiplier: 0.75d,
+                ProductionManDaysMultiplier: 0.80d,
                 DevelopmentCostMultiplier: 0.80d,
                 DevelopmentManDaysMultiplier: 0.85d,
                 ReliabilityDelta: -0.035d,
@@ -27,8 +27,8 @@ public static class AircraftConstructionStandardBalance
                 DragMultiplier: 1.000d),
             AircraftConstructionStandard.ArmyGrade => new AircraftConstructionStandardEffects(
                 WeightMultiplier: 1.16d,
-                ProductionCostMultiplier: 1.28d,
-                ProductionManDaysMultiplier: 1.22d,
+                ProductionCostMultiplier: 1.35d,
+                ProductionManDaysMultiplier: 1.30d,
                 DevelopmentCostMultiplier: 1.35d,
                 DevelopmentManDaysMultiplier: 1.25d,
                 ReliabilityDelta: 0.055d,

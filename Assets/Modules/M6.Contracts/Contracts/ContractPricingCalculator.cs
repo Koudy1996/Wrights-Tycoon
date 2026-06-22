@@ -1,5 +1,6 @@
 using System;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Math;
@@ -31,10 +32,7 @@ public sealed class ContractPricingCalculator
 
         requirements.Validate();
 
-        var runwayPriceMultiplier = ContractBalance.ResolveCommercialRunwayPriceMultiplier(
-            requirements.RequiredCategory,
-            requirements.MaximumRequiredRunwayLengthMeters);
-        var estimatedMinimumUnitCost = EstimateMinimumUnitProductionCost(requirements) * runwayPriceMultiplier;
+        var estimatedMinimumUnitCost = EstimateMinimumUnitProductionCost(requirements);
         var markup = quantityUnits < ContractBalance.LargeOrderMinQuantityUnits
             ? ContractBalance.SmallOrderContractMarkup
             : ContractBalance.LargeOrderContractMarkup;
@@ -89,40 +87,134 @@ public sealed class ContractPricingCalculator
     {
         var difficulty = CalculateDifficultyNormalized(requirements, profile);
 
-        var minHardwareCost = CalculateReferenceUnitHardwareCost(
-            profile.MinMaximumWeightKilograms,
-            profile.MinRequiredRangeKilometers,
-            profile.MinRequiredSpeedKilometersPerHour,
-            profile.MinRequiredPayloadKilograms,
-            profile.MinCrew);
-        var maxHardwareCost = CalculateReferenceUnitHardwareCost(
-            profile.MaxMaximumWeightKilograms,
-            profile.MaxRequiredRangeKilometers,
-            profile.MaxRequiredSpeedKilometersPerHour,
-            profile.MaxRequiredPayloadKilograms,
-            profile.MaxCrew);
-
-        var minLaborCost = CalculateReferenceUnitManDayLaborCost(
-            profile.Category,
-            profile.MinMaximumWeightKilograms,
-            profile.MinRequiredRangeKilometers,
-            profile.MinRequiredSpeedKilometersPerHour,
-            profile.MinRequiredPayloadKilograms,
-            profile.MinCrew);
-        var maxLaborCost = CalculateReferenceUnitManDayLaborCost(
-            profile.Category,
-            profile.MaxMaximumWeightKilograms,
-            profile.MaxRequiredRangeKilometers,
-            profile.MaxRequiredSpeedKilometersPerHour,
-            profile.MaxRequiredPayloadKilograms,
-            profile.MaxCrew);
-
-        var estimatedHardwareCost = minHardwareCost + ((maxHardwareCost - minHardwareCost) * difficulty);
-        var estimatedLaborCost = minLaborCost + ((maxLaborCost - minLaborCost) * difficulty);
-
-        var estimated = estimatedHardwareCost + estimatedLaborCost;
+        var structuralIndexRange = ContractBalance.ResolveReferenceStructuralIndexRange(profile.Category);
+        var structuralIndex = structuralIndexRange.Min
+            + ((structuralIndexRange.Max - structuralIndexRange.Min) * difficulty);
+        var estimated = CalculateReferenceCompleteProductionCost(profile, structuralIndex, difficulty);
         return System.Math.Max(ContractBalance.PricingMinimumUnitCostFloor, estimated);
     }
+
+    private static double CalculateReferenceCompleteProductionCost(
+        AircraftCategoryProfile profile,
+        double structuralIndex,
+        double difficulty)
+    {
+        var category = profile.Category;
+        var airframeParts = ProductionEconomyBalance.CalculateAirframeBaseParts(structuralIndex);
+        var airframeManDays = ProductionEconomyBalance.CalculateAirframeBaseManDays(structuralIndex);
+        var policy = AircraftCategoryRequirementBalance.GetPolicy(category);
+
+        if (category == AircraftCategory.LightSportAndRecreational)
+        {
+            airframeParts *= ProductionEconomyBalance.Airframe.WoodPartsMultiplier
+                * ProductionEconomyBalance.Airframe.TrussPartsMultiplier
+                * AircraftConstructionStandardBalance.GetEffects(AircraftConstructionStandard.Ultralight).ProductionCostMultiplier;
+            airframeManDays *= ProductionEconomyBalance.Airframe.WoodManDaysMultiplier
+                * ProductionEconomyBalance.Airframe.TrussManDaysMultiplier
+                * AircraftConstructionStandardBalance.GetEffects(AircraftConstructionStandard.Ultralight).ProductionManDaysMultiplier;
+        }
+        else
+        {
+            var standard = (policy.AllowedConstructionStandards & AircraftConstructionStandardOptions.ArmyGrade) != 0
+                && (policy.AllowedConstructionStandards & AircraftConstructionStandardOptions.Civil) == 0
+                    ? AircraftConstructionStandard.ArmyGrade
+                    : AircraftConstructionStandard.Civil;
+            var standardEffects = AircraftConstructionStandardBalance.GetEffects(standard);
+            airframeParts *= standardEffects.ProductionCostMultiplier;
+            airframeManDays *= standardEffects.ProductionManDaysMultiplier;
+        }
+
+        airframeParts *= 1d + ProductionEconomyBalance.GetRolePartsRate(policy.RoleRequirement);
+        airframeManDays *= 1d + ProductionEconomyBalance.GetRoleManDaysRate(policy.RoleRequirement);
+
+        var requiredRange = profile.MinRequiredRangeKilometers
+            + ((profile.MaxRequiredRangeKilometers - profile.MinRequiredRangeKilometers) * difficulty);
+        if (requiredRange > 4000d)
+        {
+            airframeParts += System.Math.Max(
+                ProductionEconomyBalance.Airframe.AdvancedNavigationMinimumParts,
+                airframeParts * ProductionEconomyBalance.Airframe.AdvancedNavigationPartsRate);
+            airframeManDays += System.Math.Max(
+                ProductionEconomyBalance.Airframe.AdvancedNavigationMinimumManDays,
+                airframeManDays * ProductionEconomyBalance.Airframe.AdvancedNavigationManDaysRate);
+        }
+        else if (requiredRange > 1500d)
+        {
+            airframeParts += System.Math.Max(
+                ProductionEconomyBalance.Airframe.BasicNavigationMinimumParts,
+                airframeParts * ProductionEconomyBalance.Airframe.BasicNavigationPartsRate);
+            airframeManDays += System.Math.Max(
+                ProductionEconomyBalance.Airframe.BasicNavigationMinimumManDays,
+                airframeManDays * ProductionEconomyBalance.Airframe.BasicNavigationManDaysRate);
+        }
+
+        var engineCount = EstimateEngineCount(category, profile.MinMaximumWeightKilograms
+            + ((profile.MaxMaximumWeightKilograms - profile.MinMaximumWeightKilograms) * difficulty));
+        var engineCost = CalculateReferenceEngineCompleteCost(category, structuralIndex);
+        return ProductionEconomyBalance.CalculateCompleteCost(airframeParts, airframeManDays)
+            + (engineCount * engineCost);
+    }
+
+    private static double CalculateReferenceEngineCompleteCost(AircraftCategory category, double structuralIndex)
+    {
+        if (IsJetCategory(category))
+        {
+            var diameter = Numeric.Clamp(1.2d * System.Math.Pow(structuralIndex / 180d, 0.25d), 0.8d, 3d);
+            var isTurbojet = category is AircraftCategory.MilitaryTactical or AircraftCategory.Bomber;
+            var baseParts = isTurbojet
+                ? ProductionEconomyBalance.Engine.TurbojetReferenceParts
+                : ProductionEconomyBalance.Engine.TurbofanReferenceParts;
+            var baseManDays = isTurbojet
+                ? ProductionEconomyBalance.Engine.TurbojetReferenceManDays
+                : ProductionEconomyBalance.Engine.TurbofanReferenceManDays;
+            var sizeMultiplier = System.Math.Pow(
+                diameter / ProductionEconomyBalance.Engine.JetReferenceDiameterMeters,
+                ProductionEconomyBalance.Engine.JetSizeExponent);
+            var compression = isTurbojet ? 20d : 30d;
+            var jetParts = baseParts * sizeMultiplier * ProductionEconomyBalance.GetJetCompressionPartsMultiplier(compression);
+            var jetManDays = baseManDays * sizeMultiplier * ProductionEconomyBalance.GetJetCompressionManDaysMultiplier(compression);
+            if (!isTurbojet)
+            {
+                jetParts *= 1d + (6d * ProductionEconomyBalance.Engine.BypassPartsIncreasePerPoint);
+                jetManDays *= 1d + (6d * ProductionEconomyBalance.Engine.BypassManDaysIncreasePerPoint);
+            }
+
+            return ProductionEconomyBalance.CalculateCompleteCost(jetParts, jetManDays);
+        }
+
+        var displacement = Numeric.Clamp(
+            2.4d * System.Math.Pow(structuralIndex / ProductionEconomyBalance.Airframe.ReferenceStructuralIndex, 0.65d),
+            2.4d,
+            100d);
+        var cylinders = (int)Numeric.Clamp(
+            System.Math.Round(4d + (10d * Numeric.Clamp(structuralIndex / 375d, 0d, 1d))),
+            4d,
+            18d);
+        var cylinderVolume = displacement / cylinders;
+        var parts = ProductionEconomyBalance.Engine.PistonBaseParts
+            + (cylinders * ProductionEconomyBalance.Engine.PistonCylinderParts * System.Math.Pow(
+                cylinderVolume / ProductionEconomyBalance.Engine.PistonReferenceCylinderVolumeLiters,
+                ProductionEconomyBalance.Engine.PistonCylinderPartsExponent))
+            + (displacement * ProductionEconomyBalance.Engine.PistonDisplacementPartsPerLiter);
+        var manDays = ProductionEconomyBalance.Engine.PistonBaseManDays
+            + (cylinders * ProductionEconomyBalance.Engine.PistonCylinderManDays * System.Math.Pow(
+                cylinderVolume / ProductionEconomyBalance.Engine.PistonReferenceCylinderVolumeLiters,
+                ProductionEconomyBalance.Engine.PistonCylinderManDaysExponent))
+            + (displacement * ProductionEconomyBalance.Engine.PistonDisplacementManDaysPerLiter);
+        parts *= ProductionEconomyBalance.GetPistonCompressionPartsMultiplier(8d);
+        manDays *= ProductionEconomyBalance.GetPistonCompressionManDaysMultiplier(8d);
+        return ProductionEconomyBalance.CalculateCompleteCost(parts, manDays);
+    }
+
+    private static bool IsJetCategory(AircraftCategory category) => category is
+        AircraftCategory.RegionalJet
+        or AircraftCategory.MediumTransportNarrowBody
+        or AircraftCategory.HeavyTransportWideBody
+        or AircraftCategory.BusinessVipJet
+        or AircraftCategory.MilitaryTactical
+        or AircraftCategory.MilitaryStrategicSupport
+        or AircraftCategory.LongRangeCargo
+        or AircraftCategory.Bomber;
 
     private static double CalculateReferenceUnitHardwareCost(
         double maxWeightKilograms,
@@ -296,15 +388,6 @@ public sealed class ContractPricingCalculator
                 profile.MinCrew,
                 profile.MaxCrew,
                 invert: false));
-        }
-
-        if (requirements.MaximumRequiredRunwayLengthMeters.HasValue)
-        {
-            AddMetric(ref sum, ref count, Normalize(
-                requirements.MaximumRequiredRunwayLengthMeters.Value,
-                PlaneDesignerBalance.Airframe.RunwayShortLengthMeters,
-                PlaneDesignerBalance.Airframe.RunwayLongLengthMeters,
-                invert: true));
         }
 
         if (requirements.MaximumFuelConsumptionKilogramsPerHour.HasValue)

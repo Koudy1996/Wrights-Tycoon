@@ -18,13 +18,15 @@ public sealed class EngineCalculatorTests
         var levelTen = PrecisionEngineeringBalance.GetEffects(10);
 
         Assert.That(levelOne.OutputMultiplier, Is.EqualTo(1.02d).Within(0.000001d));
-        Assert.That(levelOne.ProductionCostMultiplier, Is.EqualTo(1.01d).Within(0.000001d));
-        Assert.That(levelOne.DevelopmentCostMultiplier, Is.EqualTo(1.02d).Within(0.000001d));
+        Assert.That(levelOne.ProductionCostMultiplier, Is.EqualTo(1.02d).Within(0.000001d));
+        Assert.That(levelOne.ProductionManDaysMultiplier, Is.EqualTo(1.03d).Within(0.000001d));
+        Assert.That(levelOne.DevelopmentCostMultiplier, Is.EqualTo(1.04d).Within(0.000001d));
         Assert.That(levelTen.OutputMultiplier, Is.EqualTo(1.15d).Within(0.000001d));
         Assert.That(levelTen.WeightMultiplier, Is.EqualTo(0.85d).Within(0.000001d));
-        Assert.That(levelTen.ProductionCostMultiplier, Is.EqualTo(1.15d).Within(0.000001d));
+        Assert.That(levelTen.ProductionCostMultiplier, Is.EqualTo(1.30d).Within(0.000001d));
+        Assert.That(levelTen.ProductionManDaysMultiplier, Is.EqualTo(1.45d).Within(0.000001d));
         Assert.That(levelTen.ReliabilityMultiplier, Is.EqualTo(0.85d).Within(0.000001d));
-        Assert.That(levelTen.DevelopmentTimeMultiplier, Is.EqualTo(1.30d).Within(0.000001d));
+        Assert.That(levelTen.DevelopmentTimeMultiplier, Is.EqualTo(1.60d).Within(0.000001d));
     }
 
     [Test]
@@ -331,6 +333,82 @@ public sealed class EngineCalculatorTests
         Assert.That(vReport.EngineFrontalAreaSquareMeters, Is.GreaterThan(inlineReport.EngineFrontalAreaSquareMeters));
         Assert.That(radialReport.Weight.Kilograms, Is.LessThan(vReport.Weight.Kilograms));
         Assert.That(radialReport.Weight.Kilograms, Is.LessThan(inlineReport.Weight.Kilograms));
+        Assert.That(radialReport.Cost / inlineReport.Cost, Is.EqualTo(0.90d).Within(0.000001d));
+        Assert.That(radialReport.ProductionManDays / inlineReport.ProductionManDays, Is.EqualTo(0.95d).Within(0.000001d));
+    }
+
+    [Test]
+    public void EfficiencyOptimization_ScalesProductionBurdenLinearly()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreatePistonDefinitionForArrangement(EngineType.Inline);
+        var baseline = new EngineParameters
+        {
+            DisplacementLiters = 8d,
+            CylinderCount = 6,
+            CompressionRatio = 8d,
+            MaximumSpeed = 2500d,
+            OptimizationAltitudeMeters = 1500d,
+            CoolingEfficiency = 0.75d,
+            PistonInjectionType = PistonInjectionType.Carburetor,
+            EfficiencyOptimizationsPercent = 0d,
+        };
+        var midpoint = baseline.Clone();
+        midpoint.EfficiencyOptimizationsPercent = 15d;
+        var maximum = baseline.Clone();
+        maximum.EfficiencyOptimizationsPercent = 30d;
+
+        var baselineReport = calculator.Calculate(definition, baseline, atmosphere);
+        var midpointReport = calculator.Calculate(definition, midpoint, atmosphere);
+        var maximumReport = calculator.Calculate(definition, maximum, atmosphere);
+
+        Assert.That(midpointReport.Cost / baselineReport.Cost, Is.EqualTo(1.06d).Within(0.000001d));
+        Assert.That(maximumReport.Cost / baselineReport.Cost, Is.EqualTo(1.12d).Within(0.000001d));
+        Assert.That(midpointReport.ProductionManDays / baselineReport.ProductionManDays, Is.EqualTo(1.10d).Within(0.000001d));
+        Assert.That(maximumReport.ProductionManDays / baselineReport.ProductionManDays, Is.EqualTo(1.20d).Within(0.000001d));
+    }
+
+    [Test]
+    public void EngineResearch_RangesFromSimpleThirtyMonthToAdvancedEightyMonthPrograms()
+    {
+        var calculator = new EngineCalculator();
+        var research = new ResearchCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var simpleDefinition = CreatePistonDefinitionForArrangement(EngineType.Inline);
+        var simpleParameters = new EngineParameters
+        {
+            DisplacementLiters = 2.4d,
+            CylinderCount = 4,
+            CompressionRatio = 7d,
+            MaximumSpeed = 2500d,
+            OptimizationAltitudeMeters = 1500d,
+            CoolingEfficiency = 0.75d,
+            PistonInjectionType = PistonInjectionType.Carburetor,
+        };
+        var simpleReport = calculator.Calculate(simpleDefinition, simpleParameters, atmosphere);
+        var simpleQuote = research.CalculateEngineQuote(new Engine(simpleDefinition, simpleParameters, simpleReport));
+
+        var advancedDefinition = CreateTurbofanDefinition();
+        var advancedParameters = new EngineParameters
+        {
+            TurbineDiameterMeters = 3d,
+            BypassRatio = 12d,
+            CompressionRatio = 50d,
+            MaximumSpeed = 100000d,
+            OptimizationAltitudeMeters = 12000d,
+            CoolingEfficiency = 1d,
+            EfficiencyOptimizationsPercent = 30d,
+            PrecisionEngineeringLevel = 10,
+            HasAfterburner = true,
+        };
+        var advancedReport = calculator.Calculate(advancedDefinition, advancedParameters, atmosphere);
+        var advancedQuote = research.CalculateEngineQuote(new Engine(advancedDefinition, advancedParameters, advancedReport));
+
+        Assert.That(simpleQuote.ResearchTimeMonths, Is.InRange(30, 35));
+        Assert.That(advancedQuote.ResearchTimeMonths, Is.EqualTo(80));
+        Assert.That(simpleQuote.ResearchCost / simpleReport.CompleteProductionCost, Is.InRange(8d, 12d));
+        Assert.That(advancedQuote.ResearchCost / advancedReport.CompleteProductionCost, Is.InRange(8d, 12.001d));
     }
 
     [Test]

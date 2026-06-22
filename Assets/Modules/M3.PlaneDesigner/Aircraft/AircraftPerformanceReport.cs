@@ -26,8 +26,20 @@ public sealed record AircraftPerformanceReport(
     double FullFuelCruiseBurnKilogramsPerHour = 0d,
     double EmptyFuelCruiseBurnKilogramsPerHour = 0d,
     ProductionBreakdown? CostBreakdown = null,
-    ProductionBreakdown? ProductionManDaysBreakdown = null)
+    ProductionBreakdown? ProductionManDaysBreakdown = null,
+    double AirframeProductionCost = 0d,
+    double AirframeProductionManDays = 0d,
+    double EnginesProductionCost = 0d,
+    double EnginesProductionManDays = 0d)
 {
+    public double TotalLaborCost => ProductionEconomyBalance.CalculateLaborCost(TotalProductionManDays);
+
+    public double CompleteProductionCost => ProductionEconomyBalance.CalculateCompleteCost(TotalProductionCost, TotalProductionManDays);
+
+    public double AirframeCompleteProductionCost => ProductionEconomyBalance.CalculateCompleteCost(
+        AirframeProductionCost,
+        AirframeProductionManDays);
+
     public int PassengerCapacity => GetPassengerCapacity(PlaneDesignerBalance.Categories.PayloadKilogramsPerPassenger);
 
     public int GetPassengerCapacity(double kilogramsPerPassenger)

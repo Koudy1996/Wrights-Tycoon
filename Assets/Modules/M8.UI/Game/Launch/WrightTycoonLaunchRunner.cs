@@ -3593,8 +3593,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             FormatUiNumber(newEngine.Performance.Weight.Kilograms, "0.0"));
         DrawVersionComparisonRow(
             "Cost",
-            FormatUiNumber(originalEngine.Performance.Cost, "0"),
-            FormatUiNumber(newEngine.Performance.Cost, "0"));
+            FormatUiNumber(originalEngine.Performance.CompleteProductionCost, "0"),
+            FormatUiNumber(newEngine.Performance.CompleteProductionCost, "0"));
         DrawVersionComparisonRow(
             "Production MD",
             FormatUiNumber(originalEngine.Performance.ProductionManDays, "0.0"),
@@ -3811,8 +3811,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             FormatUiNumber(GetRunwayLengthMeters(newAircraft.Airframe.Parameters.RunwayType), "0"));
         DrawVersionComparisonRow(
             "Production Cost",
-            FormatUiNumber(originalAircraft.Performance.TotalProductionCost, "0"),
-            FormatUiNumber(newAircraft.Performance.TotalProductionCost, "0"));
+            FormatUiNumber(originalAircraft.Performance.CompleteProductionCost, "0"),
+            FormatUiNumber(newAircraft.Performance.CompleteProductionCost, "0"));
         DrawVersionComparisonRow(
             "Production MD",
             FormatUiNumber(originalAircraft.Performance.TotalProductionManDays, "0.0"),
@@ -4134,12 +4134,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawMetric("Maneuverability", airframePerf.Maneuverability, "0.0");
 
         DrawMetricWithBreakdownTooltip(
-            "Production Cost",
+            "Production Parts",
             perf.TotalProductionCost,
             "0",
             perf.CostBreakdown,
             "breakdown.aircraft.cost",
             "Aircraft Production Cost Breakdown");
+        DrawMetric("Production Labor", perf.TotalLaborCost, "0");
+        DrawMetric("Complete Production Cost", perf.CompleteProductionCost, "0");
         DrawMetricWithBreakdownTooltip(
             "Production MD",
             perf.TotalProductionManDays,
@@ -6477,7 +6479,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         baseQuote = ApplyEarlyResearchDiscountToResearchQuote(baseQuote);
         modifiedQuote = ApplyEarlyResearchDiscountToResearchQuote(modifiedQuote);
         var modifiedReliability = ClampResearchPreviewReliability(engine.Performance.Reliability + effects.ReliabilityDelta);
-        var modifiedProductionCost = System.Math.Max(0d, engine.Performance.Cost * effects.ProductionCostMultiplier);
+        var modifiedProductionCost = System.Math.Max(0d, engine.Performance.CompleteProductionCost * effects.ProductionCostMultiplier);
         var modifiedProductionManDays = System.Math.Max(0d, engine.Performance.ProductionManDays * effects.ProductionManDaysMultiplier);
 
         DrawSection("Affected Parameters");
@@ -6520,7 +6522,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         baseQuote = ApplyEarlyResearchDiscountToResearchQuote(baseQuote);
         modifiedQuote = ApplyEarlyResearchDiscountToResearchQuote(modifiedQuote);
         var modifiedReliability = ClampResearchPreviewReliability(aircraft.Performance.OverallReliability + effects.ReliabilityDelta);
-        var modifiedProductionCost = System.Math.Max(0d, aircraft.Performance.TotalProductionCost * effects.ProductionCostMultiplier);
+        var modifiedProductionCost = System.Math.Max(0d, aircraft.Performance.CompleteProductionCost * effects.ProductionCostMultiplier);
         var modifiedProductionManDays = System.Math.Max(0d, aircraft.Performance.TotalProductionManDays * effects.ProductionManDaysMultiplier);
 
         DrawSection("Affected Parameters");
@@ -6569,7 +6571,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         baseQuote = ApplyEarlyResearchDiscountToResearchQuote(baseQuote);
         modifiedQuote = ApplyEarlyResearchDiscountToResearchQuote(modifiedQuote);
         var modifiedReliability = ClampResearchPreviewReliability(aircraft.Performance.OverallReliability + effects.ReliabilityDelta);
-        var modifiedProductionCost = System.Math.Max(0d, aircraft.Performance.TotalProductionCost * effects.ProductionCostMultiplier);
+        var modifiedProductionCost = System.Math.Max(0d, aircraft.Performance.CompleteProductionCost * effects.ProductionCostMultiplier);
         var modifiedProductionManDays = System.Math.Max(0d, aircraft.Performance.TotalProductionManDays * effects.ProductionManDaysMultiplier);
 
         DrawSection("Affected Parameters");
@@ -7565,7 +7567,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             DrawParameterValueRow("Weight (kg)", FormatUiNumber(built.Performance.Weight.Kilograms, "0.0"));
             DrawParameterValueRow("Engine Length (m)", FormatUiNumber(built.Performance.EngineLengthMeters, "0.00"));
             DrawParameterValueRow("Engine Frontal Area (m2)", FormatUiNumber(built.Performance.EngineFrontalAreaSquareMeters, "0.000"));
-            DrawParameterValueRow("Cost", FormatUiNumber(built.Performance.Cost, "0"));
+            DrawParameterValueRow("Parts Cost", FormatUiNumber(built.Performance.Cost, "0"));
+            DrawParameterValueRow("Complete Production Cost", FormatUiNumber(built.Performance.CompleteProductionCost, "0"));
             DrawParameterValueRow("Production MD", FormatUiNumber(built.Performance.ProductionManDays, "0.0"));
         }
         catch
@@ -7681,7 +7684,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawParameterValueRow("Cruise Speed (km/h)", FormatUiNumber(aircraft.Performance.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0"));
         DrawParameterValueRow("Useful Weight (kg)", FormatUiNumber(aircraft.Performance.PayloadCapacity.Kilograms, "0.0"));
         DrawParameterValueRow("Overall Reliability", FormatUiNumber(aircraft.Performance.OverallReliability, "0.000"));
-        DrawParameterValueRow("Production Cost", FormatUiNumber(aircraft.Performance.TotalProductionCost, "0"));
+        DrawParameterValueRow("Production Parts", FormatUiNumber(aircraft.Performance.TotalProductionCost, "0"));
+        DrawParameterValueRow("Complete Production Cost", FormatUiNumber(aircraft.Performance.CompleteProductionCost, "0"));
         DrawParameterValueRow("Production MD", FormatUiNumber(aircraft.Performance.TotalProductionManDays, "0.0"));
     }
 
@@ -11548,21 +11552,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private static double CalculateAircraftUnitCostWithManDayLabor(Aircraft aircraft)
     {
-        var engineCount = aircraft.Airframe.Parameters.EngineCount;
-        var unitHardwareCost = aircraft.Airframe.Performance.ProductionCost + (aircraft.Engine.Performance.Cost * engineCount);
-
-        var airframeManDays = aircraft.Airframe.Performance.ProductionManDays;
-        var engineManDays = aircraft.Engine.Performance.ProductionManDays * engineCount;
-
-        var planeLaborCostPerManDay = FactoryBalance.PlaneStaffMonthlyCostPerEmployee
-            / System.Math.Max(FactoryBalance.EmployeeManDaysPerMonth, 1d);
-        var engineLaborCostPerManDay = FactoryBalance.EngineStaffMonthlyCostPerEmployee
-            / System.Math.Max(FactoryBalance.EmployeeManDaysPerMonth, 1d);
-
-        var unitLaborCost = (airframeManDays * planeLaborCostPerManDay)
-            + (engineManDays * engineLaborCostPerManDay);
-
-        return unitHardwareCost + unitLaborCost;
+        return aircraft.Performance.CompleteProductionCost;
     }
 
     private static void DrawSignedCurrencyMetric(string label, double value)
@@ -14019,7 +14009,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     }
 
     private static bool IsJetFamily(EngineType engineType) =>
-        engineType is EngineType.Jet or EngineType.Turbojet or EngineType.Turbofan;
+        engineType is EngineType.Turbojet or EngineType.Turbofan;
 
     private static bool IsPistonFamily(EngineType engineType) => !IsJetFamily(engineType);
 
@@ -14034,7 +14024,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             EngineType.Turbofan => bypassRatio > 10d
                 ? EnginePreviewKind.HighBypassTurbofan
                 : EnginePreviewKind.LowBypassTurbofan,
-            EngineType.Jet => EnginePreviewKind.Turbojet,
             EngineType.Turbojet => EnginePreviewKind.Turbojet,
             _ => EnginePreviewKind.InlinePiston,
         };
@@ -14069,7 +14058,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private static EngineParameters CreateDefaultEngineParameters(EngineDefinition definition)
     {
-        var isJet = definition.EngineType is EngineType.Jet or EngineType.Turbojet or EngineType.Turbofan;
+        var isJet = definition.EngineType is EngineType.Turbojet or EngineType.Turbofan;
         var isSportPistonCore = string.Equals(definition.Id, "eng.piston.sport", StringComparison.OrdinalIgnoreCase);
         return new EngineParameters
         {

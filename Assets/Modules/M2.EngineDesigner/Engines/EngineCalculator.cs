@@ -286,7 +286,6 @@ public sealed class EngineCalculator : IEngineCalculator
         {
             EngineType.Turbojet => 1.12d,
             EngineType.Turbofan => 1d,
-            EngineType.Jet => 1.06d,
             _ => 1d,
         };
         var boostFactor = GetJetBoostFactor(parameters.BoostType);
@@ -513,47 +512,78 @@ public sealed class EngineCalculator : IEngineCalculator
         Mass weight,
         PrecisionEngineeringEffects precisionEffects)
     {
-        var normalizedOutput = outputKind == EngineOutputKind.PowerKilowatts
-            ? seaLevelOutput
-            : seaLevelOutput / 1000d;
         var isJet = outputKind == EngineOutputKind.ThrustNewtons;
-        var boostCost = parameters.BoostType switch
+        var items = new List<ProductionBreakdownItem>();
+        double totalCost;
+        if (isJet)
         {
-            BoostType.None => 0d,
-            BoostType.Turbo => 3500d,
-            BoostType.Supercharger => 2800d,
-            _ => 0d,
-        };
-        var speedCost = isJet
-            ? System.Math.Max(0d, parameters.MaximumSpeed - 50000d) * 0.09d
-            : System.Math.Max(0d, parameters.MaximumSpeed - 2500d) * 2.2d;
-        var cylinderCost = isJet ? 0d : parameters.CylinderCount * 120d;
-        var bypassCost = definition.EngineType == EngineType.Turbofan ? parameters.BypassRatio * 420d : 0d;
-        var injectionCost = !isJet && parameters.PistonInjectionType == PistonInjectionType.Carburetor
-            ? -EngineDesignerBalance.Engine.CarburetorCostDiscount
-            : 0d;
+            var referenceParts = definition.EngineType == EngineType.Turbofan
+                ? ProductionEconomyBalance.Engine.TurbofanReferenceParts
+                : ProductionEconomyBalance.Engine.TurbojetReferenceParts;
+            var diameterRatio = System.Math.Max(parameters.TurbineDiameterMeters, Numeric.Epsilon)
+                / ProductionEconomyBalance.Engine.JetReferenceDiameterMeters;
+            totalCost = referenceParts * System.Math.Pow(diameterRatio, ProductionEconomyBalance.Engine.JetSizeExponent);
+            items.Add(new ProductionBreakdownItem("Turbine circumference and architecture", totalCost));
+            AddMultiplierAdjustment(
+                items,
+                "Compressor pressure ratio",
+                ref totalCost,
+                ProductionEconomyBalance.GetJetCompressionPartsMultiplier(parameters.CompressionRatio));
+            if (definition.EngineType == EngineType.Turbofan)
+            {
+                var pricedBypass = Numeric.Clamp(
+                    parameters.BypassRatio,
+                    0d,
+                    ProductionEconomyBalance.Engine.BypassPricingCap);
+                AddMultiplierAdjustment(
+                    items,
+                    "Bypass hardware",
+                    ref totalCost,
+                    1d + (pricedBypass * ProductionEconomyBalance.Engine.BypassPartsIncreasePerPoint));
+            }
+        }
+        else
+        {
+            var cylinders = System.Math.Max(1, parameters.CylinderCount);
+            var cylinderVolume = System.Math.Max(parameters.DisplacementLiters / cylinders, Numeric.Epsilon);
+            var cylinderScale = System.Math.Pow(
+                cylinderVolume / ProductionEconomyBalance.Engine.PistonReferenceCylinderVolumeLiters,
+                ProductionEconomyBalance.Engine.PistonCylinderPartsExponent);
+            var crankcaseParts = ProductionEconomyBalance.Engine.PistonBaseParts;
+            var cylinderParts = cylinders * ProductionEconomyBalance.Engine.PistonCylinderParts * cylinderScale;
+            var displacementParts = parameters.DisplacementLiters * ProductionEconomyBalance.Engine.PistonDisplacementPartsPerLiter;
+            items.Add(new ProductionBreakdownItem("Crankcase", crankcaseParts));
+            items.Add(new ProductionBreakdownItem("Cylinders and cylinder volume", cylinderParts));
+            items.Add(new ProductionBreakdownItem("Displacement hardware", displacementParts));
+            totalCost = crankcaseParts + cylinderParts + displacementParts;
+            AddMultiplierAdjustment(
+                items,
+                $"Engine architecture ({definition.EngineType})",
+                ref totalCost,
+                ProductionEconomyBalance.GetEngineArchitecturePartsMultiplier(definition.EngineType));
+            AddMultiplierAdjustment(
+                items,
+                "Compression ratio",
+                ref totalCost,
+                ProductionEconomyBalance.GetPistonCompressionPartsMultiplier(parameters.CompressionRatio));
+            if (parameters.PistonInjectionType == PistonInjectionType.DirectInjection)
+            {
+                AddMultiplierAdjustment(
+                    items,
+                    "Direct injection",
+                    ref totalCost,
+                    ProductionEconomyBalance.Engine.DirectInjectionPartsMultiplier);
+            }
+        }
 
-        var complexityCost = GetComplexityPenalty(definition.EngineType) * 24000d * definition.ComplexityFactor;
-        var items = new List<ProductionBreakdownItem>
-        {
-            new("Base engine", definition.BaseCost),
-            new("Rated output", normalizedOutput * definition.CostPerOutputUnit),
-            new("Engine mass", weight.Kilograms * 5.5d),
-            new("Maximum speed hardware", speedCost),
-            new("Cylinders", cylinderCost),
-            new("Bypass hardware", bypassCost),
-            new("Boost system", boostCost),
-            new("Engine complexity", complexityCost),
-            new("Carburetor discount", injectionCost),
-        };
-        var totalCost = items.Sum(item => item.Amount);
+        AddEngineProductionOptionMultipliers(items, ref totalCost, parameters, isJet, parts: true);
         if (isJet && parameters.HasAfterburner)
         {
             AddMultiplierAdjustment(
                 items,
                 "Afterburner",
                 ref totalCost,
-                EngineDesignerBalance.Engine.JetAfterburnerCostMultiplier);
+                ProductionEconomyBalance.Engine.AfterburnerPartsMultiplier);
         }
 
         AddMultiplierAdjustment(
@@ -562,7 +592,7 @@ public sealed class EngineCalculator : IEngineCalculator
             ref totalCost,
             precisionEffects.ProductionCostMultiplier);
 
-        AddMinimumAdjustment(items, "Minimum engine cost", ref totalCost, definition.BaseCost * 0.2d);
+        AddMinimumAdjustment(items, "Minimum engine cost", ref totalCost, 1d);
         return new ProductionBreakdown(items);
     }
 
@@ -573,41 +603,77 @@ public sealed class EngineCalculator : IEngineCalculator
         PrecisionEngineeringEffects precisionEffects)
     {
         var isJet = IsJetFamily(definition.EngineType);
-        var boostMd = parameters.BoostType switch
+        var items = new List<ProductionBreakdownItem>();
+        double productionManDays;
+        if (isJet)
         {
-            BoostType.None => 0d,
-            BoostType.Turbo => 4.5d,
-            BoostType.Supercharger => 3.8d,
-            _ => 0d,
-        };
-        var speedMd = isJet
-            ? System.Math.Max(0d, parameters.MaximumSpeed - 50000d) * 0.00055d
-            : System.Math.Max(0d, parameters.MaximumSpeed - 2500d) * 0.0045d;
-        var cylinderMd = isJet ? 0d : parameters.CylinderCount * 0.35d;
-        var bypassMd = definition.EngineType == EngineType.Turbofan ? parameters.BypassRatio * 0.55d : 0d;
-        var injectionMd = !isJet && parameters.PistonInjectionType == PistonInjectionType.Carburetor
-            ? -EngineDesignerBalance.Engine.CarburetorProductionManDayDiscount
-            : 0d;
-        var complexityMd = GetComplexityPenalty(definition.EngineType) * 65d * definition.ComplexityFactor;
-        var items = new List<ProductionBreakdownItem>
+            var referenceManDays = definition.EngineType == EngineType.Turbofan
+                ? ProductionEconomyBalance.Engine.TurbofanReferenceManDays
+                : ProductionEconomyBalance.Engine.TurbojetReferenceManDays;
+            var diameterRatio = System.Math.Max(parameters.TurbineDiameterMeters, Numeric.Epsilon)
+                / ProductionEconomyBalance.Engine.JetReferenceDiameterMeters;
+            productionManDays = referenceManDays * System.Math.Pow(diameterRatio, ProductionEconomyBalance.Engine.JetSizeExponent);
+            items.Add(new ProductionBreakdownItem("Turbine circumference and architecture", productionManDays));
+            AddMultiplierAdjustment(
+                items,
+                "Compressor pressure ratio",
+                ref productionManDays,
+                ProductionEconomyBalance.GetJetCompressionManDaysMultiplier(parameters.CompressionRatio));
+            if (definition.EngineType == EngineType.Turbofan)
+            {
+                var pricedBypass = Numeric.Clamp(
+                    parameters.BypassRatio,
+                    0d,
+                    ProductionEconomyBalance.Engine.BypassPricingCap);
+                AddMultiplierAdjustment(
+                    items,
+                    "Bypass hardware",
+                    ref productionManDays,
+                    1d + (pricedBypass * ProductionEconomyBalance.Engine.BypassManDaysIncreasePerPoint));
+            }
+        }
+        else
         {
-            new("Base engine", definition.BaseProductionManDays),
-            new("Engine mass", weight.Kilograms * 0.03d),
-            new("Boost system", boostMd),
-            new("Maximum speed hardware", speedMd),
-            new("Cylinders", cylinderMd),
-            new("Bypass hardware", bypassMd),
-            new("Engine complexity", complexityMd),
-            new("Carburetor simplification", injectionMd),
-        };
-        var productionManDays = items.Sum(item => item.Amount);
+            var cylinders = System.Math.Max(1, parameters.CylinderCount);
+            var cylinderVolume = System.Math.Max(parameters.DisplacementLiters / cylinders, Numeric.Epsilon);
+            var cylinderScale = System.Math.Pow(
+                cylinderVolume / ProductionEconomyBalance.Engine.PistonReferenceCylinderVolumeLiters,
+                ProductionEconomyBalance.Engine.PistonCylinderManDaysExponent);
+            var baseManDays = ProductionEconomyBalance.Engine.PistonBaseManDays;
+            var cylinderManDays = cylinders * ProductionEconomyBalance.Engine.PistonCylinderManDays * cylinderScale;
+            var displacementManDays = parameters.DisplacementLiters * ProductionEconomyBalance.Engine.PistonDisplacementManDaysPerLiter;
+            items.Add(new ProductionBreakdownItem("Base assembly", baseManDays));
+            items.Add(new ProductionBreakdownItem("Cylinders and cylinder volume", cylinderManDays));
+            items.Add(new ProductionBreakdownItem("Displacement assembly", displacementManDays));
+            productionManDays = baseManDays + cylinderManDays + displacementManDays;
+            AddMultiplierAdjustment(
+                items,
+                $"Engine architecture ({definition.EngineType})",
+                ref productionManDays,
+                ProductionEconomyBalance.GetEngineArchitectureManDaysMultiplier(definition.EngineType));
+            AddMultiplierAdjustment(
+                items,
+                "Compression ratio",
+                ref productionManDays,
+                ProductionEconomyBalance.GetPistonCompressionManDaysMultiplier(parameters.CompressionRatio));
+            if (parameters.PistonInjectionType == PistonInjectionType.DirectInjection)
+            {
+                AddMultiplierAdjustment(
+                    items,
+                    "Direct injection",
+                    ref productionManDays,
+                    ProductionEconomyBalance.Engine.DirectInjectionManDaysMultiplier);
+            }
+        }
+
+        AddEngineProductionOptionMultipliers(items, ref productionManDays, parameters, isJet, parts: false);
         if (isJet && parameters.HasAfterburner)
         {
             AddMultiplierAdjustment(
                 items,
                 "Afterburner",
                 ref productionManDays,
-                EngineDesignerBalance.Engine.JetAfterburnerProductionManDaysMultiplier);
+                ProductionEconomyBalance.Engine.AfterburnerManDaysMultiplier);
         }
 
         AddMultiplierAdjustment(
@@ -620,8 +686,61 @@ public sealed class EngineCalculator : IEngineCalculator
             items,
             "Minimum engine production time",
             ref productionManDays,
-            definition.BaseProductionManDays * 0.3d);
+            1d);
         return new ProductionBreakdown(items);
+    }
+
+    private static void AddEngineProductionOptionMultipliers(
+        List<ProductionBreakdownItem> items,
+        ref double total,
+        EngineParameters parameters,
+        bool isJet,
+        bool parts)
+    {
+        var boostMultiplier = parameters.BoostType switch
+        {
+            BoostType.Turbo => parts
+                ? ProductionEconomyBalance.Engine.TurboPartsMultiplier
+                : ProductionEconomyBalance.Engine.TurboManDaysMultiplier,
+            BoostType.Supercharger => parts
+                ? ProductionEconomyBalance.Engine.SuperchargerPartsMultiplier
+                : ProductionEconomyBalance.Engine.SuperchargerManDaysMultiplier,
+            _ => 1d,
+        };
+        AddMultiplierAdjustment(items, "Boost system", ref total, boostMultiplier);
+
+        var referenceRpm = isJet
+            ? ProductionEconomyBalance.Engine.JetReferenceRpm
+            : ProductionEconomyBalance.Engine.PistonReferenceRpm;
+        var rpmSteps = System.Math.Max(0d, (parameters.MaximumSpeed / referenceRpm) - 1d)
+            / ProductionEconomyBalance.Engine.RpmStepRatio;
+        var rpmRate = parts
+            ? ProductionEconomyBalance.Engine.RpmPartsIncreasePerStep
+            : ProductionEconomyBalance.Engine.RpmManDaysIncreasePerStep;
+        AddMultiplierAdjustment(items, "High-speed hardware", ref total, 1d + (rpmSteps * rpmRate));
+
+        var coolingSteps = System.Math.Max(0d, parameters.CoolingEfficiency - ProductionEconomyBalance.Engine.CoolingReference)
+            / ProductionEconomyBalance.Engine.CoolingStep;
+        var coolingRate = parts
+            ? ProductionEconomyBalance.Engine.CoolingPartsIncreasePerStep
+            : ProductionEconomyBalance.Engine.CoolingManDaysIncreasePerStep;
+        AddMultiplierAdjustment(items, "Cooling system", ref total, 1d + (coolingSteps * coolingRate));
+
+        var altitudeSteps = System.Math.Max(0d, parameters.OptimizationAltitudeMeters - ProductionEconomyBalance.Engine.AltitudeReferenceMeters)
+            / ProductionEconomyBalance.Engine.AltitudeStepMeters;
+        var altitudeRate = parts
+            ? ProductionEconomyBalance.Engine.AltitudePartsIncreasePerStep
+            : ProductionEconomyBalance.Engine.AltitudeManDaysIncreasePerStep;
+        AddMultiplierAdjustment(items, "Altitude optimization", ref total, 1d + (altitudeSteps * altitudeRate));
+
+        var optimizationRatio = Numeric.Clamp(
+            parameters.EfficiencyOptimizationsPercent / ProductionEconomyBalance.Engine.EfficiencyOptimizationMaximumPercent,
+            0d,
+            1d);
+        var optimizationRate = parts
+            ? ProductionEconomyBalance.Engine.EfficiencyOptimizationMaximumPartsIncrease
+            : ProductionEconomyBalance.Engine.EfficiencyOptimizationMaximumManDaysIncrease;
+        AddMultiplierAdjustment(items, "Efficiency optimization", ref total, 1d + (optimizationRatio * optimizationRate));
     }
 
     private static void AddMultiplierAdjustment(
@@ -982,7 +1101,7 @@ public sealed class EngineCalculator : IEngineCalculator
         };
 
     private static bool IsJetFamily(EngineType engineType) =>
-        engineType is EngineType.Jet or EngineType.Turbojet or EngineType.Turbofan;
+        engineType is EngineType.Turbojet or EngineType.Turbofan;
 
     private static bool IsPistonFamily(EngineType engineType) =>
         !IsJetFamily(engineType);
@@ -994,7 +1113,6 @@ public sealed class EngineCalculator : IEngineCalculator
             EngineType.Inline => EngineDesignerBalance.Engine.ComplexityPenaltyInline,
             EngineType.V => EngineDesignerBalance.Engine.ComplexityPenaltyV,
             EngineType.Radial => EngineDesignerBalance.Engine.ComplexityPenaltyRadial,
-            EngineType.Jet => EngineDesignerBalance.Engine.ComplexityPenaltyJet,
             EngineType.Turbojet => EngineDesignerBalance.Engine.ComplexityPenaltyTurbojet,
             EngineType.Turbofan => EngineDesignerBalance.Engine.ComplexityPenaltyTurbofan,
             _ => EngineDesignerBalance.Engine.ComplexityPenaltyV,

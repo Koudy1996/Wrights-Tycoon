@@ -243,28 +243,33 @@ public sealed class ContractSystemTests
     }
 
     [Test]
-    public void PricingCalculator_AppliesCommercialRunwayPriceMultiplier_ExceptLightSport()
+    public void PricingCalculator_DoesNotPriceRunwayRequirement()
     {
+        var calculator = new ContractPricingCalculator();
+        var shortRunway = new ContractRequirements
+        {
+            RequiredCategory = AircraftCategory.RegionalJet,
+            MinimumReliability = 0.75d,
+            MinimumRangeKilometers = 1500d,
+            MinimumSpeed = new ContractSpeedRequirement(0d, 100d),
+            MinimumPayloadKilograms = 3000d,
+            MinimumCrew = 2,
+            MaximumRequiredRunwayLengthMeters = PlaneDesignerBalance.Airframe.RunwayShortLengthMeters,
+        };
+        var longRunway = new ContractRequirements
+        {
+            RequiredCategory = shortRunway.RequiredCategory,
+            MinimumReliability = shortRunway.MinimumReliability,
+            MinimumRangeKilometers = shortRunway.MinimumRangeKilometers,
+            MinimumSpeed = shortRunway.MinimumSpeed,
+            MinimumPayloadKilograms = shortRunway.MinimumPayloadKilograms,
+            MinimumCrew = shortRunway.MinimumCrew,
+            MaximumRequiredRunwayLengthMeters = PlaneDesignerBalance.Airframe.RunwayLongLengthMeters,
+        };
+
         Assert.That(
-            ContractBalance.ResolveCommercialRunwayPriceMultiplier(
-                AircraftCategory.RegionalJet,
-                PlaneDesignerBalance.Airframe.RunwayMediumLengthMeters),
-            Is.EqualTo(ContractBalance.MediumRunwayContractPriceMultiplier).Within(1e-9d));
-        Assert.That(
-            ContractBalance.ResolveCommercialRunwayPriceMultiplier(
-                AircraftCategory.RegionalJet,
-                PlaneDesignerBalance.Airframe.RunwayShortLengthMeters),
-            Is.EqualTo(ContractBalance.ShortRunwayContractPriceMultiplier).Within(1e-9d));
-        Assert.That(
-            ContractBalance.ResolveCommercialRunwayPriceMultiplier(
-                AircraftCategory.RegionalJet,
-                PlaneDesignerBalance.Airframe.RunwayLongLengthMeters),
-            Is.EqualTo(1d).Within(1e-9d));
-        Assert.That(
-            ContractBalance.ResolveCommercialRunwayPriceMultiplier(
-                AircraftCategory.LightSportAndRecreational,
-                PlaneDesignerBalance.Airframe.RunwayShortLengthMeters),
-            Is.EqualTo(1d).Within(1e-9d));
+            calculator.CalculateQuote(shortRunway, 100).UnitPrice,
+            Is.EqualTo(calculator.CalculateQuote(longRunway, 100).UnitPrice).Within(0.01d));
     }
 
     [Test]

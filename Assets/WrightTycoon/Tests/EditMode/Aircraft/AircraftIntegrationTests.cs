@@ -43,10 +43,10 @@ public sealed class AircraftIntegrationTests
 
         Assert.That(
             precise.Performance.TotalProductionCost / baseline.Performance.TotalProductionCost,
-            Is.EqualTo(1.15d).Within(0.000001d));
+            Is.EqualTo(1.30d).Within(0.000001d));
         Assert.That(
             precise.Performance.TotalProductionManDays / baseline.Performance.TotalProductionManDays,
-            Is.EqualTo(1.15d).Within(0.000001d));
+            Is.EqualTo(1.45d).Within(0.000001d));
         Assert.That(precise.Performance.TotalWeight.Kilograms, Is.LessThan(baseline.Performance.TotalWeight.Kilograms));
         Assert.That(precise.Performance.OverallReliability, Is.LessThan(baseline.Performance.OverallReliability));
 
@@ -425,10 +425,22 @@ public sealed class AircraftIntegrationTests
         Assert.That(advancedNavigation.Performance.TotalDragAreaSquareMeters, Is.GreaterThan(basicNavigation.Performance.TotalDragAreaSquareMeters));
         Assert.That(basicNavigation.Performance.OverallReliability, Is.GreaterThan(noNavigation.Performance.OverallReliability));
         Assert.That(advancedNavigation.Performance.OverallReliability, Is.GreaterThan(basicNavigation.Performance.OverallReliability));
-        Assert.That(basicNavigation.Performance.TotalProductionCost, Is.EqualTo(noNavigation.Performance.TotalProductionCost + 18000d).Within(0.01d));
-        Assert.That(advancedNavigation.Performance.TotalProductionCost, Is.EqualTo(noNavigation.Performance.TotalProductionCost + 85000d).Within(0.01d));
-        Assert.That(basicNavigation.Performance.TotalProductionManDays, Is.EqualTo(noNavigation.Performance.TotalProductionManDays + 8d).Within(0.01d));
-        Assert.That(advancedNavigation.Performance.TotalProductionManDays, Is.EqualTo(noNavigation.Performance.TotalProductionManDays + 24d).Within(0.01d));
+        var expectedBasicParts = System.Math.Max(
+            ProductionEconomyBalance.Airframe.BasicNavigationMinimumParts,
+            noNavigation.Airframe.Performance.ProductionCost * ProductionEconomyBalance.Airframe.BasicNavigationPartsRate);
+        var expectedAdvancedParts = System.Math.Max(
+            ProductionEconomyBalance.Airframe.AdvancedNavigationMinimumParts,
+            noNavigation.Airframe.Performance.ProductionCost * ProductionEconomyBalance.Airframe.AdvancedNavigationPartsRate);
+        var expectedBasicManDays = System.Math.Max(
+            ProductionEconomyBalance.Airframe.BasicNavigationMinimumManDays,
+            noNavigation.Airframe.Performance.ProductionManDays * ProductionEconomyBalance.Airframe.BasicNavigationManDaysRate);
+        var expectedAdvancedManDays = System.Math.Max(
+            ProductionEconomyBalance.Airframe.AdvancedNavigationMinimumManDays,
+            noNavigation.Airframe.Performance.ProductionManDays * ProductionEconomyBalance.Airframe.AdvancedNavigationManDaysRate);
+        Assert.That(basicNavigation.Performance.TotalProductionCost, Is.EqualTo(noNavigation.Performance.TotalProductionCost + expectedBasicParts).Within(0.01d));
+        Assert.That(advancedNavigation.Performance.TotalProductionCost, Is.EqualTo(noNavigation.Performance.TotalProductionCost + expectedAdvancedParts).Within(0.01d));
+        Assert.That(basicNavigation.Performance.TotalProductionManDays, Is.EqualTo(noNavigation.Performance.TotalProductionManDays + expectedBasicManDays).Within(0.01d));
+        Assert.That(advancedNavigation.Performance.TotalProductionManDays, Is.EqualTo(noNavigation.Performance.TotalProductionManDays + expectedAdvancedManDays).Within(0.01d));
     }
 
     [Test]
@@ -1284,7 +1296,7 @@ public sealed class AircraftIntegrationTests
         var complexity = ComputeTypeResearchComplexity(aircraft);
         var baseMultiplier = Lerp(ResearchBalance.Type.CostMultiplierMin, ResearchBalance.Type.CostMultiplierMax, complexity);
         var baseCost = System.Math.Round(
-            aircraft.Performance.TotalProductionCost * baseMultiplier,
+            aircraft.Performance.CompleteProductionCost * baseMultiplier,
             2,
             MidpointRounding.AwayFromZero);
         return System.Math.Round(baseCost * modifierEffects.ResearchCostMultiplier, 2, MidpointRounding.AwayFromZero);

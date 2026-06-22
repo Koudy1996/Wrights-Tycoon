@@ -213,7 +213,9 @@ public sealed class AircraftProductionFactory
             {
                 designName = catalogItem.DisplayName;
                 requiredFactoryToolLevel = catalogItem.RequiredFactoryToolLevel;
-                var unitManDays = catalogItem.Aircraft.Performance.TotalProductionManDays;
+                var unitManDays = catalogItem.Aircraft.Performance.AirframeProductionManDays > Numeric.Epsilon
+                    ? catalogItem.Aircraft.Performance.AirframeProductionManDays
+                    : catalogItem.Aircraft.Airframe.Performance.ProductionManDays;
                 if (unitManDays <= Numeric.Epsilon)
                 {
                     blocked = true;
@@ -270,7 +272,11 @@ public sealed class AircraftProductionFactory
                         requiredEngines = producedUnits * catalogItem.Aircraft.Airframe.Parameters.EngineCount;
                         if (requiredEngines > 0)
                         {
-                            var engineManDaysPerUnit = System.Math.Max(catalogItem.Aircraft.Engine.Performance.ProductionManDays, Numeric.Epsilon);
+                            var engineManDaysPerUnit = catalogItem.Aircraft.Performance.EnginesProductionManDays > Numeric.Epsilon
+                                ? catalogItem.Aircraft.Performance.EnginesProductionManDays
+                                  / System.Math.Max(catalogItem.Aircraft.Airframe.Parameters.EngineCount, 1)
+                                : catalogItem.Aircraft.Engine.Performance.ProductionManDays;
+                            engineManDaysPerUnit = System.Math.Max(engineManDaysPerUnit, Numeric.Epsilon);
                             var requiredEngineManDays = requiredEngines * engineManDaysPerUnit;
                             engineFactoryEmployees = (int)System.Math.Ceiling(requiredEngineManDays / EmployeeManDaysPerMonth);
                             var engineCapacity = (int)System.Math.Floor((engineFactoryEmployees * EmployeeManDaysPerMonth) / engineManDaysPerUnit);

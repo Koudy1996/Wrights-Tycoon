@@ -36,11 +36,7 @@ public sealed class GovernmentContractPricingService : IGovernmentContractPricin
             MaximumRequiredRunwayLengthMeters = requirements.MaximumRequiredRunwayLengthMeters,
         };
 
-        var runwayPriceMultiplier = GovernmentContractBalance.ResolveRunwayPriceMultiplier(
-            requirements.RequiredAircraftType,
-            requirements.MaximumRequiredRunwayLengthMeters);
-        var estimatedMinimumUnitCost = _pricingCalculator.EstimateMinimumUnitProductionCost(bridgeRequirements)
-            * runwayPriceMultiplier;
+        var estimatedMinimumUnitCost = _pricingCalculator.EstimateMinimumUnitProductionCost(bridgeRequirements);
         var unitPrice = estimatedMinimumUnitCost * (1d + GovernmentContractBalance.PricingMargin);
         var totalContractValue = unitPrice * quantityUnits;
 

@@ -174,7 +174,7 @@ public static class CartoonAircraftPainter
         Texture2D pixel,
         Texture2D circle)
     {
-        var isJet = engineType is EngineType.Jet or EngineType.Turbojet or EngineType.Turbofan;
+        var isJet = engineType is EngineType.Turbojet or EngineType.Turbofan;
         var isHighBypassTurbofan = engineType == EngineType.Turbofan && bypassRatio > 10d;
 
         if (!isJet)
@@ -190,7 +190,7 @@ public static class CartoonAircraftPainter
         var nacelleBaseColor = new Color(0.33f, 0.38f, 0.45f, 1f);
         var fanColor = new Color(0.72f, 0.77f, 0.84f, 1f);
 
-        if (engineType == EngineType.Turbojet || engineType == EngineType.Jet)
+        if (engineType == EngineType.Turbojet)
         {
             var length = 20f;
             var height = 10f;
