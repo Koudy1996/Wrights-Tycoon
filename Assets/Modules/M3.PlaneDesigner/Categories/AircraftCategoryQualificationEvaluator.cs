@@ -20,6 +20,22 @@ public sealed class AircraftCategoryQualificationEvaluator
 
     public IReadOnlyList<AircraftCategoryQualificationResult> EvaluateAll(Aircraft.Aircraft aircraft)
     {
+        return EvaluateAll(aircraft, qualificationYear: null);
+    }
+
+    public IReadOnlyList<AircraftCategoryQualificationResult> EvaluateAll(
+        Aircraft.Aircraft aircraft,
+        int qualificationYear,
+        int playerYearOffset = 0)
+    {
+        return EvaluateAll(aircraft, (int?)qualificationYear, playerYearOffset);
+    }
+
+    private IReadOnlyList<AircraftCategoryQualificationResult> EvaluateAll(
+        Aircraft.Aircraft aircraft,
+        int? qualificationYear,
+        int playerYearOffset = 0)
+    {
         if (aircraft is null)
         {
             throw new ArgumentNullException(nameof(aircraft));
@@ -27,8 +43,14 @@ public sealed class AircraftCategoryQualificationEvaluator
 
         var profiles = AircraftCategoryCatalog.GetAllProfiles();
         var results = new List<AircraftCategoryQualificationResult>(profiles.Count);
-        foreach (var profile in profiles)
+        foreach (var baseProfile in profiles)
         {
+            var profile = qualificationYear.HasValue
+                ? AircraftCategoryCatalog.GetProfileForYear(
+                    baseProfile.Category,
+                    qualificationYear.Value,
+                    playerYearOffset)
+                : baseProfile;
             var compliance = _complianceEvaluator.Evaluate(aircraft, profile);
             results.Add(new AircraftCategoryQualificationResult(
                 profile.Category,
@@ -43,6 +65,17 @@ public sealed class AircraftCategoryQualificationEvaluator
     public IReadOnlyList<AircraftCategory> GetQualifiedCategories(Aircraft.Aircraft aircraft)
     {
         return EvaluateAll(aircraft)
+            .Where(result => result.IsQualified)
+            .Select(result => result.Category)
+            .ToArray();
+    }
+
+    public IReadOnlyList<AircraftCategory> GetQualifiedCategories(
+        Aircraft.Aircraft aircraft,
+        int qualificationYear,
+        int playerYearOffset = 0)
+    {
+        return EvaluateAll(aircraft, qualificationYear, playerYearOffset)
             .Where(result => result.IsQualified)
             .Select(result => result.Category)
             .ToArray();

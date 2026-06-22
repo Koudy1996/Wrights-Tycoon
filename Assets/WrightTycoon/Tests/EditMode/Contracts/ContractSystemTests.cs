@@ -744,6 +744,40 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    public void Evaluator_UsesHistoricalCategoryProfileForDelivery()
+    {
+        var evaluator = new ContractEvaluator(() => 1946);
+        var aircraft = CreateAircraft(
+            reliability: 0.9d,
+            rangeKilometers: 4449.4d,
+            speedAtSeaLevel: 566.3d / 3.6d,
+            speedAtFiveKilometers: 150d,
+            speedAtTenKilometers: 140d,
+            payloadKilograms: 5932.6d,
+            crewCount: 4,
+            category: AircraftCategory.TurbopropRegional,
+            navigationEquipment: AircraftNavigationEquipment.AdvancedNavigationSuite,
+            hasPassengerCabin: true,
+            totalWeightKilograms: 12676.4d,
+            maneuverability: 59.2d);
+        var contract = new Contract(
+            "ctr.test.historical.vip",
+            "Historical VIP",
+            quantityUnits: 20,
+            deadlineMonths: 12,
+            new ContractRequirements
+            {
+                RequiredCategory = AircraftCategory.BusinessVipJet,
+                MinimumReliability = 0.8d,
+            },
+            createdMonthIndex: 0);
+
+        var evaluation = evaluator.Evaluate(contract, aircraft);
+
+        Assert.That(evaluation.CanDeliver, Is.True);
+    }
+
+    [Test]
     public void Board_DeliversContract_WhenAircraftMeetsAllRequirements()
     {
         var deliverableContract = new Contract(

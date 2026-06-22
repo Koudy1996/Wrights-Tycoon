@@ -924,7 +924,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             new ContractGenerator(
                 campaignModifierSource: _historicalCampaignContractModifierSource,
                 currentDateProvider: () => _currentDate),
-            new ContractEvaluator());
+            new ContractEvaluator(() => _currentDate.Year));
         _productionFactory = new AircraftProductionFactory();
         var governmentRandom = new SystemGovernmentContractRandomProvider();
         var governmentGenerator = new GovernmentContractGenerator(
@@ -3178,7 +3178,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             DrawSection("Live Market Category Qualification");
             var qualifiedCategories = new AircraftCategoryQualificationEvaluator(_categoryComplianceEvaluator)
-                .GetQualifiedCategories(_aircraftPreview);
+                .GetQualifiedCategories(_aircraftPreview, _currentDate.Year);
             if (qualifiedCategories.Count > 0)
             {
                 DrawParameterValueRow("Qualified Categories", FormatQualifiedCategorySummary(_aircraftPreview));
@@ -4181,7 +4181,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private void DrawQualifiedCategorySummary(Aircraft aircraft)
     {
         var evaluator = new AircraftCategoryQualificationEvaluator(_categoryComplianceEvaluator);
-        var qualified = evaluator.EvaluateAll(aircraft)
+        var qualified = evaluator.EvaluateAll(aircraft, _currentDate.Year)
             .Where(result => result.IsQualified)
             .Select(result => result.DisplayName)
             .ToArray();
@@ -5548,7 +5548,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             savedDesign.CatalogItem.DisplayName,
             lifecycleStage,
             savedDesign.CatalogItem.Aircraft,
-            breakdown);
+            breakdown,
+            _currentDate.Year);
     }
 
     private GovernmentContractDevelopmentPriceBreakdown BuildGovernmentDevelopmentPriceBreakdown(SavedAircraftDesign savedDesign)
@@ -9721,7 +9722,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private string FormatQualifiedCategorySummary(WrightTycoon.Core.Aircraft.Aircraft aircraft)
     {
         var qualified = new AircraftCategoryQualificationEvaluator(_categoryComplianceEvaluator)
-            .GetQualifiedCategories(aircraft);
+            .GetQualifiedCategories(aircraft, _currentDate.Year);
         if (qualified.Count == 0)
         {
             return "No qualified market category";

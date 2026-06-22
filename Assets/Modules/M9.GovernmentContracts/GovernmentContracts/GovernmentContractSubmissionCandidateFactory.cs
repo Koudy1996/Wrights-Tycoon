@@ -13,7 +13,8 @@ public static class GovernmentContractSubmissionCandidateFactory
     public static GovernmentContractSubmissionCandidate FromFactoryCatalogItem(
         FactoryAircraftTypeCatalogItem catalogItem,
         AircraftLifecycleStage lifecycleStage,
-        GovernmentContractDevelopmentPriceBreakdown? developmentPriceBreakdown = null)
+        GovernmentContractDevelopmentPriceBreakdown? developmentPriceBreakdown = null,
+        int? qualificationYear = null)
     {
         if (catalogItem is null)
         {
@@ -21,7 +22,10 @@ public static class GovernmentContractSubmissionCandidateFactory
         }
 
         var aircraft = catalogItem.Aircraft;
-        var metrics = BuildMetrics(aircraft, catalogItem.QualifiedCategories);
+        var qualifiedCategories = qualificationYear.HasValue
+            ? catalogItem.GetQualifiedCategoriesForYear(qualificationYear.Value)
+            : catalogItem.QualifiedCategories;
+        var metrics = BuildMetrics(aircraft, qualifiedCategories);
         return new GovernmentContractSubmissionCandidate(
             catalogItem.DesignId,
             catalogItem.DisplayName,
@@ -35,16 +39,19 @@ public static class GovernmentContractSubmissionCandidateFactory
         string displayName,
         AircraftLifecycleStage lifecycleStage,
         WrightTycoon.Core.Aircraft.Aircraft aircraft,
-        GovernmentContractDevelopmentPriceBreakdown? developmentPriceBreakdown = null)
+        GovernmentContractDevelopmentPriceBreakdown? developmentPriceBreakdown = null,
+        int? qualificationYear = null)
     {
         if (aircraft is null)
         {
             throw new ArgumentNullException(nameof(aircraft));
         }
 
-        var metrics = BuildMetrics(
-            aircraft,
-            new AircraftCategoryQualificationEvaluator().GetQualifiedCategories(aircraft));
+        var qualificationEvaluator = new AircraftCategoryQualificationEvaluator();
+        var qualifiedCategories = qualificationYear.HasValue
+            ? qualificationEvaluator.GetQualifiedCategories(aircraft, qualificationYear.Value)
+            : qualificationEvaluator.GetQualifiedCategories(aircraft);
+        var metrics = BuildMetrics(aircraft, qualifiedCategories);
         return new GovernmentContractSubmissionCandidate(
             designId,
             displayName,

@@ -12,6 +12,13 @@ namespace WrightTycoon.Core.Contracts;
 
 public sealed class ContractEvaluator : IContractEvaluator
 {
+    private readonly Func<int>? _qualificationYearProvider;
+
+    public ContractEvaluator(Func<int>? qualificationYearProvider = null)
+    {
+        _qualificationYearProvider = qualificationYearProvider;
+    }
+
     public ContractEvaluationReport Evaluate(Contract contract, WrightTycoon.Core.Aircraft.Aircraft aircraft)
     {
         if (contract is null)
@@ -32,7 +39,9 @@ public sealed class ContractEvaluator : IContractEvaluator
         if (requirements.RequiredCategory.HasValue)
         {
             var category = requirements.RequiredCategory.Value;
-            var profile = AircraftCategoryCatalog.GetProfile(category);
+            var profile = _qualificationYearProvider is null
+                ? AircraftCategoryCatalog.GetProfile(category)
+                : AircraftCategoryCatalog.GetProfileForYear(category, _qualificationYearProvider());
             var categoryCompliance = new CategoryComplianceEvaluator().Evaluate(aircraft, profile);
             if (!categoryCompliance.IsCompliant)
             {

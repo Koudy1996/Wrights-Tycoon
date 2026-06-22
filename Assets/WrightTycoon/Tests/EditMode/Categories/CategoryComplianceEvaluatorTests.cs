@@ -221,6 +221,30 @@ public sealed class CategoryComplianceEvaluatorTests
     }
 
     [Test]
+    public void QualificationEvaluator_UsesHistoricalProfilesAndKeepsMultipleMatches()
+    {
+        var evaluator = new AircraftCategoryQualificationEvaluator();
+        var aircraft = CreateAircraft(
+            AircraftCategory.LightSportAndRecreational,
+            crewCount: 4,
+            speedAtSeaLevelMetersPerSecond: 566.3d / 3.6d,
+            rangeKilometers: 4449.4d,
+            payloadKilograms: 5932.6d,
+            totalWeightKilograms: 12676.4d,
+            maneuverability: 59.2d,
+            navigationEquipment: AircraftNavigationEquipment.AdvancedNavigationSuite,
+            hasPassengerCabin: true);
+
+        var baseCategories = evaluator.GetQualifiedCategories(aircraft);
+        var categoriesIn1946 = evaluator.GetQualifiedCategories(aircraft, 1946);
+
+        Assert.That(baseCategories, Has.No.Member(AircraftCategory.BusinessVipJet));
+        Assert.That(categoriesIn1946, Has.Member(AircraftCategory.BusinessVipJet));
+        Assert.That(categoriesIn1946, Has.Member(AircraftCategory.TurbopropRegional));
+        Assert.That(categoriesIn1946.Count, Is.GreaterThan(1));
+    }
+
+    [Test]
     public void QualificationEvaluator_RequiresArmyGradeCombatEquipmentAndWeaponPayloadForBomber()
     {
         var evaluator = new AircraftCategoryQualificationEvaluator();

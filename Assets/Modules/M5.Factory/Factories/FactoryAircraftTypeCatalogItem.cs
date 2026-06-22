@@ -35,6 +35,12 @@ public sealed class FactoryAircraftTypeCatalogItem
 
     public bool QualifiesForCategory(AircraftCategory category) => QualifiedCategories.Contains(category);
 
+    public IReadOnlyList<AircraftCategory> GetQualifiedCategoriesForYear(int qualificationYear) =>
+        new AircraftCategoryQualificationEvaluator().GetQualifiedCategories(Aircraft, qualificationYear);
+
+    public bool QualifiesForCategory(AircraftCategory category, int qualificationYear) =>
+        GetQualifiedCategoriesForYear(qualificationYear).Contains(category);
+
     public int RequiredFactoryToolLevel { get; }
 
     public int RequiredLineToolLevel { get; }
