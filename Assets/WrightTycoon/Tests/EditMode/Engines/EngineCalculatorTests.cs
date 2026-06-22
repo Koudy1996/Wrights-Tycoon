@@ -90,8 +90,15 @@ public sealed class EngineCalculatorTests
         var superchargedSpecificFuel = superchargedPoint.FuelConsumptionKilogramsPerHour / superchargedPoint.Output;
         var turbochargedSpecificFuel = turbochargedPoint.FuelConsumptionKilogramsPerHour / turbochargedPoint.Output;
 
-        Assert.That(superchargedSpecificFuel / naturallyAspiratedSpecificFuel, Is.EqualTo(1d).Within(0.000001d));
-        Assert.That(turbochargedSpecificFuel / naturallyAspiratedSpecificFuel, Is.EqualTo(1.08d).Within(0.000001d));
+        Assert.That(superchargedSpecificFuel / naturallyAspiratedSpecificFuel, Is.EqualTo(1.08d).Within(0.000001d));
+        Assert.That(turbochargedSpecificFuel / naturallyAspiratedSpecificFuel, Is.EqualTo(0.98d).Within(0.000001d));
+        Assert.That(turbochargedPoint.FuelConsumptionKilogramsPerHour, Is.GreaterThan(naturallyAspiratedPoint.FuelConsumptionKilogramsPerHour));
+
+        var turbochargedReport = calculator.Calculate(definition, turbocharged, atmosphere);
+        Assert.That(turbochargedReport.CostBreakdown.Total, Is.EqualTo(turbochargedReport.Cost).Within(0.000001d));
+        Assert.That(
+            turbochargedReport.ProductionManDaysBreakdown.Total,
+            Is.EqualTo(turbochargedReport.ProductionManDays).Within(0.000001d));
     }
 
     [Test]

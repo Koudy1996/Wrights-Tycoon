@@ -6,6 +6,7 @@ using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Engines;
 using WrightTycoon.Core.Math;
 using WrightTycoon.Core.Physics;
+using WrightTycoon.Core.Production;
 using WrightTycoon.Core.Units;
 
 namespace WrightTycoon.Core.Aircraft;
@@ -197,6 +198,22 @@ public sealed class AircraftPerformanceCalculator
         var totalProductionManDays = airframe.Performance.ProductionManDays
             + (engine.Performance.ProductionManDays * engineCount)
             + navigationEffects.ProductionManDaysAdd;
+        var costBreakdown = BuildAircraftProductionBreakdown(
+            airframe.Performance.CostBreakdown,
+            airframe.Performance.ProductionCost,
+            engine.Performance.CostBreakdown,
+            engine.Performance.Cost,
+            engineCount,
+            navigationEffects.ProductionCostAdd,
+            "Navigation equipment");
+        var productionManDaysBreakdown = BuildAircraftProductionBreakdown(
+            airframe.Performance.ProductionManDaysBreakdown,
+            airframe.Performance.ProductionManDays,
+            engine.Performance.ProductionManDaysBreakdown,
+            engine.Performance.ProductionManDays,
+            engineCount,
+            navigationEffects.ProductionManDaysAdd,
+            "Navigation equipment");
 
         return new AircraftPerformanceReport(
             Array.AsReadOnly(speedPoints),
@@ -216,7 +233,51 @@ public sealed class AircraftPerformanceCalculator
             cruiseAltitudeMeters,
             cruiseFuelBurnKilogramsPerHour,
             cruiseFuelBurnKilogramsPerHour,
-            cruiseFuelBurnKilogramsPerHour);
+            cruiseFuelBurnKilogramsPerHour,
+            costBreakdown,
+            productionManDaysBreakdown);
+    }
+
+    private static ProductionBreakdown BuildAircraftProductionBreakdown(
+        ProductionBreakdown? airframeBreakdown,
+        double airframeTotal,
+        ProductionBreakdown? engineBreakdown,
+        double engineTotal,
+        int engineCount,
+        double navigationAmount,
+        string navigationLabel)
+    {
+        var items = new List<ProductionBreakdownItem>();
+        if (airframeBreakdown is null)
+        {
+            items.Add(new ProductionBreakdownItem("Airframe", airframeTotal));
+        }
+        else
+        {
+            for (var index = 0; index < airframeBreakdown.Items.Count; index++)
+            {
+                var item = airframeBreakdown.Items[index];
+                items.Add(new ProductionBreakdownItem($"Airframe - {item.Label}", item.Amount));
+            }
+        }
+
+        if (engineBreakdown is null)
+        {
+            items.Add(new ProductionBreakdownItem($"Engines ({engineCount}x)", engineTotal * engineCount));
+        }
+        else
+        {
+            for (var index = 0; index < engineBreakdown.Items.Count; index++)
+            {
+                var item = engineBreakdown.Items[index];
+                items.Add(new ProductionBreakdownItem(
+                    $"Engines ({engineCount}x) - {item.Label}",
+                    item.Amount * engineCount));
+            }
+        }
+
+        items.Add(new ProductionBreakdownItem(navigationLabel, navigationAmount));
+        return new ProductionBreakdown(items);
     }
 
     private static double GetThrustAtAltitude(Engine engine, double altitudeMeters)

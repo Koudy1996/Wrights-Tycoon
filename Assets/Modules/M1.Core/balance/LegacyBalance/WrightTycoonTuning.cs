@@ -76,8 +76,8 @@ public static class WrightTycoonTuning
 
         public const double TurboBoostPowerFactor = 1.28d;
         public const double SuperchargerBoostPowerFactor = 1.2d;
-        public const double TurboBoostFuelFactor = 1.18d;
-        public const double SuperchargerBoostFuelFactor = 1.12d;
+        public const double TurboBoostFuelFactor = 0.98d;
+        public const double SuperchargerBoostFuelFactor = 1.08d;
         public const double TurboBoostJetFactor = 1.05d;
         public const double SuperchargerBoostJetFactor = 1.03d;
         public const double TurboBoostJetReliabilityPenalty = 0.03d;
@@ -150,8 +150,8 @@ public static class WrightTycoonTuning
         public const double WingSystemsMassBasePerSquareMeter = 1.35d;
         public const double WingSystemsMassPerEnginePerSquareMeter = 0.18d;
 
-        public const double AerodynamicCleanlinessManDaysPerPercent = 1.2d;
-        public const double AerodynamicCleanlinessManDaysBaseShare = 0.65d;
+        public const double AerodynamicCleanlinessMaxProductionCostIncreaseRatio = 0.05d;
+        public const double AerodynamicCleanlinessMaxProductionManDaysIncreaseRatio = 0.20d;
 
         public const double AircraftLengthBaseMeters = 3.2d;
         public const double AircraftLengthWingAreaScale = 0.60d;

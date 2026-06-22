@@ -1,4 +1,5 @@
 using WrightTycoon.Core.Units;
+using WrightTycoon.Core.Production;
 
 namespace WrightTycoon.Core.Airframes;
 
@@ -15,4 +16,6 @@ public sealed record AirframePerformanceReport(
     double AircraftLengthMeters = 0d,
     double AirframeFrontalAreaSquareMeters = 0d,
     double EffectiveDragAreaSquareMeters = 0d,
-    double AerodynamicCleanlinessPercent = 0d);
+    double AerodynamicCleanlinessPercent = 0d,
+    ProductionBreakdown? CostBreakdown = null,
+    ProductionBreakdown? ProductionManDaysBreakdown = null);

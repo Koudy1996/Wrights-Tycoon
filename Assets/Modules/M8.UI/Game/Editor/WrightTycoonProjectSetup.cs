@@ -23,12 +23,16 @@ public static class WrightTycoonProjectSetup
     [MenuItem("WrightTycoon/Prepare Project For Launch")]
     public static void PrepareProjectForLaunch()
     {
-        EnsureStreamingDefinitions();
-        CreateOrUpdateLaunchScene();
-        CreateOrUpdateBuildLaunchScene();
-        EnsureBuildSettings();
-        AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh();
+        var changed = EnsureStreamingDefinitions();
+        changed |= EnsureLaunchScene(SceneFolder, ScenePath);
+        changed |= EnsureLaunchScene(BuildSceneFolder, BuildScenePath);
+        changed |= EnsureBuildSettings();
+
+        if (changed)
+        {
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+        }
 
         if (!Application.isBatchMode)
         {
@@ -90,7 +94,7 @@ public static class WrightTycoonProjectSetup
         }
     }
 
-    private static void EnsureStreamingDefinitions()
+    private static bool EnsureStreamingDefinitions()
     {
         Directory.CreateDirectory(StreamingExamplesPath);
 
@@ -101,32 +105,46 @@ public static class WrightTycoonProjectSetup
         var targetEngine = Path.Combine(StreamingExamplesPath, "engine-definitions.json");
         var targetAirframe = Path.Combine(StreamingExamplesPath, "airframe-definitions.json");
 
-        if (File.Exists(sourceEngine))
+        var changed = CopyFileIfChanged(sourceEngine, targetEngine);
+        changed |= CopyFileIfChanged(sourceAirframe, targetAirframe);
+        return changed;
+    }
+
+    private static bool CopyFileIfChanged(string sourcePath, string targetPath)
+    {
+        if (!File.Exists(sourcePath))
         {
-            File.Copy(sourceEngine, targetEngine, true);
+            return false;
         }
 
-        if (File.Exists(sourceAirframe))
+        if (File.Exists(targetPath))
         {
-            File.Copy(sourceAirframe, targetAirframe, true);
+            var sourceBytes = File.ReadAllBytes(sourcePath);
+            var targetBytes = File.ReadAllBytes(targetPath);
+            if (sourceBytes.Length == targetBytes.Length && sourceBytes.AsSpan().SequenceEqual(targetBytes))
+            {
+                return false;
+            }
         }
+
+        File.Copy(sourcePath, targetPath, true);
+        return true;
     }
 
-    private static void CreateOrUpdateLaunchScene()
+    private static bool EnsureLaunchScene(string sceneFolder, string scenePath)
     {
-        Directory.CreateDirectory(SceneFolder);
+        if (File.Exists(scenePath))
+        {
+            return false;
+        }
+
+        Directory.CreateDirectory(sceneFolder);
         var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
-        EditorSceneManager.SaveScene(scene, ScenePath);
+        EditorSceneManager.SaveScene(scene, scenePath);
+        return true;
     }
 
-    private static void CreateOrUpdateBuildLaunchScene()
-    {
-        Directory.CreateDirectory(BuildSceneFolder);
-        var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
-        EditorSceneManager.SaveScene(scene, BuildScenePath);
-    }
-
-    private static void EnsureBuildSettings()
+    private static bool EnsureBuildSettings()
     {
         var existing = EditorBuildSettings.scenes;
         var updated = new List<EditorBuildSettingsScene>(existing.Length + 2);
@@ -187,10 +205,11 @@ public static class WrightTycoonProjectSetup
 
             if (!changed)
             {
-                return;
+                return false;
             }
         }
 
         EditorBuildSettings.scenes = updated.ToArray();
+        return true;
     }
 }

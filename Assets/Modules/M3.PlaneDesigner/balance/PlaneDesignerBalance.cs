@@ -83,8 +83,8 @@ public static class PlaneDesignerBalance
         public const double WingSystemsMassBasePerSquareMeter = 1.18d;
         public const double WingSystemsMassPerEnginePerSquareMeter = 0.18d;
 
-        public const double AerodynamicCleanlinessManDaysPerPercent = 1.2d;
-        public const double AerodynamicCleanlinessManDaysBaseShare = 0.65d;
+        public const double AerodynamicCleanlinessMaxProductionCostIncreaseRatio = 0.05d;
+        public const double AerodynamicCleanlinessMaxProductionManDaysIncreaseRatio = 0.20d;
 
         public const double AircraftLengthBaseMeters = 3.5d;
         public const double AircraftLengthWingAreaScale = 0.80d;

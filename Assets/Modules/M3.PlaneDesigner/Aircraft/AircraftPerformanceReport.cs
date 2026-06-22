@@ -2,6 +2,7 @@
 using WrightTycoon.Core.Balance;
 using System.Collections.Generic;
 using WrightTycoon.Core.Units;
+using WrightTycoon.Core.Production;
 
 namespace WrightTycoon.Core.Aircraft;
 
@@ -23,7 +24,9 @@ public sealed record AircraftPerformanceReport(
     double OptimalCruiseAltitudeMeters = 0d,
     double AverageCruiseFuelBurnKilogramsPerHour = 0d,
     double FullFuelCruiseBurnKilogramsPerHour = 0d,
-    double EmptyFuelCruiseBurnKilogramsPerHour = 0d)
+    double EmptyFuelCruiseBurnKilogramsPerHour = 0d,
+    ProductionBreakdown? CostBreakdown = null,
+    ProductionBreakdown? ProductionManDaysBreakdown = null)
 {
     public int PassengerCapacity => GetPassengerCapacity(PlaneDesignerBalance.Categories.PayloadKilogramsPerPassenger);
 

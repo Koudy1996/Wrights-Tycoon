@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using WrightTycoon.Core.Units;
+using WrightTycoon.Core.Production;
 
 namespace WrightTycoon.Core.Engines;
 
@@ -17,7 +18,9 @@ public sealed class EnginePerformanceReport
         double cost,
         double productionManDays,
         double engineLengthMeters = 0d,
-        double engineFrontalAreaSquareMeters = 0d)
+        double engineFrontalAreaSquareMeters = 0d,
+        ProductionBreakdown? costBreakdown = null,
+        ProductionBreakdown? productionManDaysBreakdown = null)
     {
         OutputKind = outputKind;
         _altitudePerformance = altitudePerformance?.ToArray() ?? throw new ArgumentNullException(nameof(altitudePerformance));
@@ -27,6 +30,8 @@ public sealed class EnginePerformanceReport
         ProductionManDays = productionManDays;
         EngineLengthMeters = engineLengthMeters;
         EngineFrontalAreaSquareMeters = engineFrontalAreaSquareMeters;
+        CostBreakdown = costBreakdown ?? ProductionBreakdown.FromTotal("Engine", cost);
+        ProductionManDaysBreakdown = productionManDaysBreakdown ?? ProductionBreakdown.FromTotal("Engine", productionManDays);
     }
 
     public EngineOutputKind OutputKind { get; }
@@ -44,6 +49,10 @@ public sealed class EnginePerformanceReport
     public double EngineLengthMeters { get; }
 
     public double EngineFrontalAreaSquareMeters { get; }
+
+    public ProductionBreakdown CostBreakdown { get; }
+
+    public ProductionBreakdown ProductionManDaysBreakdown { get; }
 
     public EngineAltitudePerformance GetPerformanceAtAltitude(double altitudeMeters)
     {

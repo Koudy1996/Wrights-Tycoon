@@ -16,20 +16,51 @@ namespace WrightTycoon.Game.Editor;
 
 public static class WrightTycoonBuildPipeline
 {
+    private enum BuildMode
+    {
+        Incremental,
+        CleanRelease,
+    }
+
     private const string WindowsOutputFolder = "Builds/Windows/Release";
     private const string MacOutputFolder = "Builds/Mac/Release";
     private const string WindowsExecutableName = "WrightTycoon.exe";
     private const string MacApplicationName = "WrightTycoon.app";
     private const string MacArchiveFileName = "WrightTycoon-macOS-Release.tar.gz";
+    private const string IncrementalFingerprintFileName = ".incremental-input.sha256";
     private const string LegacyLaunchScenePath = "Assets/WrightTycoon/Scenes/WrightTycoonLaunch.unity";
 
-    [MenuItem("WrightTycoon/Build/Windows Release")]
+    [MenuItem("WrightTycoon/Build/Incremental/All Launchers")]
+    public static void BuildAllIncrementalMenu()
+    {
+        BuildAllIncremental();
+    }
+
+    [MenuItem("WrightTycoon/Build/Incremental/Windows")]
+    public static void BuildWindowsIncrementalMenu()
+    {
+        BuildWindowsIncremental();
+    }
+
+    [MenuItem("WrightTycoon/Build/Incremental/macOS")]
+    public static void BuildMacIncrementalMenu()
+    {
+        BuildMacIncremental();
+    }
+
+    [MenuItem("WrightTycoon/Build/Clean Release/All Launchers")]
+    public static void BuildAllCleanReleaseMenu()
+    {
+        BuildAllCleanRelease();
+    }
+
+    [MenuItem("WrightTycoon/Build/Clean Release/Windows")]
     public static void BuildWindowsReleaseMenu()
     {
         BuildWindowsRelease();
     }
 
-    [MenuItem("WrightTycoon/Build/macOS Release")]
+    [MenuItem("WrightTycoon/Build/Clean Release/macOS")]
     public static void BuildMacReleaseMenu()
     {
         BuildMacRelease();
@@ -46,14 +77,67 @@ public static class WrightTycoonBuildPipeline
 
     public static void BuildWindowsRelease()
     {
+        BuildWindowsCleanRelease();
+    }
+
+    public static void BuildMacRelease()
+    {
+        BuildMacCleanRelease();
+    }
+
+    public static void BuildWindowsCleanRelease()
+    {
+        WrightTycoonProjectSetup.PrepareProjectForLaunch();
+        BuildWindows(BuildMode.CleanRelease);
+    }
+
+    public static void BuildMacCleanRelease()
+    {
+        WrightTycoonProjectSetup.PrepareProjectForLaunch();
+        BuildMac(BuildMode.CleanRelease);
+    }
+
+    public static void BuildWindowsIncremental()
+    {
+        WrightTycoonProjectSetup.PrepareProjectForLaunch();
+        BuildWindows(BuildMode.Incremental);
+    }
+
+    public static void BuildMacIncremental()
+    {
+        WrightTycoonProjectSetup.PrepareProjectForLaunch();
+        BuildMac(BuildMode.Incremental);
+    }
+
+    public static void BuildAllIncremental()
+    {
+        BuildAll(BuildMode.Incremental);
+    }
+
+    public static void BuildAllCleanRelease()
+    {
+        BuildAll(BuildMode.CleanRelease);
+    }
+
+    private static void BuildAll(BuildMode mode)
+    {
+        WrightTycoonProjectSetup.PrepareProjectForLaunch();
+        BuildWindows(mode);
+        BuildMac(mode);
+    }
+
+    private static void BuildWindows(BuildMode mode)
+    {
         BuildRelease(
             BuildTarget.StandaloneWindows64,
             WindowsOutputFolder,
             WindowsExecutableName,
-            "Windows release");
+            $"Windows {GetBuildModeLabel(mode)}",
+            mode,
+            createMacArchive: false);
     }
 
-    public static void BuildMacRelease()
+    private static void BuildMac(BuildMode mode)
     {
         var originalBackend = PlayerSettings.GetScriptingBackend(BuildTargetGroup.Standalone);
         var switchedToMono = false;
@@ -72,7 +156,9 @@ public static class WrightTycoonBuildPipeline
                 BuildTarget.StandaloneOSX,
                 MacOutputFolder,
                 MacApplicationName,
-                "macOS release");
+                $"macOS {GetBuildModeLabel(mode)}",
+                mode,
+                createMacArchive: mode == BuildMode.CleanRelease);
         }
         finally
         {
@@ -89,10 +175,10 @@ public static class WrightTycoonBuildPipeline
         BuildTarget target,
         string outputFolder,
         string playerFileName,
-        string buildLabel)
+        string buildLabel,
+        BuildMode mode,
+        bool createMacArchive)
     {
-        WrightTycoonProjectSetup.PrepareProjectForLaunch();
-
         var runtimeLaunchScenePath = WrightTycoonProjectSetup.RuntimeLaunchScenePath;
         var additionalScenes = EditorBuildSettings.scenes
             .Where(scene => scene.enabled)
@@ -114,21 +200,52 @@ public static class WrightTycoonBuildPipeline
 
         var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
         var buildFolder = Path.Combine(projectRoot, outputFolder);
-        CleanBuildFolder(buildFolder);
+        Directory.CreateDirectory(buildFolder);
+
+        if (target == BuildTarget.StandaloneWindows64)
+        {
+            EnsureWindowsLauncherIsNotRunning(buildFolder);
+        }
+        else if (target == BuildTarget.StandaloneOSX && !createMacArchive)
+        {
+            DeleteStaleMacDistributionArchive(buildFolder);
+        }
+
+        if (mode == BuildMode.CleanRelease)
+        {
+            CleanBuildFolder(buildFolder);
+        }
 
         var outputPath = Path.Combine(buildFolder, playerFileName);
+        var inputFingerprint = ComputeBuildInputFingerprint(projectRoot);
+        var canBuildScriptsOnly = mode == BuildMode.Incremental &&
+                                  CanUseScriptsOnlyBuild(buildFolder, outputPath, inputFingerprint);
         var options = new BuildPlayerOptions
         {
             scenes = scenes,
             locationPathName = outputPath,
             target = target,
-            options = BuildOptions.CleanBuildCache
+            options = mode == BuildMode.CleanRelease
+                ? BuildOptions.CleanBuildCache
+                : canBuildScriptsOnly
+                    ? BuildOptions.BuildScriptsOnly
+                    : BuildOptions.None
         };
 
-        Debug.Log($"[Build] Starting {buildLabel} build to: {outputPath}");
+        Debug.Log(
+            $"[Build] Starting {buildLabel} build to: {outputPath} | Options: {options.options}");
         var report = BuildPipeline.BuildPlayer(options);
         var summary = report.summary;
         Debug.Log($"[Build] Result: {summary.result} | Time: {summary.totalTime} | Size: {summary.totalSize} bytes");
+
+        if (summary.result != BuildResult.Succeeded && canBuildScriptsOnly)
+        {
+            Debug.LogWarning("[Build] Scripts-only build failed. Retrying as a normal incremental build.");
+            options.options = BuildOptions.None;
+            report = BuildPipeline.BuildPlayer(options);
+            summary = report.summary;
+            Debug.Log($"[Build] Retry result: {summary.result} | Time: {summary.totalTime} | Size: {summary.totalSize} bytes");
+        }
 
         if (summary.result != BuildResult.Succeeded)
         {
@@ -140,7 +257,78 @@ public static class WrightTycoonBuildPipeline
             throw new FileNotFoundException($"Build finished but output was not found at '{outputPath}'.");
         }
 
-        FinalizeReleaseLayout(buildFolder, target);
+        WriteIncrementalFingerprint(buildFolder, inputFingerprint);
+        FinalizeReleaseLayout(buildFolder, target, createMacArchive);
+    }
+
+    private static string GetBuildModeLabel(BuildMode mode)
+    {
+        return mode == BuildMode.CleanRelease ? "clean release" : "incremental checkpoint";
+    }
+
+    private static bool CanUseScriptsOnlyBuild(string buildFolder, string outputPath, string inputFingerprint)
+    {
+        if (!File.Exists(outputPath) && !Directory.Exists(outputPath))
+        {
+            return false;
+        }
+
+        var fingerprintPath = GetIncrementalFingerprintPath(buildFolder);
+        if (!File.Exists(fingerprintPath))
+        {
+            return false;
+        }
+
+        var previousFingerprint = File.ReadAllText(fingerprintPath).Trim();
+        return string.Equals(previousFingerprint, inputFingerprint, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void WriteIncrementalFingerprint(string buildFolder, string fingerprint)
+    {
+        var fingerprintPath = GetIncrementalFingerprintPath(buildFolder);
+        Directory.CreateDirectory(Path.GetDirectoryName(fingerprintPath)!);
+        File.WriteAllText(fingerprintPath, fingerprint + Environment.NewLine);
+    }
+
+    private static string GetIncrementalFingerprintPath(string buildFolder)
+    {
+        var platformRoot = Directory.GetParent(buildFolder)?.FullName ?? buildFolder;
+        return Path.Combine(platformRoot, IncrementalFingerprintFileName);
+    }
+
+    private static string ComputeBuildInputFingerprint(string projectRoot)
+    {
+        var roots = new[] { "Assets", "Packages", "ProjectSettings" };
+        var files = roots
+            .Select(root => Path.Combine(projectRoot, root))
+            .Where(Directory.Exists)
+            .SelectMany(root => Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+            .Where(path => !string.Equals(Path.GetExtension(path), ".cs", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(path => Path.GetRelativePath(projectRoot, path), StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        using var sha = SHA256.Create();
+        var separator = new byte[] { (byte)'\n' };
+        for (var index = 0; index < files.Length; index++)
+        {
+            var relativePath = Path.GetRelativePath(projectRoot, files[index]).Replace('\\', '/');
+            var pathBytes = Encoding.UTF8.GetBytes(relativePath);
+            sha.TransformBlock(pathBytes, 0, pathBytes.Length, pathBytes, 0);
+            sha.TransformBlock(separator, 0, separator.Length, separator, 0);
+
+            using var input = File.OpenRead(files[index]);
+            var buffer = new byte[81920];
+            int bytesRead;
+            while ((bytesRead = input.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                sha.TransformBlock(buffer, 0, bytesRead, buffer, 0);
+            }
+
+            sha.TransformBlock(separator, 0, separator.Length, separator, 0);
+        }
+
+        sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+        return BitConverter.ToString(sha.Hash!).Replace("-", string.Empty).ToLowerInvariant();
     }
 
     private static void CleanBuildFolder(string buildFolder)
@@ -159,7 +347,35 @@ public static class WrightTycoonBuildPipeline
         }
     }
 
-    private static void FinalizeReleaseLayout(string buildFolder, BuildTarget target)
+    private static void EnsureWindowsLauncherIsNotRunning(string buildFolder)
+    {
+        var executablePath = Path.GetFullPath(Path.Combine(buildFolder, WindowsExecutableName));
+        foreach (var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(WindowsExecutableName)))
+        {
+            using (process)
+            {
+                var matchesBuild = false;
+                try
+                {
+                    var runningPath = process.MainModule?.FileName;
+                    matchesBuild = !string.IsNullOrWhiteSpace(runningPath) &&
+                                   string.Equals(Path.GetFullPath(runningPath), executablePath, StringComparison.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    // Some system processes do not expose MainModule. They are unrelated to this build.
+                }
+
+                if (matchesBuild)
+                {
+                    throw new InvalidOperationException(
+                        $"Close the running Windows launcher before building: '{executablePath}'.");
+                }
+            }
+        }
+    }
+
+    private static void FinalizeReleaseLayout(string buildFolder, BuildTarget target, bool createMacArchive)
     {
         ValidateHistoricalCampaignAssetsInBuild(buildFolder, target);
 
@@ -177,9 +393,25 @@ public static class WrightTycoonBuildPipeline
         {
             MoveWindowsDeveloperBackupOutOfRelease(buildFolder);
         }
-        else if (target == BuildTarget.StandaloneOSX)
+        else if (target == BuildTarget.StandaloneOSX && createMacArchive)
         {
             CreateMacDistributionArchive(buildFolder);
+        }
+    }
+
+    private static void DeleteStaleMacDistributionArchive(string buildFolder)
+    {
+        var platformRoot = Directory.GetParent(buildFolder)?.FullName;
+        if (string.IsNullOrWhiteSpace(platformRoot))
+        {
+            return;
+        }
+
+        var archivePath = Path.Combine(platformRoot, MacArchiveFileName);
+        if (File.Exists(archivePath))
+        {
+            File.Delete(archivePath);
+            Debug.Log($"[Build] Removed stale macOS archive after incremental build: {archivePath}");
         }
     }
 

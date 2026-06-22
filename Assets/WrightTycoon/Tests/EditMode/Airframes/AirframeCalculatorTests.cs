@@ -225,7 +225,7 @@ public sealed class AirframeCalculatorTests
     }
 
     [Test]
-    public void AerodynamicCleanliness_ReducesDragButRaisesProductionManDays()
+    public void AerodynamicCleanliness_ReducesDragAndAppliesConfiguredProductionMultipliers()
     {
         var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
         var definition = CreateDefinition();
@@ -240,7 +240,10 @@ public sealed class AirframeCalculatorTests
         var cleanReport = calculator.Calculate(definition, clean);
 
         Assert.That(cleanReport.DragCoefficient, Is.LessThan(baselineReport.DragCoefficient));
-        Assert.That(cleanReport.ProductionManDays, Is.GreaterThan(baselineReport.ProductionManDays));
+        Assert.That(cleanReport.ProductionCost / baselineReport.ProductionCost, Is.EqualTo(1.05d).Within(0.000001d));
+        Assert.That(cleanReport.ProductionManDays / baselineReport.ProductionManDays, Is.EqualTo(1.20d).Within(0.000001d));
+        Assert.That(cleanReport.CostBreakdown!.Total, Is.EqualTo(cleanReport.ProductionCost).Within(0.000001d));
+        Assert.That(cleanReport.ProductionManDaysBreakdown!.Total, Is.EqualTo(cleanReport.ProductionManDays).Within(0.000001d));
         Assert.That(cleanReport.AircraftLengthMeters, Is.GreaterThan(0d));
         Assert.That(cleanReport.AirframeFrontalAreaSquareMeters, Is.GreaterThan(0d));
         Assert.That(cleanReport.EffectiveDragAreaSquareMeters, Is.GreaterThan(0d));

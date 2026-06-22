@@ -1,6 +1,6 @@
 # Unity Launch and Build Flow
 
-This repo is a Unity project. The Unity editor menus are the only supported launch/build entry points.
+This repo is a Unity project. Use `Scripts/WrightTycoonWorkflow.cmd` for repeatable tests and launcher builds on Windows. The Unity editor menus remain available for interactive use.
 
 ## 1. Open the project
 
@@ -12,14 +12,14 @@ This repo is a Unity project. The Unity editor menus are the only supported laun
 - Run `WrightTycoon -> Open Launch Scene`.
 - Press Play.
 
-`Prepare Project For Launch` keeps the existing launch scene if it already exists, refreshes definition JSON files in `Assets/StreamingAssets/Data/Examples`, and ensures the launch scene is in Build Settings.
+`Prepare Project For Launch` keeps existing launch scenes, copies definition JSON files only when their content changed, and ensures the launch scene is in Build Settings.
 
-## 3. Build releases
+## 3. Build launchers
 
-- Use `WrightTycoon -> Build -> Windows Release`.
-- Use `WrightTycoon -> Build -> macOS Release`.
+- Use `WrightTycoon -> Build -> Incremental -> All Launchers` for a normal launcher checkpoint.
+- Use `WrightTycoon -> Build -> Clean Release -> All Launchers` before distribution.
 
-The build pipeline is the single build authority. It prepares the project, writes `WrightTycoon.build.json`, creates a release-side `Player Info` folder, and moves Windows developer-only backup payloads out of the normal `Release` folder.
+The build pipeline is the single build authority. It prepares the project, writes `WrightTycoon.build.json`, creates a release-side `Player Info` folder, and moves Windows developer-only backup payloads out of the normal `Release` folder. Incremental builds preserve caches and do not create the macOS distribution archive. See `Docs/TestingAndLauncherWorkflow.md` for the default command-line workflow.
 
 ## 4. Runtime data
 

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Math;
 using WrightTycoon.Core.Physics;
+using WrightTycoon.Core.Production;
 using WrightTycoon.Core.Units;
 
 namespace WrightTycoon.Core.Engines;
@@ -81,8 +83,10 @@ public sealed class EngineCalculator : IEngineCalculator
 
         var reliability = CalculateReliability(definition, effectiveParameters);
         var weight = CalculateWeight(definition, effectiveParameters, seaLevelOutput, outputKind);
-        var cost = CalculateCost(definition, effectiveParameters, seaLevelOutput, outputKind, weight);
-        var productionMd = CalculateProductionManDays(definition, effectiveParameters, weight);
+        var costBreakdown = CalculateCostBreakdown(definition, effectiveParameters, seaLevelOutput, outputKind, weight);
+        var productionManDaysBreakdown = CalculateProductionManDaysBreakdown(definition, effectiveParameters, weight);
+        var cost = costBreakdown.Total;
+        var productionMd = productionManDaysBreakdown.Total;
         var engineCoreDiameterMeters = CalculateEngineCoreDiameterMeters(definition.EngineType, effectiveParameters);
         var engineLengthMeters = CalculateEngineLengthMeters(definition.EngineType, effectiveParameters, engineCoreDiameterMeters);
         var engineFrontalAreaSquareMeters = CalculateEngineFrontalAreaSquareMeters(effectiveParameters, engineCoreDiameterMeters);
@@ -95,7 +99,9 @@ public sealed class EngineCalculator : IEngineCalculator
             cost,
             productionMd,
             engineLengthMeters,
-            engineFrontalAreaSquareMeters);
+            engineFrontalAreaSquareMeters,
+            costBreakdown,
+            productionManDaysBreakdown);
     }
 
     private static IReadOnlyList<EngineAltitudePerformance> BuildAltitudePerformance(
@@ -482,7 +488,7 @@ public sealed class EngineCalculator : IEngineCalculator
                 + outputMass) * techFactor);
     }
 
-    private static double CalculateCost(
+    private static ProductionBreakdown CalculateCostBreakdown(
         EngineDefinition definition,
         EngineParameters parameters,
         double seaLevelOutput,
@@ -510,24 +516,36 @@ public sealed class EngineCalculator : IEngineCalculator
             : 0d;
 
         var complexityCost = GetComplexityPenalty(definition.EngineType) * 24000d * definition.ComplexityFactor;
-        var totalCost = definition.BaseCost
-            + (normalizedOutput * definition.CostPerOutputUnit)
-            + (weight.Kilograms * 5.5d)
-            + speedCost
-            + cylinderCost
-            + bypassCost
-            + boostCost
-            + complexityCost
-            + injectionCost;
+        var items = new List<ProductionBreakdownItem>
+        {
+            new("Base engine", definition.BaseCost),
+            new("Rated output", normalizedOutput * definition.CostPerOutputUnit),
+            new("Engine mass", weight.Kilograms * 5.5d),
+            new("Maximum speed hardware", speedCost),
+            new("Cylinders", cylinderCost),
+            new("Bypass hardware", bypassCost),
+            new("Boost system", boostCost),
+            new("Engine complexity", complexityCost),
+            new("Carburetor discount", injectionCost),
+        };
+        var totalCost = items.Sum(item => item.Amount);
         if (isJet && parameters.HasAfterburner)
         {
-            totalCost *= EngineDesignerBalance.Engine.JetAfterburnerCostMultiplier;
+            AddMultiplierAdjustment(
+                items,
+                "Afterburner",
+                ref totalCost,
+                EngineDesignerBalance.Engine.JetAfterburnerCostMultiplier);
         }
 
-        return System.Math.Max(totalCost, definition.BaseCost * 0.2d);
+        AddMinimumAdjustment(items, "Minimum engine cost", ref totalCost, definition.BaseCost * 0.2d);
+        return new ProductionBreakdown(items);
     }
 
-    private static double CalculateProductionManDays(EngineDefinition definition, EngineParameters parameters, Mass weight)
+    private static ProductionBreakdown CalculateProductionManDaysBreakdown(
+        EngineDefinition definition,
+        EngineParameters parameters,
+        Mass weight)
     {
         var isJet = IsJetFamily(definition.EngineType);
         var boostMd = parameters.BoostType switch
@@ -546,13 +564,59 @@ public sealed class EngineCalculator : IEngineCalculator
             ? -EngineDesignerBalance.Engine.CarburetorProductionManDayDiscount
             : 0d;
         var complexityMd = GetComplexityPenalty(definition.EngineType) * 65d * definition.ComplexityFactor;
-        var productionManDays = definition.BaseProductionManDays + (weight.Kilograms * 0.03d) + boostMd + speedMd + cylinderMd + bypassMd + complexityMd + injectionMd;
+        var items = new List<ProductionBreakdownItem>
+        {
+            new("Base engine", definition.BaseProductionManDays),
+            new("Engine mass", weight.Kilograms * 0.03d),
+            new("Boost system", boostMd),
+            new("Maximum speed hardware", speedMd),
+            new("Cylinders", cylinderMd),
+            new("Bypass hardware", bypassMd),
+            new("Engine complexity", complexityMd),
+            new("Carburetor simplification", injectionMd),
+        };
+        var productionManDays = items.Sum(item => item.Amount);
         if (isJet && parameters.HasAfterburner)
         {
-            productionManDays *= EngineDesignerBalance.Engine.JetAfterburnerProductionManDaysMultiplier;
+            AddMultiplierAdjustment(
+                items,
+                "Afterburner",
+                ref productionManDays,
+                EngineDesignerBalance.Engine.JetAfterburnerProductionManDaysMultiplier);
         }
 
-        return System.Math.Max(productionManDays, definition.BaseProductionManDays * 0.3d);
+        AddMinimumAdjustment(
+            items,
+            "Minimum engine production time",
+            ref productionManDays,
+            definition.BaseProductionManDays * 0.3d);
+        return new ProductionBreakdown(items);
+    }
+
+    private static void AddMultiplierAdjustment(
+        List<ProductionBreakdownItem> items,
+        string label,
+        ref double total,
+        double multiplier)
+    {
+        var adjustment = total * (multiplier - 1d);
+        items.Add(new ProductionBreakdownItem(label, adjustment));
+        total += adjustment;
+    }
+
+    private static void AddMinimumAdjustment(
+        List<ProductionBreakdownItem> items,
+        string label,
+        ref double total,
+        double minimum)
+    {
+        if (total >= minimum)
+        {
+            return;
+        }
+
+        items.Add(new ProductionBreakdownItem(label, minimum - total));
+        total = minimum;
     }
 
     private static double CalculateOptimizationFactor(double altitudeMeters, double optimizationAltitudeMeters, BoostType boostType)

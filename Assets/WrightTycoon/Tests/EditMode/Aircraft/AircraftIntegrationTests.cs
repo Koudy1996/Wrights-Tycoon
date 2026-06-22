@@ -179,6 +179,10 @@ public sealed class AircraftIntegrationTests
         Assert.That(aircraft.Airframe.Parameters.StructureType, Is.EqualTo(family.LockedStructureType));
         Assert.That(aircraft.Airframe.Parameters.MaterialType, Is.EqualTo(family.LockedMaterialType));
         Assert.That(aircraft.Airframe.Parameters.WingShape, Is.EqualTo(WingShape.Delta));
+        Assert.That(aircraft.Performance.CostBreakdown!.Total, Is.EqualTo(aircraft.Performance.TotalProductionCost).Within(0.000001d));
+        Assert.That(
+            aircraft.Performance.ProductionManDaysBreakdown!.Total,
+            Is.EqualTo(aircraft.Performance.TotalProductionManDays).Within(0.000001d));
     }
 
     [Test]

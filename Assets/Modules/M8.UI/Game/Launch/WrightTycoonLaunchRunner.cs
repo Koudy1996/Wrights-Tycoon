@@ -17,6 +17,7 @@ using WrightTycoon.Core.Engines;
 using WrightTycoon.Core.Factories;
 using WrightTycoon.Core.GovernmentContracts;
 using WrightTycoon.Core.Physics;
+using WrightTycoon.Core.Production;
 using WrightTycoon.Core.Simulation;
 using WrightTycoon.Core.Research;
 using WrightTycoon.Game.Campaign;
@@ -272,13 +273,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private static readonly ModifierTooltipDefinition BoostSuperchargerTooltip = new(
         "modifier.engine.boost",
         "Boost: Supercharger",
-        positiveLines: new[] { "More power, good mid-altitude", "No specific fuel consumption penalty" },
-        negativeLines: new[] { "Higher weight, reliability penalty" });
+        positiveLines: new[] { "More power, good mid-altitude" },
+        negativeLines: new[] { "8% higher specific fuel consumption", "Higher weight, reliability penalty" });
     private static readonly ModifierTooltipDefinition BoostTurboTooltip = new(
         "modifier.engine.boost",
         "Boost: Turbo",
-        positiveLines: new[] { "Strong all-altitude power" },
-        negativeLines: new[] { "8% higher specific fuel consumption", "Higher frontal area, weight, reliability penalty" });
+        positiveLines: new[] { "Strong all-altitude power", "2% lower specific fuel consumption" },
+        negativeLines: new[] { "Higher frontal area, weight, reliability penalty" });
     private static readonly ModifierTooltipDefinition InjectionCarburetorTooltip = new(
         "modifier.engine.injection",
         "Injection: Carburetor",
@@ -2686,12 +2687,20 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             "Cost",
             FormatUiNumber(report.Cost, "0"),
             hasInlineComparison,
-            FormatUiNumber(originalReport.Cost, "0"));
+            FormatUiNumber(originalReport.Cost, "0"),
+            report.CostBreakdown,
+            "breakdown.engine.cost",
+            "Engine Production Cost Breakdown",
+            "0");
         DrawInlineComparisonRow(
             "Production MD",
             FormatUiNumber(report.ProductionManDays, "0.0"),
             hasInlineComparison,
-            FormatUiNumber(originalReport.ProductionManDays, "0.0"));
+            FormatUiNumber(originalReport.ProductionManDays, "0.0"),
+            report.ProductionManDaysBreakdown,
+            "breakdown.engine.md",
+            "Engine Production MD Breakdown",
+            "0.0");
         var currentEngineResearchTimeMonths = ResolveEngineResearchTimeMonthsForDesignerPreview(
             _enginePreview,
             _engineVersionDevelopment?.SourceDevelopmentStartedYear);
@@ -3032,62 +3041,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        var compareTypeButtonLabel = _typeCompareEnabled
-            ? "Stop Compare"
-            : "Compare";
-        if (GUILayout.Button(compareTypeButtonLabel, GUILayout.Height(28f)))
-        {
-            ToggleTypeCompareMode();
-        }
-
         GUILayout.EndHorizontal();
-
-        if (_typeCompareEnabled)
-        {
-            DrawSection("Compare");
-            var compareTargetLabels = new[] { "Saved Type", "Market Category" };
-            _typeCompareTarget = (TypeCompareTarget)GUILayout.Toolbar(
-                (int)_typeCompareTarget,
-                compareTargetLabels,
-                GUILayout.Height(26f));
-
-            if (_typeCompareTarget == TypeCompareTarget.SavedType)
-            {
-                if (_savedAircraftDesigns.Count == 0)
-                {
-                    DrawError("No saved aircraft type is available. Select Market Category instead.");
-                }
-                else
-                {
-                    var compareLabels = _savedAircraftDesigns
-                        .Select(design =>
-                            $"{design.Name} | " +
-                            $"{FormatQualifiedCategorySummary(design.CatalogItem.Aircraft)} | " +
-                            $"{ResolveSavedEngineDisplayNameForAircraftDesign(design)}")
-                        .ToArray();
-                    _typeCompareReferenceIndex = Mathf.Clamp(_typeCompareReferenceIndex, 0, compareLabels.Length - 1);
-                    _typeCompareReferenceIndex = DrawListSelector("Reference Type", _typeCompareReferenceIndex, compareLabels);
-                }
-            }
-            else
-            {
-                var categoryProfiles = GetUnlockedAircraftCategoriesForCurrentState()
-                    .Select(category => AircraftCategoryCatalog.GetProfileForYear(category, _currentDate.Year))
-                    .ToArray();
-                if (categoryProfiles.Length == 0)
-                {
-                    DrawError("No market category is currently available.");
-                }
-                else
-                {
-                    _typeCompareCategoryIndex = Mathf.Clamp(_typeCompareCategoryIndex, 0, categoryProfiles.Length - 1);
-                    _typeCompareCategoryIndex = DrawListSelector(
-                        "Reference Category",
-                        _typeCompareCategoryIndex,
-                        categoryProfiles.Select(profile => profile.DisplayName).ToArray());
-                }
-            }
-        }
 
         _aircraftDesignName = DrawText("Saved Aircraft Name", _aircraftDesignName);
 
@@ -3303,21 +3257,34 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.EndHorizontal();
     }
 
-    private static void DrawInlineComparisonRow(
+    private void DrawInlineComparisonRow(
         string label,
         string newValue,
         bool hasOriginal,
-        string originalValue)
+        string originalValue,
+        ProductionBreakdown? breakdown = null,
+        string tooltipId = "",
+        string tooltipTitle = "",
+        string breakdownFormat = "0.0")
     {
         GUILayout.BeginHorizontal(GUI.skin.box);
         GUILayout.Label(label, GUILayout.Width(240f));
+        var firstRect = GUILayoutUtility.GetLastRect();
         GUILayout.Label(newValue, GUILayout.Width(180f));
+        var lastRect = GUILayoutUtility.GetLastRect();
         if (hasOriginal)
         {
             GUILayout.Label($"Original: {originalValue}");
+            lastRect = GUILayoutUtility.GetLastRect();
         }
 
         GUILayout.EndHorizontal();
+        if (breakdown is not null)
+        {
+            RegisterModifierTooltipRegion(
+                BuildProductionBreakdownTooltip(tooltipId, tooltipTitle, breakdown, breakdownFormat),
+                CombineRects(firstRect, lastRect));
+        }
     }
 
     private bool TryGetEngineReferenceForInlineComparison(out Engine referenceEngine, out string referenceLabel)
@@ -3477,6 +3444,50 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             categories[_typeCompareCategoryIndex],
             _currentDate.Year);
         return true;
+    }
+
+    private void DrawTypeCompareControls()
+    {
+        DrawSection("Compare Reference");
+        var compareTargetLabels = new[] { "Saved Type", "Market Category" };
+        _typeCompareTarget = (TypeCompareTarget)GUILayout.Toolbar(
+            (int)_typeCompareTarget,
+            compareTargetLabels,
+            GUILayout.Height(26f));
+
+        if (_typeCompareTarget == TypeCompareTarget.SavedType)
+        {
+            if (_savedAircraftDesigns.Count == 0)
+            {
+                DrawError("No saved aircraft type is available. Select Market Category instead.");
+                return;
+            }
+
+            var compareLabels = _savedAircraftDesigns
+                .Select(design =>
+                    $"{design.Name} | " +
+                    $"{FormatQualifiedCategorySummary(design.CatalogItem.Aircraft)} | " +
+                    $"{ResolveSavedEngineDisplayNameForAircraftDesign(design)}")
+                .ToArray();
+            _typeCompareReferenceIndex = Mathf.Clamp(_typeCompareReferenceIndex, 0, compareLabels.Length - 1);
+            _typeCompareReferenceIndex = DrawListSelector("Reference Type", _typeCompareReferenceIndex, compareLabels);
+            return;
+        }
+
+        var categoryProfiles = GetUnlockedAircraftCategoriesForCurrentState()
+            .Select(category => AircraftCategoryCatalog.GetProfileForYear(category, _currentDate.Year))
+            .ToArray();
+        if (categoryProfiles.Length == 0)
+        {
+            DrawError("No market category is currently available.");
+            return;
+        }
+
+        _typeCompareCategoryIndex = Mathf.Clamp(_typeCompareCategoryIndex, 0, categoryProfiles.Length - 1);
+        _typeCompareCategoryIndex = DrawListSelector(
+            "Reference Category",
+            _typeCompareCategoryIndex,
+            categoryProfiles.Select(profile => profile.DisplayName).ToArray());
     }
 
     private static void DrawEngineParameterComparisonRows(
@@ -3962,7 +3973,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var airframePerf = _aircraftPreview.Airframe.Performance;
 
         GUILayout.Label($"Family: {_aircraftPreview.FamilyDefinition.DisplayName}");
-        DrawParameterValueRow("Qualified Categories", FormatQualifiedCategorySummary(_aircraftPreview));
+        GUILayout.BeginHorizontal(GUI.skin.box);
+        GUILayout.Label("Qualified Categories", GUILayout.Width(220f));
+        GUILayout.Label(FormatQualifiedCategorySummary(_aircraftPreview));
+        var compareTypeButtonLabel = _typeCompareEnabled ? "Stop Compare" : "Compare";
+        if (GUILayout.Button(compareTypeButtonLabel, GUILayout.Width(150f), GUILayout.Height(24f)))
+        {
+            ToggleTypeCompareMode();
+        }
+        GUILayout.EndHorizontal();
+        if (_typeCompareEnabled)
+        {
+            DrawTypeCompareControls();
+        }
         GUILayout.Label($"Type: {_aircraftPreview.TypeDefinition.DisplayName}");
         GUILayout.Label($"Engine: {_aircraftPreview.Engine.Definition.DisplayName} x{FormatUiInteger(_aircraftPreview.Airframe.Parameters.EngineCount)}");
         var engineOutputAtSeaLevel = ResolveEngineOutputAtSeaLevel(_aircraftPreview.Engine);
@@ -4079,8 +4102,20 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawMetric("Drag Coefficient (Cd)", airframePerf.DragCoefficient, "0.000");
         DrawMetric("Maneuverability", airframePerf.Maneuverability, "0.0");
 
-        DrawMetric("Production Cost", perf.TotalProductionCost, "0");
-        DrawMetric("Production MD", perf.TotalProductionManDays, "0.0");
+        DrawMetricWithBreakdownTooltip(
+            "Production Cost",
+            perf.TotalProductionCost,
+            "0",
+            perf.CostBreakdown,
+            "breakdown.aircraft.cost",
+            "Aircraft Production Cost Breakdown");
+        DrawMetricWithBreakdownTooltip(
+            "Production MD",
+            perf.TotalProductionManDays,
+            "0.0",
+            perf.ProductionManDaysBreakdown,
+            "breakdown.aircraft.md",
+            "Aircraft Production MD Breakdown");
         DrawMetric(
             "Engineering Time (months)",
             ResolveTypeResearchTimeMonthsForDesignerPreview(
@@ -12759,6 +12794,72 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.EndHorizontal();
     }
 
+    private void DrawMetricWithBreakdownTooltip(
+        string label,
+        double value,
+        string format,
+        ProductionBreakdown? breakdown,
+        string tooltipId,
+        string tooltipTitle)
+    {
+        GUILayout.BeginHorizontal(GUI.skin.box);
+        GUILayout.Label(label, GUILayout.Width(240f));
+        var labelRect = GUILayoutUtility.GetLastRect();
+        GUILayout.Label(FormatUiNumber(value, format));
+        var valueRect = GUILayoutUtility.GetLastRect();
+        GUILayout.EndHorizontal();
+
+        if (breakdown is not null)
+        {
+            RegisterModifierTooltipRegion(
+                BuildProductionBreakdownTooltip(tooltipId, tooltipTitle, breakdown, format),
+                CombineRects(labelRect, valueRect));
+        }
+    }
+
+    private static ModifierTooltipDefinition BuildProductionBreakdownTooltip(
+        string id,
+        string title,
+        ProductionBreakdown breakdown,
+        string format)
+    {
+        var lines = new List<string>(breakdown.Items.Count + 2);
+        for (var index = 0; index < breakdown.Items.Count; index++)
+        {
+            var item = breakdown.Items[index];
+            lines.Add($"{item.Label}: {FormatUiNumber(item.Amount, format)}");
+        }
+
+        lines.Add("------------------------------");
+        lines.Add($"Total: {FormatUiNumber(breakdown.Total, format)}");
+        return new ModifierTooltipDefinition(id, title, neutralLines: lines);
+    }
+
+    private void RegisterModifierTooltipRegion(ModifierTooltipDefinition tooltip, Rect hoverRect)
+    {
+        var anchorScreen = GUIUtility.GUIToScreenPoint(new Vector2(hoverRect.xMax + 8f, hoverRect.yMin - 4f));
+        _modifierTooltipEntries[tooltip.Id] = new ModifierTooltipFrameEntry(tooltip, anchorScreen);
+
+        var currentEvent = Event.current;
+        if (currentEvent is null
+            || currentEvent.type != EventType.Repaint
+            || !hoverRect.Contains(currentEvent.mousePosition))
+        {
+            return;
+        }
+
+        _hasModifierTooltipHoverCandidate = true;
+        _modifierTooltipHoverCandidateId = tooltip.Id;
+        _modifierTooltipHoverCandidateDistance = 0f;
+    }
+
+    private static Rect CombineRects(Rect first, Rect second) =>
+        Rect.MinMaxRect(
+            Mathf.Min(first.xMin, second.xMin),
+            Mathf.Min(first.yMin, second.yMin),
+            Mathf.Max(first.xMax, second.xMax),
+            Mathf.Max(first.yMax, second.yMax));
+
     private bool DrawModifierToggleWithTooltip(bool currentValue, string label, ModifierTooltipDefinition tooltip)
     {
         GUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
@@ -13442,28 +13543,42 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             index = 0;
         }
 
-        var sliderRect = GUILayoutUtility.GetRect(120f, 20f, GUILayout.ExpandWidth(true));
-        index = Mathf.RoundToInt(GUI.HorizontalSlider(sliderRect, index, 0, values.Length - 1));
-        index = Mathf.Clamp(index, 0, values.Length - 1);
-        GUILayout.Label($"Selected: {labels[index]}");
-        var labelRowRect = GUILayoutUtility.GetRect(120f, 20f, GUILayout.ExpandWidth(true));
         var labelStyle = new GUIStyle(GUI.skin.label)
         {
             alignment = TextAnchor.MiddleCenter,
             wordWrap = false,
             clipping = TextClipping.Clip,
         };
-        var usableMinX = sliderRect.x + 6f;
-        var usableMaxX = sliderRect.xMax - 6f;
-        var markerWidth = Mathf.Max(64f, Mathf.Min(140f, sliderRect.width / values.Length));
+        var sliderAreaRect = GUILayoutUtility.GetRect(120f, 20f, GUILayout.ExpandWidth(true));
+        var thumbWidth = Mathf.Max(10f, GUI.skin.horizontalSliderThumb.fixedWidth);
+        var edgeLabelHalfWidth = Mathf.Max(
+            labelStyle.CalcSize(new GUIContent(labels[0])).x,
+            labelStyle.CalcSize(new GUIContent(labels[^1])).x) * 0.5f + 6f;
+        var sliderInset = Mathf.Max(0f, edgeLabelHalfWidth - (thumbWidth * 0.5f));
+        var sliderRect = new Rect(
+            sliderAreaRect.x + sliderInset,
+            sliderAreaRect.y,
+            Mathf.Max(1f, sliderAreaRect.width - (sliderInset * 2f)),
+            sliderAreaRect.height);
+        index = Mathf.RoundToInt(GUI.HorizontalSlider(sliderRect, index, 0, values.Length - 1));
+        index = Mathf.Clamp(index, 0, values.Length - 1);
+        GUILayout.Label($"Selected: {labels[index]}");
+        var labelRowRect = GUILayoutUtility.GetRect(120f, 20f, GUILayout.ExpandWidth(true));
+        var usableMinX = sliderRect.x + (thumbWidth * 0.5f);
+        var usableMaxX = sliderRect.xMax - (thumbWidth * 0.5f);
         for (var labelIndex = 0; labelIndex < labels.Length; labelIndex++)
         {
             var normalizedPosition = labels.Length <= 1
                 ? 0f
                 : (float)labelIndex / (labels.Length - 1);
             var centerX = Mathf.Lerp(usableMinX, usableMaxX, normalizedPosition);
-            var labelRect = new Rect(
+            var markerWidth = labelStyle.CalcSize(new GUIContent(labels[labelIndex])).x + 12f;
+            var markerX = Mathf.Clamp(
                 centerX - (markerWidth * 0.5f),
+                labelRowRect.x,
+                labelRowRect.xMax - markerWidth);
+            var labelRect = new Rect(
+                markerX,
                 labelRowRect.y,
                 markerWidth,
                 labelRowRect.height);
