@@ -47,6 +47,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const float ModifierTooltipHoverDelaySeconds = 0.5f;
     private const float ModifierTooltipHoverRadiusPixels = 26f;
     private const float ModifierTooltipIconSize = 18f;
+    private static readonly double[] WingAspectRatioRangeGuideValues = { 8d, 15d, 22d, 26d };
+    private static readonly string[] WingAspectRatioRangeGuideLabels = { "1 500 km", "3 000 km", "4 500 km", "6 000 km" };
     private static string s_dragSelectTextFieldControlName = string.Empty;
     private static int s_dragSelectTextFieldKeyboardControl;
 
@@ -2830,7 +2832,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 PlaneDesignerBalance.Airframe.WingAspectRatioMin,
                 PlaneDesignerBalance.Airframe.WingAspectRatioMax,
                 "0.0",
-                useLinearScale: true);
+                useLinearScale: true,
+                showAspectRatioRangeGuides: true);
             _baseAirframeParameters.WingPosition = DrawWingPositionSelector("Wing Position", _baseAirframeParameters.WingPosition);
             _baseAirframeParameters.WingShape = DrawWingShapeSelector("Wing Shape", _baseAirframeParameters.WingShape);
             _typeWingShape = _baseAirframeParameters.WingShape;
@@ -12096,7 +12099,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         double max,
         string format,
         ModifierTooltipDefinition? tooltip = null,
-        bool useLinearScale = false)
+        bool useLinearScale = false,
+        bool showAspectRatioRangeGuides = false)
     {
         var currentValue = Math.Clamp(value, min, max);
         var keyFamily = useLinearScale ? "double.linear" : "double";
@@ -12124,12 +12128,28 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var sliderPosition = useLinearScale
             ? ToLinearSliderPosition(currentValue, min, max)
             : ToExponentialSliderPosition(currentValue, min, max);
-        var nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
+        Rect? sliderRect = null;
+        float nextSliderPosition;
+        if (showAspectRatioRangeGuides)
+        {
+            var allocatedSliderRect = GUILayoutUtility.GetRect(1f, 20f, GUILayout.ExpandWidth(true));
+            sliderRect = allocatedSliderRect;
+            nextSliderPosition = GUI.HorizontalSlider(allocatedSliderRect, (float)sliderPosition, 0f, 1f);
+        }
+        else
+        {
+            nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
+        }
         var nextInput = DrawDragSelectTextField(controlName, currentInput, GUILayout.Width(120f));
         GUILayout.Label(
             $"[{FormatUiNumber(min, format)} - {FormatUiNumber(max, format)}]",
             GUILayout.Width(185f));
         GUILayout.EndHorizontal();
+
+        if (sliderRect.HasValue)
+        {
+            DrawWingAspectRatioRangeGuides(sliderRect.Value, min, max);
+        }
 
         var hasFocus = GUI.GetNameOfFocusedControl() == controlName;
         var pressedEnter = hasFocus
@@ -12174,6 +12194,43 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         _doubleSliderHadFocus[key] = hasFocus;
         return currentValue;
+    }
+
+    private static void DrawWingAspectRatioRangeGuides(Rect sliderRect, double min, double max)
+    {
+        var guideRowRect = GUILayoutUtility.GetRect(120f, 31f, GUILayout.ExpandWidth(true));
+        var labelStyle = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.UpperCenter,
+            fontSize = 9,
+            wordWrap = false,
+            clipping = TextClipping.Clip,
+        };
+        labelStyle.normal.textColor = new Color(0.58f, 0.64f, 0.72f, 0.92f);
+
+        var thumbWidth = Mathf.Max(10f, GUI.skin.horizontalSliderThumb.fixedWidth);
+        var usableMinX = sliderRect.x + (thumbWidth * 0.5f);
+        var usableMaxX = sliderRect.xMax - (thumbWidth * 0.5f);
+        var previousColor = GUI.color;
+
+        for (var index = 0; index < WingAspectRatioRangeGuideValues.Length; index++)
+        {
+            var normalizedPosition = Mathf.Clamp01((float)(
+                (WingAspectRatioRangeGuideValues[index] - min) / Math.Max(max - min, 1e-6d)));
+            var markerX = Mathf.Lerp(usableMinX, usableMaxX, normalizedPosition);
+            GUI.color = new Color(0.44f, 0.52f, 0.62f, 0.72f);
+            GUI.DrawTexture(new Rect(markerX - 0.5f, guideRowRect.y, 1f, 5f), Texture2D.whiteTexture);
+            GUI.color = previousColor;
+
+            var staggerOffset = index == WingAspectRatioRangeGuideValues.Length - 1 ? 11f : 0f;
+            const float labelWidth = 62f;
+            var labelRect = new Rect(
+                markerX - (labelWidth * 0.5f),
+                guideRowRect.y + 4f + staggerOffset,
+                labelWidth,
+                14f);
+            GUI.Label(labelRect, WingAspectRatioRangeGuideLabels[index], labelStyle);
+        }
     }
 
     private int DrawIntSlider(string label, int value, int min, int max, bool useLinearScale = false)
