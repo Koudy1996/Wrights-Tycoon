@@ -201,14 +201,14 @@ public sealed class ContractSystemTests
             {
                 smallOrders++;
                 Assert.That(contract.QuantityUnits, Is.InRange(options.SmallOrderMinQuantityUnits, options.SmallOrderMaxQuantityUnits));
-                Assert.That(contract.AppliedMarkup, Is.EqualTo(ContractBalance.SmallOrderContractMarkup).Within(1e-9));
+                Assert.That(contract.AppliedMarkup, Is.EqualTo(ResolveExpectedContractMarkup(ContractBalance.SmallOrderContractMarkup)).Within(1e-9));
                 AssertRequirementBand(contract.Requirements, categoryProfile, options, monthIndex, expectLowBand: true);
             }
             else
             {
                 largeOrders++;
                 Assert.That(contract.QuantityUnits, Is.InRange(options.LargeOrderMinQuantityUnits, options.LargeOrderMaxQuantityUnits));
-                Assert.That(contract.AppliedMarkup, Is.EqualTo(ContractBalance.LargeOrderContractMarkup).Within(1e-9));
+                Assert.That(contract.AppliedMarkup, Is.EqualTo(ResolveExpectedContractMarkup(ContractBalance.LargeOrderContractMarkup)).Within(1e-9));
                 AssertRequirementBand(contract.Requirements, categoryProfile, options, monthIndex, expectLowBand: false);
             }
         }
@@ -234,8 +234,8 @@ public sealed class ContractSystemTests
         var smallQuote = calculator.CalculateQuote(requirements, quantityUnits: 60);
         var largeQuote = calculator.CalculateQuote(requirements, quantityUnits: 200);
 
-        Assert.That(smallQuote.AppliedMarkup, Is.EqualTo(ContractBalance.SmallOrderContractMarkup).Within(1e-9));
-        Assert.That(largeQuote.AppliedMarkup, Is.EqualTo(ContractBalance.LargeOrderContractMarkup).Within(1e-9));
+        Assert.That(smallQuote.AppliedMarkup, Is.EqualTo(ResolveExpectedContractMarkup(ContractBalance.SmallOrderContractMarkup)).Within(1e-9));
+        Assert.That(largeQuote.AppliedMarkup, Is.EqualTo(ResolveExpectedContractMarkup(ContractBalance.LargeOrderContractMarkup)).Within(1e-9));
         Assert.That(smallQuote.UnitPrice, Is.GreaterThan(smallQuote.EstimatedMinimumUnitCost));
         Assert.That(largeQuote.UnitPrice, Is.GreaterThan(largeQuote.EstimatedMinimumUnitCost));
         Assert.That(smallQuote.TotalPrice, Is.EqualTo(smallQuote.UnitPrice * 60).Within(1d));
@@ -288,7 +288,9 @@ public sealed class ContractSystemTests
         };
 
         var quoted = calculator.CalculateQuote(requirements, quantityUnits: 60);
-        var expectedMarkup = ((1d + ContractBalance.SmallOrderContractMarkup) * ContractBalance.CampaignPriceVietnamWar) - 1d;
+        var expectedMarkup = ((1d + ContractBalance.SmallOrderContractMarkup)
+            * ContractBalance.CampaignPriceVietnamWar
+            * ContractBalance.ContractPriceMarginImprovementMultiplier) - 1d;
 
         Assert.That(quoted.AppliedMarkup, Is.EqualTo(expectedMarkup).Within(1e-9));
         Assert.That(quoted.UnitPrice, Is.GreaterThan(quoted.EstimatedMinimumUnitCost));
@@ -1422,6 +1424,9 @@ public sealed class ContractSystemTests
 
         public HistoricalCampaignContractModifiers GetCurrentModifiers() => _modifiers;
     }
+
+    private static double ResolveExpectedContractMarkup(double baseMarkup) =>
+        ((1d + baseMarkup) * ContractBalance.ContractPriceMarginImprovementMultiplier) - 1d;
 }
 
 

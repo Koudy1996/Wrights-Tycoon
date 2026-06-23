@@ -137,6 +137,22 @@ public sealed class GovernmentContractModuleTests
     }
 
     [Test]
+    public void PricingService_AppliesReleaseMarginImprovement()
+    {
+        var service = new GovernmentContractPricingService();
+
+        var quote = service.CalculateQuote(CreateRequirements(), 400);
+        var expectedMarkup = ((1d + GovernmentContractBalance.PricingMargin)
+            * GovernmentContractBalance.ContractPriceMarginImprovementMultiplier) - 1d;
+
+        Assert.That(quote.AppliedMargin, Is.EqualTo(expectedMarkup).Within(1e-9d));
+        Assert.That(
+            quote.UnitPrice,
+            Is.EqualTo(System.Math.Round(quote.EstimatedMinimumUnitCost * (1d + expectedMarkup), 2))
+                .Within(0.01d));
+    }
+
+    [Test]
     public void ComplianceEvaluator_AllowsCandidateQualifiedForRequiredAircraftType()
     {
         var requirements = CreateRequirements();

@@ -76,6 +76,7 @@ public static class ContractBalance
     public const double PricingMinimumUnitCostFloor = 25000d;
     public const double SmallOrderContractMarkup = 0.25d;
     public const double LargeOrderContractMarkup = 0.18d;
+    public const double ContractPriceMarginImprovementMultiplier = 1.05d;
     public const double CampaignAdjustedMarkupFloor = 0.02d;
     public const int CampaignWeightedCategoryPoolBaseCopies = 4;
     public const int CampaignWeightedCategoryPoolMinimumCopies = 1;

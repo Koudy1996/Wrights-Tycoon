@@ -37,14 +37,16 @@ public sealed class GovernmentContractPricingService : IGovernmentContractPricin
         };
 
         var estimatedMinimumUnitCost = _pricingCalculator.EstimateMinimumUnitProductionCost(bridgeRequirements);
-        var unitPrice = estimatedMinimumUnitCost * (1d + GovernmentContractBalance.PricingMargin);
+        var appliedMarkup = ((1d + GovernmentContractBalance.PricingMargin)
+            * GovernmentContractBalance.ContractPriceMarginImprovementMultiplier) - 1d;
+        var unitPrice = estimatedMinimumUnitCost * (1d + appliedMarkup);
         var totalContractValue = unitPrice * quantityUnits;
 
         return new GovernmentContractPricingQuote(
             RoundCurrency(estimatedMinimumUnitCost),
             RoundCurrency(unitPrice),
             RoundCurrency(totalContractValue),
-            GovernmentContractBalance.PricingMargin);
+            appliedMarkup);
     }
 
     private static double RoundCurrency(double value) =>

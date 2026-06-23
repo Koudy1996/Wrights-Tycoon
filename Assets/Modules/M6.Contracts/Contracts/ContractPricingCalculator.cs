@@ -37,7 +37,9 @@ public sealed class ContractPricingCalculator
             ? ContractBalance.SmallOrderContractMarkup
             : ContractBalance.LargeOrderContractMarkup;
         var priceMultiplier = ResolvePriceMultiplier(requirements.RequiredCategory);
-        var adjustedMarkup = ((1d + markup) * priceMultiplier) - 1d;
+        var adjustedMarkup = ((1d + markup)
+            * priceMultiplier
+            * ContractBalance.ContractPriceMarginImprovementMultiplier) - 1d;
         if (adjustedMarkup < ContractBalance.CampaignAdjustedMarkupFloor)
         {
             adjustedMarkup = ContractBalance.CampaignAdjustedMarkupFloor;
