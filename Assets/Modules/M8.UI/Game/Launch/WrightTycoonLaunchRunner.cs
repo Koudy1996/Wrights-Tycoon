@@ -585,7 +585,14 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.BeginHorizontal(GUILayout.ExpandHeight(true));
 
-        var leftWidth = Mathf.Max(430f, root.width * 0.44f);
+        var isAirframeDesignerTab = !_showHistoricalArchive && _tab == 1;
+        var leftWidthRatio = isAirframeDesignerTab ? 0.60f : 0.44f;
+        var leftMinimumWidth = isAirframeDesignerTab ? 1060f : 430f;
+        var rightMinimumWidth = isAirframeDesignerTab ? 560f : 430f;
+        var maximumLeftWidth = Mathf.Max(430f, root.width - rightMinimumWidth);
+        var leftWidth = Mathf.Min(
+            Mathf.Max(leftMinimumWidth, root.width * leftWidthRatio),
+            maximumLeftWidth);
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(leftWidth), GUILayout.ExpandHeight(true));
         _leftScroll = GUILayout.BeginScrollView(_leftScroll);
         if (_showHistoricalArchive)
