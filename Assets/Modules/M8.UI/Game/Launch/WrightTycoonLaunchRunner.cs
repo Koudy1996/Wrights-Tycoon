@@ -34,6 +34,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private const int ModernCampaignStartYear = 2020;
     private const int PastOrdersWindowId = 9401;
     private const int PendingProposalAdvanceDialogWindowId = 9402;
+    private const int GovernmentPastOrdersWindowId = 9403;
     private const string HistoricalCampaignBonusContractBatchEffectType = "bonus_contract_batch";
     private const double VersionDevelopmentResearchCostMultiplier = 0.1d;
     private const double VersionDevelopmentResearchTimeMultiplier = 0.1d;
@@ -202,16 +203,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private bool _initialized;
     private bool _showHistoricalArchive;
     private bool _showPastOrdersWindow;
+    private bool _showGovernmentPastOrdersWindow;
     private Vector2 _leftScroll;
     private Vector2 _rightScroll;
     private Vector2 _historicalCampaignArchiveScroll;
     private Vector2 _pastOrdersScroll;
+    private Vector2 _governmentPastOrdersScroll;
     private Rect _pastOrdersWindowRect = new(120f, 100f, 980f, 620f);
+    private Rect _governmentPastOrdersWindowRect = new(140f, 110f, 980f, 620f);
     private Rect _pendingProposalAdvanceDialogRect = new(0f, 0f, 620f, 190f);
     private bool _isPastOrdersWindowResizing;
+    private bool _isGovernmentPastOrdersWindowResizing;
     private bool _isPendingProposalDialogResizing;
     private Vector2 _pastOrdersResizeStartMouse;
     private Vector2 _pastOrdersResizeStartSize;
+    private Vector2 _governmentPastOrdersResizeStartMouse;
+    private Vector2 _governmentPastOrdersResizeStartSize;
     private Vector2 _pendingProposalResizeStartMouse;
     private Vector2 _pendingProposalResizeStartSize;
     private bool _showHistoricalCampaignDebugPanel;
@@ -711,6 +718,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         RefreshDemandNotebookWindows();
         DrawModifierTooltipOverlay(virtualScreenSize);
         DrawPastOrdersWindow(virtualScreenSize);
+        DrawGovernmentPastOrdersWindow(virtualScreenSize);
         _historicalCampaignPopupWindow.Draw(virtualScreenSize);
         DrawPendingProposalAdvanceDialog(virtualScreenSize);
     }
@@ -998,7 +1006,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _researchActionMessage = string.Empty;
         _saveActionMessage = string.Empty;
         _showPastOrdersWindow = false;
+        _showGovernmentPastOrdersWindow = false;
         _pastOrdersScroll = Vector2.zero;
+        _governmentPastOrdersScroll = Vector2.zero;
         if (_demandNotebookWindow is not null)
         {
             Destroy(_demandNotebookWindow.gameObject);
@@ -1898,7 +1908,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _tab = Mathf.Clamp(data.Tab, 0, _tabs.Length - 1);
         _showHistoricalArchive = false;
         _showPastOrdersWindow = false;
+        _showGovernmentPastOrdersWindow = false;
         _pastOrdersScroll = Vector2.zero;
+        _governmentPastOrdersScroll = Vector2.zero;
         _financeSubTab = Mathf.Clamp(data.FinanceSubTab, 0, _financeSubTabs.Length - 1);
         _researchSubTab = Mathf.Clamp(data.ResearchSubTab, 0, _researchSubTabs.Length - 1);
         _myMachinesSubTab = Mathf.Clamp(data.MyMachinesSubTab, 0, _myMachinesSubTabs.Length - 1);
@@ -4689,6 +4701,158 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
     }
 
+    private void DrawGovernmentPastOrdersWindow(Vector2 virtualScreenSize)
+    {
+        if (!_showGovernmentPastOrdersWindow || _governmentContractBoard is null)
+        {
+            return;
+        }
+
+        var minimumSize = new Vector2(780f, 460f);
+        ClampPopupWindowRect(ref _governmentPastOrdersWindowRect, virtualScreenSize, minimumSize, margin: 10f);
+
+        _governmentPastOrdersWindowRect = GUI.Window(
+            GovernmentPastOrdersWindowId,
+            _governmentPastOrdersWindowRect,
+            DrawGovernmentPastOrdersWindowContents,
+            "Government Past Orders");
+        ClampPopupWindowRect(ref _governmentPastOrdersWindowRect, virtualScreenSize, minimumSize, margin: 10f);
+    }
+
+    private void DrawGovernmentPastOrdersWindowContents(int windowId)
+    {
+        if (_governmentContractBoard is null)
+        {
+            GUILayout.Label("Government contract board is not initialized.");
+            if (GUILayout.Button("Close", GUILayout.Width(120f), GUILayout.Height(26f)))
+            {
+                _showGovernmentPastOrdersWindow = false;
+                _isGovernmentPastOrdersWindowResizing = false;
+            }
+
+            GUI.DragWindow(new Rect(0f, 0f, 10000f, 28f));
+            return;
+        }
+
+        DrawRect(
+            new Rect(0f, 0f, _governmentPastOrdersWindowRect.width, _governmentPastOrdersWindowRect.height),
+            new Color(0.12f, 0.12f, 0.12f, 1f));
+
+        var successfulCount = CountSuccessfulGovernmentContracts();
+        var failedCount = _governmentContractBoard.EvaluatedContracts.Count - successfulCount;
+        GUILayout.BeginHorizontal();
+        GUILayout.Label($"Success: {FormatUiInteger(successfulCount)}", GUILayout.Width(140f));
+        GUILayout.Label($"Failed: {FormatUiInteger(failedCount)}", GUILayout.Width(140f));
+        GUILayout.Label($"Uncontested: {FormatUiInteger(_governmentContractBoard.ExpiredContracts.Count)}", GUILayout.Width(170f));
+        GUILayout.Label($"Deliveries: {FormatUiInteger(_governmentContractBoard.ClosedDeliveryContracts.Count)}", GUILayout.Width(150f));
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button("Close", GUILayout.Width(120f), GUILayout.Height(24f)))
+        {
+            _showGovernmentPastOrdersWindow = false;
+            _isGovernmentPastOrdersWindowResizing = false;
+        }
+
+        GUILayout.EndHorizontal();
+        GUILayout.Space(6f);
+
+        _governmentPastOrdersScroll = GUILayout.BeginScrollView(_governmentPastOrdersScroll);
+        if (_governmentContractBoard.EvaluatedContracts.Count == 0
+            && _governmentContractBoard.ExpiredContracts.Count == 0
+            && _governmentContractBoard.ClosedDeliveryContracts.Count == 0)
+        {
+            GUILayout.Label("No past government orders yet.");
+        }
+        else
+        {
+            DrawGovernmentEvaluatedContracts(isSuccess: true, "Successful Government Contracts");
+            DrawGovernmentEvaluatedContracts(isSuccess: false, "Failed Government Evaluations");
+            DrawExpiredGovernmentContracts();
+            DrawClosedGovernmentDeliveryHistory();
+        }
+
+        GUILayout.EndScrollView();
+
+        var resizeHandleRect = new Rect(_governmentPastOrdersWindowRect.width - 18f, _governmentPastOrdersWindowRect.height - 18f, 14f, 14f);
+        GUI.Box(resizeHandleRect, "=");
+        HandlePopupWindowResize(
+            ref _governmentPastOrdersWindowRect,
+            resizeHandleRect,
+            new Vector2(780f, 460f),
+            ref _isGovernmentPastOrdersWindowResizing,
+            ref _governmentPastOrdersResizeStartMouse,
+            ref _governmentPastOrdersResizeStartSize);
+
+        if (!_isGovernmentPastOrdersWindowResizing)
+        {
+            GUI.DragWindow(new Rect(0f, 0f, 10000f, 28f));
+        }
+    }
+
+    private void DrawGovernmentEvaluatedContracts(bool isSuccess, string title)
+    {
+        if (_governmentContractBoard is null)
+        {
+            return;
+        }
+
+        var hasAny = false;
+        for (var index = _governmentContractBoard.EvaluatedContracts.Count - 1; index >= 0; index--)
+        {
+            var evaluated = _governmentContractBoard.EvaluatedContracts[index];
+            if (evaluated.EvaluationResult?.IsSuccess != isSuccess)
+            {
+                continue;
+            }
+
+            if (!hasAny)
+            {
+                DrawSection(title);
+                hasAny = true;
+            }
+
+            DrawGovernmentEvaluationDetails(evaluated, showSubmission: true);
+        }
+    }
+
+    private void DrawExpiredGovernmentContracts()
+    {
+        if (_governmentContractBoard is null || _governmentContractBoard.ExpiredContracts.Count == 0)
+        {
+            return;
+        }
+
+        DrawSection("Uncontested Government Contracts");
+        for (var index = _governmentContractBoard.ExpiredContracts.Count - 1; index >= 0; index--)
+        {
+            var expired = _governmentContractBoard.ExpiredContracts[index];
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label($"{expired.ContractId} | EXPIRED");
+            GUILayout.Label($"Generated: {FormatSimulationDate(expired.GeneratedOn)}");
+            GUILayout.Label($"Availability Ended: {FormatSimulationDate(expired.AvailabilityExpiresOn)}");
+            DrawGovernmentRequirements(expired.Requirements);
+            GUILayout.EndVertical();
+        }
+    }
+
+    private void DrawClosedGovernmentDeliveryHistory()
+    {
+        if (_governmentContractBoard is null || _governmentContractBoard.ClosedDeliveryContracts.Count == 0)
+        {
+            return;
+        }
+
+        DrawSection("Closed Delivery History");
+        for (var index = _governmentContractBoard.ClosedDeliveryContracts.Count - 1; index >= 0; index--)
+        {
+            var closed = _governmentContractBoard.ClosedDeliveryContracts[index];
+            GUILayout.BeginHorizontal(GUI.skin.box);
+            GUILayout.Label(closed.DeliveryId, GUILayout.Width(220f));
+            GUILayout.Label($"Status: {closed.Status}", GUILayout.Width(130f));
+            GUILayout.Label($"{FormatUiInteger(closed.DeliveredUnits)}/{FormatUiInteger(closed.TotalUnitsRequired)} units");
+            GUILayout.EndHorizontal();
+        }
+    }
+
     private static void ClampPopupWindowRect(
         ref Rect rect,
         Vector2 virtualScreenSize,
@@ -5074,7 +5238,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label(_governmentDeliveryActionMessage);
         }
 
-        DrawSuccessfulGovernmentContractsSummary();
         DrawActiveGovernmentDeliveryContracts();
 
         GUILayout.BeginHorizontal();
@@ -5091,13 +5254,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         GUILayout.EndHorizontal();
+
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button("Past Orders", GUILayout.Height(30f)))
+        {
+            _showGovernmentPastOrdersWindow = true;
+        }
     }
 
-    private void DrawSuccessfulGovernmentContractsSummary()
+    private int CountSuccessfulGovernmentContracts()
     {
         if (_governmentContractBoard is null)
         {
-            return;
+            return 0;
         }
 
         var successfulCount = 0;
@@ -5110,35 +5279,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        if (successfulCount == 0)
-        {
-            return;
-        }
-
-        DrawSection("Successful Government Contracts");
-        for (var index = _governmentContractBoard.EvaluatedContracts.Count - 1; index >= 0; index--)
-        {
-            var evaluated = _governmentContractBoard.EvaluatedContracts[index];
-            var evaluation = evaluated.EvaluationResult;
-            if (evaluation is null || !evaluation.IsSuccess)
-            {
-                continue;
-            }
-
-            GUILayout.BeginVertical(GUI.skin.box);
-            GUILayout.Label($"{evaluated.ContractId} | SUCCESS");
-            GUILayout.Label($"Evaluated: {FormatSimulationDate(evaluation.EvaluatedOn)}");
-            if (evaluated.AcceptedSubmission is not null)
-            {
-                GUILayout.Label($"Aircraft: {evaluated.AcceptedSubmission.DisplayName}");
-                TryDrawAircraftPictureByDesignId(evaluated.AcceptedSubmission.DesignId, 140f, 84f);
-            }
-
-            DrawMetric("Final Probability", evaluation.FinalProbability * 100d, "0.00");
-            DrawMetric("Random Roll", evaluation.RandomRoll * 100d, "0.00");
-            DrawMetric("Bonus Probability", evaluation.BonusProbability * 100d, "0.00");
-            GUILayout.EndVertical();
-        }
+        return successfulCount;
     }
 
     private void DrawActiveGovernmentDeliveryContracts()
@@ -5354,30 +5495,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        DrawSection("Latest Failed Evaluation");
-        var latestFailedEvaluation = FindLatestFailedGovernmentContractEvaluation();
-        if (latestFailedEvaluation is null)
-        {
-            GUILayout.Label("No failed government evaluations yet.");
-        }
-        else
-        {
-            DrawGovernmentEvaluationDetails(latestFailedEvaluation);
-        }
-
-        if (_governmentContractBoard.ClosedDeliveryContracts.Count > 0)
-        {
-            DrawSection("Closed Delivery History");
-            for (var index = _governmentContractBoard.ClosedDeliveryContracts.Count - 1; index >= 0; index--)
-            {
-                var closed = _governmentContractBoard.ClosedDeliveryContracts[index];
-                GUILayout.BeginHorizontal(GUI.skin.box);
-                GUILayout.Label(closed.DeliveryId, GUILayout.Width(220f));
-                GUILayout.Label($"Status: {closed.Status}", GUILayout.Width(130f));
-                GUILayout.Label($"{FormatUiInteger(closed.DeliveredUnits)}/{FormatUiInteger(closed.TotalUnitsRequired)} units");
-                GUILayout.EndHorizontal();
-            }
-        }
+        var closedGovernmentOrdersCount = _governmentContractBoard.EvaluatedContracts.Count
+            + _governmentContractBoard.ExpiredContracts.Count
+            + _governmentContractBoard.ClosedDeliveryContracts.Count;
+        DrawSection("Past Orders");
+        DrawMetric("Archived Government Orders", closedGovernmentOrdersCount, "0");
+        GUILayout.Label("Use the 'Past Orders' button in Government Contracts tab (left bottom) to review closed government activity.");
     }
 
     private GovernmentContract? FindLatestFailedGovernmentContractEvaluation()
@@ -5399,7 +5522,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return null;
     }
 
-    private void DrawGovernmentEvaluationDetails(GovernmentContract contract)
+    private void DrawGovernmentEvaluationDetails(GovernmentContract contract, bool showSubmission = false)
     {
         var evaluation = contract.EvaluationResult;
         if (evaluation is null)
@@ -5409,6 +5532,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.BeginVertical(GUI.skin.box);
         GUILayout.Label($"{contract.ContractId} | {(evaluation.IsSuccess ? "SUCCESS" : "FAILED")}");
+        GUILayout.Label($"Evaluated: {FormatSimulationDate(evaluation.EvaluatedOn)}");
+        if (showSubmission && contract.AcceptedSubmission is not null)
+        {
+            GUILayout.Label($"Aircraft: {contract.AcceptedSubmission.DisplayName}");
+            TryDrawAircraftPictureByDesignId(contract.AcceptedSubmission.DesignId, 140f, 84f);
+        }
+
         DrawMetric("Final Probability", evaluation.FinalProbability * 100d, "0.00");
         DrawMetric("Random Roll", evaluation.RandomRoll * 100d, "0.00");
         DrawMetric("Bonus Probability", evaluation.BonusProbability * 100d, "0.00");
