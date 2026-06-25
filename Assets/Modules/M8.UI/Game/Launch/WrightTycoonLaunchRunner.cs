@@ -432,6 +432,25 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         "Runway: Long",
         positiveLines: new[] { "Good for heavy aircraft" },
         negativeLines: new[] { "Needs longer runways" });
+    private static readonly ModifierTooltipDefinition EnginePrecisionEngineeringTooltip = new(
+        "modifier.engine.precision.engineering",
+        "Precision Engineering",
+        positiveLines: new[] { "Higher power", "Lower weight" },
+        negativeLines: new[] { "Higher price and production/development complexity", "Lower reliability" });
+    private static readonly ModifierTooltipDefinition AircraftPrecisionEngineeringTooltip = new(
+        "modifier.aircraft.precision.engineering",
+        "Precision Engineering",
+        positiveLines: new[] { "Lower drag", "Lower weight" },
+        negativeLines: new[] { "Higher price and production/development complexity", "Lower reliability" });
+    private static readonly ModifierTooltipDefinition WingAspectRatioTooltip = new(
+        "modifier.aircraft.wing.aspect.ratio",
+        "Aspect Ratio",
+        positiveLines: new[] { "Lower wing drag" },
+        negativeLines: new[] { "Higher weight", "Higher price" });
+    private static readonly ModifierTooltipDefinition NavigationEquipmentTooltip = new(
+        "modifier.aircraft.navigation.equipment",
+        "Navigation Equipment",
+        neutralLines: new[] { "For a range longer than 1,500 / 4,000 km, better navigation equipment is required." });
 
     private GameSavePersistenceService? _savePersistence;
     private WrightTycoonBuildManifest _buildManifest = new();
@@ -2479,6 +2498,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _engineParameters.PrecisionEngineeringLevel,
             PrecisionEngineeringBalance.MinimumLevel,
             PrecisionEngineeringBalance.MaximumLevel,
+            EnginePrecisionEngineeringTooltip,
             useLinearScale: true);
         DrawPrecisionEngineeringEffects(_engineParameters.PrecisionEngineeringLevel, isEngine: true);
 
@@ -2852,6 +2872,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 PlaneDesignerBalance.Airframe.WingAspectRatioMin,
                 PlaneDesignerBalance.Airframe.WingAspectRatioMax,
                 "0.0",
+                WingAspectRatioTooltip,
                 useLinearScale: true,
                 showAspectRatioRangeGuides: true);
             _baseAirframeParameters.WingPosition = DrawWingPositionSelector("Wing Position", _baseAirframeParameters.WingPosition);
@@ -3040,6 +3061,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _typePrecisionEngineeringLevel,
             PrecisionEngineeringBalance.MinimumLevel,
             PrecisionEngineeringBalance.MaximumLevel,
+            AircraftPrecisionEngineeringTooltip,
             useLinearScale: true);
         DrawPrecisionEngineeringEffects(_typePrecisionEngineeringLevel, isEngine: false);
         if (isTypeVersionDevelopment)
@@ -4028,15 +4050,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"Engine: {_aircraftPreview.Engine.Definition.DisplayName} x{FormatUiInteger(_aircraftPreview.Airframe.Parameters.EngineCount)}");
         var engineOutputAtSeaLevel = ResolveEngineOutputAtSeaLevel(_aircraftPreview.Engine);
         var totalEngineOutputAtSeaLevel = engineOutputAtSeaLevel * System.Math.Max(_aircraftPreview.Airframe.Parameters.EngineCount, 1);
+        var engineOutputAtSeaLevelText = FormatUiCompactNumber(engineOutputAtSeaLevel, "0");
+        var totalEngineOutputAtSeaLevelText = FormatUiCompactNumber(totalEngineOutputAtSeaLevel, "0");
         if (_aircraftPreview.Engine.Performance.OutputKind == EngineOutputKind.PowerKilowatts)
         {
-            DrawMetric("Engine Power @0m (kW)", engineOutputAtSeaLevel, "0.0");
-            DrawMetric("Total Power @0m (kW)", totalEngineOutputAtSeaLevel, "0.0");
+            DrawParameterValueRow("Engine Power @0m (kW)", $"{engineOutputAtSeaLevelText}/{totalEngineOutputAtSeaLevelText} kW");
         }
         else
         {
-            DrawMetric("Engine Thrust @0m (N)", engineOutputAtSeaLevel, "0.0");
-            DrawMetric("Total Thrust @0m (N)", totalEngineOutputAtSeaLevel, "0.0");
+            DrawParameterValueRow("Engine Thrust @0m (N)", $"{engineOutputAtSeaLevelText}/{totalEngineOutputAtSeaLevelText} N");
         }
 
         DrawSection("Aircraft Visual");
@@ -4107,18 +4129,12 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.EndVertical();
         GUILayout.EndHorizontal();
 
-        foreach (var p in perf.MaxSpeedByAltitude)
-        {
-            DrawMetric($"Max Speed @{FormatUiNumber(p.AltitudeMeters, "0")}m (km/h)", p.MaxSpeedMetersPerSecond * 3.6d, "0.0");
-        }
+        DrawParameterValueRow("Speed", FormatSpeedByAltitudeSummary(perf.MaxSpeedByAltitude));
 
         DrawMetric("Range (km)", perf.RangeKilometers, "0.0");
-        DrawMetric(
+        DrawParameterValueRow(
             "Certified Range (km)",
-            AircraftNavigationRangePolicy.GetCertifiedRangeKilometers(
-                _aircraftPreview.TypeDefinition.NavigationEquipment,
-                perf.RangeKilometers),
-            "0.0");
+            FormatCertifiedRangeSummary(_aircraftPreview.TypeDefinition.NavigationEquipment, perf.RangeKilometers));
         DrawMetric("Optimal Cruise Speed (km/h)", perf.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0");
         DrawMetric("Cruise Fuel Burn Avg (kg/h)", perf.AverageCruiseFuelBurnKilogramsPerHour, "0.0");
         if (_aircraftPreview.Airframe.Parameters.PayloadLimitKilograms.HasValue)
@@ -4147,7 +4163,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             perf.CostBreakdown,
             "breakdown.aircraft.cost",
             "Aircraft Production Cost Breakdown");
-        DrawMetric("Production Labor", perf.TotalLaborCost, "0");
         DrawMetric("Complete Production Cost", perf.CompleteProductionCost, "0");
         DrawMetricWithBreakdownTooltip(
             "Production MD",
@@ -11495,6 +11510,41 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private static string FormatUiInteger(int value) => value.ToString("#,##0", UiNumberCulture);
 
+    private static string FormatSpeedByAltitudeSummary(IReadOnlyList<AircraftPerformancePoint> speedPoints)
+    {
+        if (speedPoints is null || speedPoints.Count == 0)
+        {
+            return "N/A";
+        }
+
+        return string.Join(
+            "/",
+            speedPoints
+                .OrderBy(point => point.AltitudeMeters)
+                .Select(point => FormatUiCompactNumber(point.MaxSpeedMetersPerSecond * 3.6d, "0")));
+    }
+
+    private static string FormatCertifiedRangeSummary(
+        AircraftNavigationEquipment navigationEquipment,
+        double rangeKilometers)
+    {
+        var certifiedRange = AircraftNavigationRangePolicy.GetCertifiedRangeKilometers(
+            navigationEquipment,
+            rangeKilometers);
+
+        return $"{FormatUiCompactNumber(certifiedRange, "0")}/{FormatUiCompactNumber(rangeKilometers, "0")}";
+    }
+
+    private static string FormatUiCompactNumber(double value, string format)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            return value.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return value.ToString(format, UiNumberCulture);
+    }
+
     private static string FormatApprovedYear(int? year) => year.HasValue && year.Value >= 1
         ? FormatUiInteger(year.Value)
         : "Not approved";
@@ -12266,7 +12316,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
     }
 
-    private int DrawIntSlider(string label, int value, int min, int max, bool useLinearScale = false)
+    private int DrawIntSlider(
+        string label,
+        int value,
+        int min,
+        int max,
+        ModifierTooltipDefinition? tooltip = null,
+        bool useLinearScale = false)
     {
         var currentValue = Math.Clamp(value, min, max);
         var keyFamily = useLinearScale ? "int.linear" : "int";
@@ -12280,7 +12336,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _intSliderInputBuffer[key] = currentInput;
         }
 
-        GUILayout.Label($"{label}: {FormatUiInteger(currentValue)}");
+        var labelText = $"{label}: {FormatUiInteger(currentValue)}";
+        if (tooltip.HasValue)
+        {
+            DrawModifierLabelWithTooltip(labelText, tooltip.Value);
+        }
+        else
+        {
+            GUILayout.Label(labelText);
+        }
         GUILayout.BeginHorizontal();
         var sliderPosition = useLinearScale
             ? ToLinearSliderPosition(currentValue, min, max)
@@ -13604,11 +13668,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return values[next];
     }
 
-    private static AircraftNavigationEquipment DrawNavigationEquipmentSelector(
+    private AircraftNavigationEquipment DrawNavigationEquipmentSelector(
         string label,
         AircraftNavigationEquipment navigationEquipment)
     {
-        GUILayout.Label(label);
+        DrawModifierLabelWithTooltip(label, NavigationEquipmentTooltip);
         var values = new[]
         {
             AircraftNavigationEquipment.None,
@@ -13813,7 +13877,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private AircraftAllowedEngineFamily DrawFamilyAllowedEngineSelector(string label, AircraftAllowedEngineFamily currentFamily)
     {
-        DrawModifierLabelWithTooltip(label, BuildAllowedEngineFamilyTooltipDefinition(currentFamily));
+        GUILayout.Label(label);
         var labels = new[] { "Propeller", "Jet" };
         var index = currentFamily == AircraftAllowedEngineFamily.Jet ? 1 : 0;
         var nextIndex = GUILayout.SelectionGrid(index, labels, 2);
