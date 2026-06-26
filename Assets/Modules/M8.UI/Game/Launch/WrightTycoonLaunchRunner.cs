@@ -82,6 +82,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly Dictionary<string, string> _factoryScrapQuantityInputByDesignId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _factoryTotalTargetInputByLineId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TypeResearchModifierPoints> _researchModifiersByResearchId = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _collapsedMyMachinesFamilyIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _collapsedMyMachinesTypeIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _expandedContractDiagnosticIds = new(StringComparer.Ordinal);
     private readonly HistoricalCampaignState _historicalCampaignState = new();
     private readonly List<HistoricalCampaignArchiveEntry> _historicalCampaignArchive = new();
     private readonly HistoricalCampaignTechnologyProgression _historicalCampaignTechnologyProgression = new();
@@ -190,6 +193,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private int _lastLoggedTechnologyModifierYear = int.MinValue;
     private ContractDeliverabilityFilter _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
     private ContractSpecificationFilter _contractSpecificationFilter = ContractSpecificationFilter.All;
+    private ContractDeliveryStatusFilter _contractDeliveryStatusFilter = ContractDeliveryStatusFilter.All;
     private bool _contractRequestedCategoryFilterEnabled;
     private AircraftCategory _contractRequestedCategoryFilter = AircraftCategory.LightSportAndRecreational;
     private int _contractQuantityFilterMin = 5;
@@ -974,6 +978,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _savedFamilies.Clear();
         _savedAircraftDesigns.Clear();
         _researchModifiersByResearchId.Clear();
+        _collapsedMyMachinesFamilyIds.Clear();
+        _collapsedMyMachinesTypeIds.Clear();
+        _expandedContractDiagnosticIds.Clear();
         _selectedWarehouseDesignByContractId.Clear();
         _excludedWarehouseDesignByContractId.Clear();
         _deliveredContractProfitById.Clear();
@@ -1024,6 +1031,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _historicalCampaignDebugMessage = string.Empty;
         _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
         _contractSpecificationFilter = ContractSpecificationFilter.All;
+        _contractDeliveryStatusFilter = ContractDeliveryStatusFilter.All;
         _contractRequestedCategoryFilterEnabled = false;
         _contractRequestedCategoryFilter = AircraftCategory.LightSportAndRecreational;
         _contractQuantityFilterMin = 5;
@@ -1717,6 +1725,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             TypeHasCombatEquipment = _typeHasCombatEquipment,
             ContractDeliverabilityFilter = _contractDeliverabilityFilter,
             ContractSpecificationFilter = _contractSpecificationFilter,
+            ContractDeliveryStatusFilter = _contractDeliveryStatusFilter,
             ContractRequestedCategoryFilterEnabled = _contractRequestedCategoryFilterEnabled,
             ContractRequestedCategoryFilter = _contractRequestedCategoryFilter,
             ContractQuantityFilterMin = _contractQuantityFilterMin,
@@ -1911,6 +1920,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _showGovernmentPastOrdersWindow = false;
         _pastOrdersScroll = Vector2.zero;
         _governmentPastOrdersScroll = Vector2.zero;
+        _collapsedMyMachinesFamilyIds.Clear();
+        _collapsedMyMachinesTypeIds.Clear();
+        _expandedContractDiagnosticIds.Clear();
         _financeSubTab = Mathf.Clamp(data.FinanceSubTab, 0, _financeSubTabs.Length - 1);
         _researchSubTab = Mathf.Clamp(data.ResearchSubTab, 0, _researchSubTabs.Length - 1);
         _myMachinesSubTab = Mathf.Clamp(data.MyMachinesSubTab, 0, _myMachinesSubTabs.Length - 1);
@@ -2001,6 +2013,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             ? data.ContractDeliverabilityFilter
             : ContractDeliverabilityFilter.All;
         _contractSpecificationFilter = data.ContractSpecificationFilter;
+        _contractDeliveryStatusFilter = Enum.IsDefined(typeof(ContractDeliveryStatusFilter), data.ContractDeliveryStatusFilter)
+            ? data.ContractDeliveryStatusFilter
+            : ContractDeliveryStatusFilter.All;
         _contractRequestedCategoryFilterEnabled = data.ContractRequestedCategoryFilterEnabled;
         _contractRequestedCategoryFilter = Enum.IsDefined(typeof(AircraftCategory), data.ContractRequestedCategoryFilter)
             ? data.ContractRequestedCategoryFilter
@@ -4250,12 +4265,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawSection("Filters");
         _contractDeliverabilityFilter = DrawContractDeliverabilityFilter("1) Delivery Filter", _contractDeliverabilityFilter);
         _contractSpecificationFilter = DrawContractSpecificationFilter("2) Matching Plane Filter", _contractSpecificationFilter);
+        _contractDeliveryStatusFilter = DrawContractDeliveryStatusFilter("3) Delivery Status", _contractDeliveryStatusFilter);
         DrawContractRequestedCategoryFilter(
-            "3) Desired Aircraft Type",
+            "4) Desired Aircraft Type",
             ref _contractRequestedCategoryFilterEnabled,
             ref _contractRequestedCategoryFilter);
-        _contractQuantityFilterMin = DrawIntSlider("4) Required Aircraft Min", _contractQuantityFilterMin, 5, 500);
-        _contractQuantityFilterMax = DrawIntSlider("4) Required Aircraft Max", _contractQuantityFilterMax, 5, 500);
+        _contractQuantityFilterMin = DrawIntSlider("5) Required Aircraft Min", _contractQuantityFilterMin, 5, 500);
+        _contractQuantityFilterMax = DrawIntSlider("5) Required Aircraft Max", _contractQuantityFilterMax, 5, 500);
         if (_contractQuantityFilterMin > _contractQuantityFilterMax)
         {
             _contractQuantityFilterMax = _contractQuantityFilterMin;
@@ -4265,6 +4281,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         {
             _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
             _contractSpecificationFilter = ContractSpecificationFilter.All;
+            _contractDeliveryStatusFilter = ContractDeliveryStatusFilter.All;
             _contractRequestedCategoryFilterEnabled = false;
             _contractRequestedCategoryFilter = AircraftCategory.LightSportAndRecreational;
             _contractQuantityFilterMin = 5;
@@ -4340,11 +4357,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         var openContracts = _contractBoard.OpenContracts;
+        _expandedContractDiagnosticIds.IntersectWith(openContracts.Select(contract => contract.Id));
         var availabilitySnapshots = new List<ContractAvailabilitySnapshot>(openContracts.Count);
         for (var contractIndex = 0; contractIndex < openContracts.Count; contractIndex++)
         {
             availabilitySnapshots.Add(BuildContractAvailabilitySnapshot(openContracts[contractIndex], _contractBoard, catalog, warehouseSnapshot));
         }
+
+        GUILayout.Label(
+            $"Delivery Status: Ready {FormatUiInteger(availabilitySnapshots.Count(item => item.DeliveryStatus == ContractDeliveryStatus.Ready))} | " +
+            $"Production Required {FormatUiInteger(availabilitySnapshots.Count(item => item.DeliveryStatus == ContractDeliveryStatus.ProductionRequired))} | " +
+            $"No Eligible Type {FormatUiInteger(availabilitySnapshots.Count(item => item.DeliveryStatus == ContractDeliveryStatus.NoEligibleType))} | " +
+            $"Specs Insufficient {FormatUiInteger(availabilitySnapshots.Count(item => item.DeliveryStatus == ContractDeliveryStatus.SpecificationsInsufficient))}");
 
         var filteredSnapshots = availabilitySnapshots
             .Where(MatchesContractFilters)
@@ -4380,35 +4404,29 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 GUILayout.Label($"{contract.Id} | {contract.CompanyName}");
                 GUILayout.Label($"Quantity: {FormatUiInteger(contract.QuantityUnits)} units");
                 GUILayout.Label($"Deadline: {FormatUiInteger(contract.RemainingMonths)} months remaining (initial {FormatUiInteger(contract.DeadlineMonths)})");
-                GUILayout.Label($"Can deliver now: {(snapshot.CanBeDeliveredNow ? "Yes" : "No")} | Can profit: {(snapshot.CanProfit ? "Yes" : "No")} | Matching plane by specs: {(snapshot.HasMatchingPlaneBySpecification ? "Yes" : "No")}");
-                DrawContractRequirements(contract.Requirements);
 
                 var deliveryCandidates = BuildContractDeliveryCandidates(
                     contract,
                     _contractBoard,
                     catalog,
                     warehouseSnapshot);
+                var showDiagnosticDetails = DrawContractDeliveryDiagnostic(snapshot);
+                if (showDiagnosticDetails)
+                {
+                    DrawContractDeliveryDiagnosticDetails(snapshot);
+                    GUILayout.Label("Contract Requirements");
+                    DrawContractRequirements(contract.Requirements);
+                }
+
+                if (snapshot.DeliveryStatus != ContractDeliveryStatus.Ready)
+                {
+                    GUILayout.EndVertical();
+                    continue;
+                }
 
                 if (deliveryCandidates.Count == 0)
                 {
-                    DrawError("Status: blocked");
-                    var availableWarehouseUnits = warehouseSnapshot
-                        .Where(entry => entry.Value > 0 && catalog.ContainsKey(entry.Key))
-                        .Sum(entry => entry.Value);
-
-                    if (availableWarehouseUnits <= 0)
-                    {
-                        GUILayout.Label("- No usable aircraft in warehouse.");
-                    }
-                    else
-                    {
-                        GUILayout.Label("- Available warehouse aircraft do not meet one or more contract requirements.");
-                    }
-
-                    if (warehouseSnapshot.Count > 0 && catalog.Count == 0)
-                    {
-                        GUILayout.Label("- Save at least one aircraft design in Airframe + Type tab.");
-                    }
+                    DrawError("Delivery sources changed. Refresh the contract board.");
                 }
                 else
                 {
@@ -4597,6 +4615,146 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label("Use the 'Past Orders' button in Contracts tab (left bottom) to review fulfilled and canceled orders.");
     }
 
+    private bool DrawContractDeliveryDiagnostic(ContractAvailabilitySnapshot snapshot)
+    {
+        var isExpanded = _expandedContractDiagnosticIds.Contains(snapshot.Contract.Id);
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button(isExpanded ? "\u25BC" : "\u25B6", GUILayout.Width(26f), GUILayout.Height(22f)))
+        {
+            if (isExpanded)
+            {
+                _expandedContractDiagnosticIds.Remove(snapshot.Contract.Id);
+            }
+            else
+            {
+                _expandedContractDiagnosticIds.Add(snapshot.Contract.Id);
+            }
+
+            isExpanded = !isExpanded;
+        }
+
+        var previousColor = GUI.contentColor;
+        GUI.contentColor = ResolveContractDeliveryStatusColor(snapshot.DeliveryStatus);
+        GUILayout.Label(ResolveContractDeliveryStatusLabel(snapshot.DeliveryStatus));
+        GUI.contentColor = previousColor;
+        GUILayout.FlexibleSpace();
+
+        if (snapshot.DeliveryStatus == ContractDeliveryStatus.ProductionRequired
+            && GUILayout.Button("Go To Factory", GUILayout.Width(170f), GUILayout.Height(24f)))
+        {
+            _tab = 5;
+        }
+        else if ((snapshot.DeliveryStatus == ContractDeliveryStatus.NoEligibleType
+                  || snapshot.DeliveryStatus == ContractDeliveryStatus.SpecificationsInsufficient)
+                 && GUILayout.Button("Open Airframe + Type Designer", GUILayout.Width(250f), GUILayout.Height(24f)))
+        {
+            _tab = 1;
+        }
+
+        GUILayout.EndHorizontal();
+
+        switch (snapshot.DeliveryStatus)
+        {
+            case ContractDeliveryStatus.Ready:
+                GUILayout.Label(
+                    $"{FormatContractTypeNameSummary(snapshot.QualifyingTypeNames)} qualify | " +
+                    $"Stock: {FormatUiInteger(snapshot.QualifyingStockUnits)}/{FormatUiInteger(snapshot.Contract.QuantityUnits)} aircraft");
+                break;
+            case ContractDeliveryStatus.ProductionRequired:
+                var missingUnits = System.Math.Max(snapshot.Contract.QuantityUnits - snapshot.QualifyingStockUnits, 0);
+                GUILayout.Label(
+                    $"{FormatContractTypeNameSummary(snapshot.QualifyingTypeNames)} qualify | " +
+                    $"Stock: {FormatUiInteger(snapshot.QualifyingStockUnits)}/{FormatUiInteger(snapshot.Contract.QuantityUnits)} | " +
+                    $"Missing: {FormatUiInteger(missingUnits)} aircraft");
+                break;
+            case ContractDeliveryStatus.NoEligibleType:
+                GUILayout.Label(snapshot.SavedTypeCount == 0
+                    ? "No saved aircraft type is available."
+                    : $"No aircraft qualifies as {ResolveContractRequestedCategoryName(snapshot.Contract)}.");
+                break;
+            case ContractDeliveryStatus.SpecificationsInsufficient:
+                GUILayout.Label($"Closest type: {snapshot.ClosestTypeName}");
+                if (snapshot.ClosestUnmetRequirements.Count > 0)
+                {
+                    GUILayout.Label(string.Join(" | ", snapshot.ClosestUnmetRequirements.Take(2)));
+                }
+
+                break;
+        }
+
+        return isExpanded;
+    }
+
+    private static void DrawContractDeliveryDiagnosticDetails(ContractAvailabilitySnapshot snapshot)
+    {
+        switch (snapshot.DeliveryStatus)
+        {
+            case ContractDeliveryStatus.Ready:
+                GUILayout.Label($"Qualifying types: {string.Join(", ", snapshot.QualifyingTypeNames)}");
+                DrawMetric("Qualifying Stock", snapshot.QualifyingStockUnits, "0");
+                break;
+            case ContractDeliveryStatus.ProductionRequired:
+                GUILayout.Label($"Qualifying types: {string.Join(", ", snapshot.QualifyingTypeNames)}");
+                DrawMetric("Qualifying Stock", snapshot.QualifyingStockUnits, "0");
+                DrawMetric("Required Aircraft", snapshot.Contract.QuantityUnits, "0");
+                DrawMetric(
+                    "Missing Aircraft",
+                    System.Math.Max(snapshot.Contract.QuantityUnits - snapshot.QualifyingStockUnits, 0),
+                    "0");
+                break;
+            case ContractDeliveryStatus.NoEligibleType:
+                DrawMetric("Saved Aircraft Types", snapshot.SavedTypeCount, "0");
+                GUILayout.Label($"Required category: {ResolveContractRequestedCategoryName(snapshot.Contract)}");
+                break;
+            case ContractDeliveryStatus.SpecificationsInsufficient:
+                GUILayout.Label($"Closest type: {snapshot.ClosestTypeName}");
+                for (var index = 0; index < snapshot.ClosestUnmetRequirements.Count; index++)
+                {
+                    GUILayout.Label($"- {snapshot.ClosestUnmetRequirements[index]}");
+                }
+
+                break;
+        }
+    }
+
+    private static string ResolveContractDeliveryStatusLabel(ContractDeliveryStatus status) =>
+        status switch
+        {
+            ContractDeliveryStatus.Ready => "READY TO DELIVER",
+            ContractDeliveryStatus.ProductionRequired => "PRODUCTION REQUIRED",
+            ContractDeliveryStatus.NoEligibleType => "NO ELIGIBLE TYPE",
+            ContractDeliveryStatus.SpecificationsInsufficient => "SPECIFICATIONS INSUFFICIENT",
+            _ => "UNKNOWN STATUS",
+        };
+
+    private static Color ResolveContractDeliveryStatusColor(ContractDeliveryStatus status) =>
+        status switch
+        {
+            ContractDeliveryStatus.Ready => new Color(0.35f, 0.9f, 0.45f, 1f),
+            ContractDeliveryStatus.ProductionRequired => new Color(1f, 0.65f, 0.12f, 1f),
+            _ => new Color(1f, 0.32f, 0.32f, 1f),
+        };
+
+    private static string FormatContractTypeNameSummary(IReadOnlyList<string> typeNames)
+    {
+        if (typeNames.Count <= 2)
+        {
+            return string.Join(" and ", typeNames);
+        }
+
+        return $"{typeNames[0]}, {typeNames[1]} +{FormatUiInteger(typeNames.Count - 2)} more";
+    }
+
+    private static string ResolveContractRequestedCategoryName(Contract contract)
+    {
+        if (!contract.Requirements.RequiredCategory.HasValue)
+        {
+            return "the contract requirements";
+        }
+
+        return AircraftCategoryCatalog.GetProfile(contract.Requirements.RequiredCategory.Value).DisplayName;
+    }
+
     private void DrawPastOrdersWindow(Vector2 virtualScreenSize)
     {
         if (!_showPastOrdersWindow || _contractBoard is null)
@@ -4764,10 +4922,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
         else
         {
-            DrawGovernmentEvaluatedContracts(isSuccess: true, "Successful Government Contracts");
-            DrawGovernmentEvaluatedContracts(isSuccess: false, "Failed Government Evaluations");
-            DrawExpiredGovernmentContracts();
-            DrawClosedGovernmentDeliveryHistory();
+            DrawGovernmentPastOrdersNewestFirst();
         }
 
         GUILayout.EndScrollView();
@@ -4788,70 +4943,89 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
     }
 
-    private void DrawGovernmentEvaluatedContracts(bool isSuccess, string title)
+    private void DrawGovernmentPastOrdersNewestFirst()
     {
         if (_governmentContractBoard is null)
         {
             return;
         }
 
-        var hasAny = false;
-        for (var index = _governmentContractBoard.EvaluatedContracts.Count - 1; index >= 0; index--)
+        var entries = new List<GovernmentPastOrderEntry>();
+        for (var index = 0; index < _governmentContractBoard.EvaluatedContracts.Count; index++)
         {
             var evaluated = _governmentContractBoard.EvaluatedContracts[index];
-            if (evaluated.EvaluationResult?.IsSuccess != isSuccess)
+            if (evaluated.EvaluationResult is not null)
             {
-                continue;
+                entries.Add(new GovernmentPastOrderEntry(
+                    evaluated,
+                    null,
+                    GovernmentPastOrderKind.Evaluation,
+                    ToSimulationMonthIndex(evaluated.EvaluationResult.EvaluatedOn)));
             }
-
-            if (!hasAny)
-            {
-                DrawSection(title);
-                hasAny = true;
-            }
-
-            DrawGovernmentEvaluationDetails(evaluated, showSubmission: true);
-        }
-    }
-
-    private void DrawExpiredGovernmentContracts()
-    {
-        if (_governmentContractBoard is null || _governmentContractBoard.ExpiredContracts.Count == 0)
-        {
-            return;
         }
 
-        DrawSection("Uncontested Government Contracts");
-        for (var index = _governmentContractBoard.ExpiredContracts.Count - 1; index >= 0; index--)
+        for (var index = 0; index < _governmentContractBoard.ExpiredContracts.Count; index++)
         {
             var expired = _governmentContractBoard.ExpiredContracts[index];
-            GUILayout.BeginVertical(GUI.skin.box);
-            GUILayout.Label($"{expired.ContractId} | EXPIRED");
-            GUILayout.Label($"Generated: {FormatSimulationDate(expired.GeneratedOn)}");
-            GUILayout.Label($"Availability Ended: {FormatSimulationDate(expired.AvailabilityExpiresOn)}");
-            DrawGovernmentRequirements(expired.Requirements);
-            GUILayout.EndVertical();
+            entries.Add(new GovernmentPastOrderEntry(
+                expired,
+                null,
+                GovernmentPastOrderKind.Uncontested,
+                ToSimulationMonthIndex(expired.AvailabilityExpiresOn)));
+        }
+
+        for (var index = 0; index < _governmentContractBoard.ClosedDeliveryContracts.Count; index++)
+        {
+            var delivery = _governmentContractBoard.ClosedDeliveryContracts[index];
+            entries.Add(new GovernmentPastOrderEntry(
+                null,
+                delivery,
+                GovernmentPastOrderKind.Delivery,
+                ToSimulationMonthIndex(delivery.CompletedOn ?? delivery.EndsOn)));
+        }
+
+        foreach (var entry in entries
+                     .OrderByDescending(item => item.ClosedMonthIndex)
+                     .ThenBy(item => item.SortId, StringComparer.Ordinal))
+        {
+            DrawGovernmentPastOrderEntry(entry);
         }
     }
 
-    private void DrawClosedGovernmentDeliveryHistory()
+    private void DrawGovernmentPastOrderEntry(GovernmentPastOrderEntry entry)
     {
-        if (_governmentContractBoard is null || _governmentContractBoard.ClosedDeliveryContracts.Count == 0)
+        if (entry.Kind == GovernmentPastOrderKind.Evaluation && entry.Contract is not null)
+        {
+            DrawGovernmentEvaluationDetails(entry.Contract, showSubmission: true);
+            return;
+        }
+
+        if (entry.Kind == GovernmentPastOrderKind.Uncontested && entry.Contract is not null)
+        {
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label($"{entry.Contract.ContractId} | UNCONTESTED");
+            GUILayout.Label($"Generated: {FormatSimulationDate(entry.Contract.GeneratedOn)}");
+            GUILayout.Label($"Availability Ended: {FormatSimulationDate(entry.Contract.AvailabilityExpiresOn)}");
+            DrawGovernmentRequirements(entry.Contract.Requirements);
+            GUILayout.EndVertical();
+            return;
+        }
+
+        if (entry.Delivery is null)
         {
             return;
         }
 
-        DrawSection("Closed Delivery History");
-        for (var index = _governmentContractBoard.ClosedDeliveryContracts.Count - 1; index >= 0; index--)
-        {
-            var closed = _governmentContractBoard.ClosedDeliveryContracts[index];
-            GUILayout.BeginHorizontal(GUI.skin.box);
-            GUILayout.Label(closed.DeliveryId, GUILayout.Width(220f));
-            GUILayout.Label($"Status: {closed.Status}", GUILayout.Width(130f));
-            GUILayout.Label($"{FormatUiInteger(closed.DeliveredUnits)}/{FormatUiInteger(closed.TotalUnitsRequired)} units");
-            GUILayout.EndHorizontal();
-        }
+        var completedOn = entry.Delivery.CompletedOn ?? entry.Delivery.EndsOn;
+        GUILayout.BeginHorizontal(GUI.skin.box);
+        GUILayout.Label(entry.Delivery.DeliveryId, GUILayout.Width(220f));
+        GUILayout.Label($"Status: {entry.Delivery.Status}", GUILayout.Width(130f));
+        GUILayout.Label($"Closed: {FormatSimulationDate(completedOn)}", GUILayout.Width(180f));
+        GUILayout.Label($"{FormatUiInteger(entry.Delivery.DeliveredUnits)}/{FormatUiInteger(entry.Delivery.TotalUnitsRequired)} units");
+        GUILayout.EndHorizontal();
     }
+
+    private static int ToSimulationMonthIndex(SimulationDate date) => ((date.Year - 1) * 12) + date.Month - 1;
 
     private static void ClampPopupWindowRect(
         ref Rect rect,
@@ -6111,26 +6285,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        DrawSection("Completed Engineering");
-        var completed = GetVisibleResearchProjectsByStatus(ResearchStatus.Completed);
-        if (completed.Count == 0)
-        {
-            GUILayout.Label("No completed engineering yet.");
-            return;
-        }
-
-        for (var index = completed.Count - 1; index >= 0; index--)
-        {
-            var project = completed[index];
-            var displayName = ResolveResearchProjectDisplayName(project);
-            GUILayout.BeginHorizontal(GUI.skin.box);
-            TryDrawResearchProjectPreview(project, 80f, 52f);
-
-            GUILayout.Label(GetResearchSubjectLabel(project.SubjectType), GUILayout.Width(120f));
-            GUILayout.Label(displayName, GUILayout.Width(260f));
-            GUILayout.Label($"Done ({FormatUiInteger(project.ResearchTimeMonths)} m)");
-            GUILayout.EndHorizontal();
-        }
     }
 
     private void DrawResearchApprovalScreen(bool isDetailed)
@@ -6148,13 +6302,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        if (GUILayout.Button("Approve All", GUILayout.Height(26f)))
-        {
-            for (var index = 0; index < proposed.Count; index++)
-            {
-                TryApproveResearchProject(proposed[index]);
-            }
-        }
+        DrawApproveAllResearchProjectsButton(proposed);
 
         for (var index = 0; index < proposed.Count; index++)
         {
@@ -6192,6 +6340,21 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.EndHorizontal();
 
             GUILayout.EndVertical();
+        }
+
+        DrawApproveAllResearchProjectsButton(proposed);
+    }
+
+    private void DrawApproveAllResearchProjectsButton(IReadOnlyList<ResearchProject> proposed)
+    {
+        if (!GUILayout.Button("Approve All", GUILayout.Height(26f)))
+        {
+            return;
+        }
+
+        for (var index = 0; index < proposed.Count; index++)
+        {
+            TryApproveResearchProject(proposed[index]);
         }
     }
 
@@ -7599,7 +7762,38 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             var familyId = orderedFamilyIds[familyIndex];
             var familyDisplayName = ResolveFamilyDisplayNameForMyMachines(familyId);
             GUILayout.BeginVertical(GUI.skin.box);
+            var isCollapsed = _collapsedMyMachinesFamilyIds.Contains(familyId);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(isCollapsed ? "\u25B6" : "\u25BC", GUILayout.Width(26f), GUILayout.Height(22f)))
+            {
+                if (isCollapsed)
+                {
+                    _collapsedMyMachinesFamilyIds.Remove(familyId);
+                }
+                else
+                {
+                    _collapsedMyMachinesFamilyIds.Add(familyId);
+                }
+
+                isCollapsed = !isCollapsed;
+            }
+
             GUILayout.Label($"Family: {familyDisplayName}");
+            GUILayout.EndHorizontal();
+
+            if (isCollapsed)
+            {
+                var modelNames = _savedAircraftDesigns
+                    .Where(item => string.Equals(item.FamilyResearchId, familyId, StringComparison.Ordinal))
+                    .Select(item => item.Name)
+                    .ToArray();
+                GUILayout.Label(modelNames.Length == 0
+                    ? "Models: none"
+                    : $"Models: {string.Join(", ", modelNames)}");
+                GUILayout.EndVertical();
+                continue;
+            }
+
             GUILayout.Label($"ID: {familyId}");
 
             var rootTypeIndices = new List<int>();
@@ -7752,7 +7946,31 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         GUILayout.BeginVertical(GUI.skin.box);
+        var isCollapsed = _collapsedMyMachinesTypeIds.Contains(savedDesign.TypeResearchId);
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button(isCollapsed ? "\u25B6" : "\u25BC", GUILayout.Width(26f), GUILayout.Height(22f)))
+        {
+            if (isCollapsed)
+            {
+                _collapsedMyMachinesTypeIds.Remove(savedDesign.TypeResearchId);
+            }
+            else
+            {
+                _collapsedMyMachinesTypeIds.Add(savedDesign.TypeResearchId);
+            }
+
+            isCollapsed = !isCollapsed;
+        }
+
         GUILayout.Label(isVersion ? $"Version: {savedDesign.Name}" : $"Type: {savedDesign.Name}");
+        GUILayout.EndHorizontal();
+        if (isCollapsed)
+        {
+            GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
+            return;
+        }
+
         GUILayout.BeginHorizontal();
         TryDrawAircraftPictureById(savedDesign.AircraftPictureId, 96f, 60f);
         var categories = FormatQualifiedCategorySummary(savedDesign.CatalogItem.Aircraft);
@@ -9963,18 +10181,37 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         IReadOnlyDictionary<string, FactoryAircraftTypeCatalogItem> catalog,
         IReadOnlyDictionary<string, int> warehouseSnapshot)
     {
-        var hasMatchingPlaneBySpecification = false;
+        var qualifyingTypeNames = new List<string>();
+        var qualifyingDesignIds = new List<string>();
+        var hasCategoryEligibleType = false;
+        FactoryAircraftTypeCatalogItem? closestType = null;
+        IReadOnlyList<string> closestUnmetRequirements = Array.Empty<string>();
 
-        foreach (var catalogItem in catalog.Values)
+        foreach (var catalogEntry in catalog)
         {
+            var catalogItem = catalogEntry.Value;
+            var isCategoryEligible = IsAircraftEligibleForContractCategory(contract, catalogItem.Aircraft);
+            if (isCategoryEligible)
+            {
+                hasCategoryEligibleType = true;
+            }
+
             var evaluation = contractBoard.Evaluate(contract, catalogItem.Aircraft);
-            if (!evaluation.CanDeliver)
+            if (evaluation.CanDeliver)
+            {
+                qualifyingTypeNames.Add(catalogItem.DisplayName);
+                qualifyingDesignIds.Add(catalogEntry.Key);
+                continue;
+            }
+
+            if (!isCategoryEligible
+                || (closestType is not null && evaluation.UnmetRequirements.Count >= closestUnmetRequirements.Count))
             {
                 continue;
             }
 
-            hasMatchingPlaneBySpecification = true;
-            break;
+            closestType = catalogItem;
+            closestUnmetRequirements = evaluation.UnmetRequirements;
         }
 
         var deliveryCandidates = BuildContractDeliveryCandidates(
@@ -9985,6 +10222,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         var deliveryPlan = BuildCheapestContractDeliveryPlan(contract.QuantityUnits, deliveryCandidates);
         var deliveredUnits = deliveryPlan.Sum(allocation => allocation.UnitsToDeliver);
         var canBeDeliveredNow = deliveredUnits >= contract.QuantityUnits;
+        var qualifyingStockUnits = 0;
+        for (var index = 0; index < qualifyingDesignIds.Count; index++)
+        {
+            if (warehouseSnapshot.TryGetValue(qualifyingDesignIds[index], out var stockUnits))
+            {
+                qualifyingStockUnits += System.Math.Max(stockUnits, 0);
+            }
+        }
+
+        var deliveryStatus = canBeDeliveredNow
+            ? ContractDeliveryStatus.Ready
+            : qualifyingDesignIds.Count > 0
+                ? ContractDeliveryStatus.ProductionRequired
+                : hasCategoryEligibleType
+                    ? ContractDeliveryStatus.SpecificationsInsufficient
+                    : ContractDeliveryStatus.NoEligibleType;
         var expectedProfitLoss = 0d;
         if (canBeDeliveredNow)
         {
@@ -9995,8 +10248,30 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return new ContractAvailabilitySnapshot(
             contract,
             canBeDeliveredNow,
-            hasMatchingPlaneBySpecification,
-            expectedProfitLoss);
+            qualifyingDesignIds.Count > 0,
+            expectedProfitLoss,
+            deliveryStatus,
+            qualifyingStockUnits,
+            qualifyingTypeNames
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            closestType?.DisplayName ?? string.Empty,
+            closestUnmetRequirements.ToArray(),
+            catalog.Count);
+    }
+
+    private bool IsAircraftEligibleForContractCategory(Contract contract, Aircraft aircraft)
+    {
+        if (!contract.Requirements.RequiredCategory.HasValue)
+        {
+            return true;
+        }
+
+        var categoryProfile = AircraftCategoryCatalog.GetProfileForYear(
+            contract.Requirements.RequiredCategory.Value,
+            _currentDate.Year);
+        return _categoryComplianceEvaluator.Evaluate(aircraft, categoryProfile).IsCompliant;
     }
 
     private IReadOnlyList<ContractDeliveryCandidate> BuildContractDeliveryCandidates(
@@ -10091,6 +10366,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             return false;
         }
 
+        if (!MatchesContractDeliveryStatusFilter(snapshot.DeliveryStatus, _contractDeliveryStatusFilter))
+        {
+            return false;
+        }
+
         if (_contractRequestedCategoryFilterEnabled)
         {
             if (!snapshot.Contract.Requirements.RequiredCategory.HasValue)
@@ -10112,6 +10392,19 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             _ => true,
         };
     }
+
+    private static bool MatchesContractDeliveryStatusFilter(
+        ContractDeliveryStatus status,
+        ContractDeliveryStatusFilter filter) =>
+        filter switch
+        {
+            ContractDeliveryStatusFilter.All => true,
+            ContractDeliveryStatusFilter.Ready => status == ContractDeliveryStatus.Ready,
+            ContractDeliveryStatusFilter.ProductionRequired => status == ContractDeliveryStatus.ProductionRequired,
+            ContractDeliveryStatusFilter.NoEligibleType => status == ContractDeliveryStatus.NoEligibleType,
+            ContractDeliveryStatusFilter.SpecificationsInsufficient => status == ContractDeliveryStatus.SpecificationsInsufficient,
+            _ => true,
+        };
 
     private void AdvanceToNextMonth()
     {
@@ -13593,6 +13886,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return (ContractSpecificationFilter)nextIndex;
     }
 
+    private static ContractDeliveryStatusFilter DrawContractDeliveryStatusFilter(
+        string label,
+        ContractDeliveryStatusFilter currentFilter)
+    {
+        GUILayout.Label(label);
+        var labels = new[] { "All", "Ready", "Production Required", "No Eligible Type", "Specs Insufficient" };
+        var index = Mathf.Clamp((int)currentFilter, 0, labels.Length - 1);
+        var nextIndex = GUILayout.SelectionGrid(index, labels, 2);
+        nextIndex = Mathf.Clamp(nextIndex, 0, labels.Length - 1);
+        return (ContractDeliveryStatusFilter)nextIndex;
+    }
+
     private static void DrawContractRequestedCategoryFilter(
         string label,
         ref bool enabled,
@@ -14521,18 +14826,79 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DoNotHaveMatchingPlane = 2,
     }
 
+    private enum ContractDeliveryStatusFilter
+    {
+        All = 0,
+        Ready = 1,
+        ProductionRequired = 2,
+        NoEligibleType = 3,
+        SpecificationsInsufficient = 4,
+    }
+
+    private enum ContractDeliveryStatus
+    {
+        Ready = 0,
+        ProductionRequired = 1,
+        NoEligibleType = 2,
+        SpecificationsInsufficient = 3,
+    }
+
+    private enum GovernmentPastOrderKind
+    {
+        Evaluation = 0,
+        Uncontested = 1,
+        Delivery = 2,
+    }
+
+    private sealed class GovernmentPastOrderEntry
+    {
+        public GovernmentPastOrderEntry(
+            GovernmentContract? contract,
+            GovernmentDeliveryContract? delivery,
+            GovernmentPastOrderKind kind,
+            int closedMonthIndex)
+        {
+            Contract = contract;
+            Delivery = delivery;
+            Kind = kind;
+            ClosedMonthIndex = closedMonthIndex;
+        }
+
+        public GovernmentContract? Contract { get; }
+
+        public GovernmentDeliveryContract? Delivery { get; }
+
+        public GovernmentPastOrderKind Kind { get; }
+
+        public int ClosedMonthIndex { get; }
+
+        public string SortId => Contract?.ContractId ?? Delivery?.DeliveryId ?? string.Empty;
+    }
+
     private readonly struct ContractAvailabilitySnapshot
     {
         public ContractAvailabilitySnapshot(
             Contract contract,
             bool canBeDeliveredNow,
             bool hasMatchingPlaneBySpecification,
-            double expectedProfitLoss)
+            double expectedProfitLoss,
+            ContractDeliveryStatus deliveryStatus,
+            int qualifyingStockUnits,
+            IReadOnlyList<string> qualifyingTypeNames,
+            string closestTypeName,
+            IReadOnlyList<string> closestUnmetRequirements,
+            int savedTypeCount)
         {
             Contract = contract;
             CanBeDeliveredNow = canBeDeliveredNow;
             HasMatchingPlaneBySpecification = hasMatchingPlaneBySpecification;
             ExpectedProfitLoss = expectedProfitLoss;
+            DeliveryStatus = deliveryStatus;
+            QualifyingStockUnits = qualifyingStockUnits;
+            QualifyingTypeNames = qualifyingTypeNames;
+            ClosestTypeName = closestTypeName;
+            ClosestUnmetRequirements = closestUnmetRequirements;
+            SavedTypeCount = savedTypeCount;
         }
 
         public Contract Contract { get; }
@@ -14544,6 +14910,18 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public double ExpectedProfitLoss { get; }
 
         public bool HasMatchingPlaneBySpecification { get; }
+
+        public ContractDeliveryStatus DeliveryStatus { get; }
+
+        public int QualifyingStockUnits { get; }
+
+        public IReadOnlyList<string> QualifyingTypeNames { get; }
+
+        public string ClosestTypeName { get; }
+
+        public IReadOnlyList<string> ClosestUnmetRequirements { get; }
+
+        public int SavedTypeCount { get; }
     }
 
     private readonly struct ContractDeliveryCandidate
@@ -15141,6 +15519,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public ContractDeliverabilityFilter ContractDeliverabilityFilter { get; set; }
 
         public ContractSpecificationFilter ContractSpecificationFilter { get; set; }
+
+        public ContractDeliveryStatusFilter ContractDeliveryStatusFilter { get; set; }
 
         public bool ContractRequestedCategoryFilterEnabled { get; set; }
 
