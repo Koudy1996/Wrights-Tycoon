@@ -78,6 +78,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly Dictionary<string, string> _selectedWarehouseDesignByContractId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _excludedWarehouseDesignByContractId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _deliveredContractProfitById = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _soldAircraftUnitsByDesignId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _governmentDeliveryQuantityInputById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _factoryScrapQuantityInputByDesignId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _factoryTotalTargetInputByLineId = new(StringComparer.Ordinal);
@@ -984,6 +985,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         _selectedWarehouseDesignByContractId.Clear();
         _excludedWarehouseDesignByContractId.Clear();
         _deliveredContractProfitById.Clear();
+        _soldAircraftUnitsByDesignId.Clear();
         _governmentDeliveryQuantityInputById.Clear();
         _factoryScrapQuantityInputByDesignId.Clear();
         _selectedSavedEngineIndex = -1;
@@ -1872,6 +1874,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             });
         }
 
+        foreach (var entry in _soldAircraftUnitsByDesignId)
+        {
+            payload.SoldAircraftUnitsByDesignId.Add(new StringIntStateEntry
+            {
+                Key = entry.Key,
+                Value = entry.Value,
+            });
+        }
+
         if (_contractBoard is not null)
         {
             payload.ContractBoardSnapshot = _contractBoard.CreateSnapshot();
@@ -2240,6 +2251,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         _deliveredContractProfitById.Clear();
+        _soldAircraftUnitsByDesignId.Clear();
         _governmentDeliveryQuantityInputById.Clear();
         _factoryScrapQuantityInputByDesignId.Clear();
         if (data.DeliveredContractProfitById is not null)
@@ -2253,6 +2265,20 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                 }
 
                 _deliveredContractProfitById[entry.Key] = entry.Value;
+            }
+        }
+
+        if (data.SoldAircraftUnitsByDesignId is not null)
+        {
+            for (var index = 0; index < data.SoldAircraftUnitsByDesignId.Count; index++)
+            {
+                var entry = data.SoldAircraftUnitsByDesignId[index];
+                if (entry is null || string.IsNullOrWhiteSpace(entry.Key) || entry.Value <= 0)
+                {
+                    continue;
+                }
+
+                _soldAircraftUnitsByDesignId[entry.Key] = entry.Value;
             }
         }
 
@@ -4591,6 +4617,11 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
                         _contractActionMessage =
                             $"{result.Message} Delivered from: {deliveryPlanSummaryToBook}. Revenue booked: {FormatCurrency(contractIncomeToBook)}.";
                         _deliveredContractProfitById[contractToDeliver.Id] = contractProfitLossToBook;
+                        for (var allocationIndex = 0; allocationIndex < deliveryAllocationsToApply.Count; allocationIndex++)
+                        {
+                            var allocation = deliveryAllocationsToApply[allocationIndex];
+                            RegisterSoldAircraftUnits(allocation.Candidate.DesignId, allocation.UnitsToDeliver);
+                        }
 
                         if (_accountingSystem is not null && _productionFactory is not null)
                         {
@@ -5760,6 +5791,9 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         if (deliveryUpdate.DeliveredUnitsThisMonth > 0)
         {
             deliveryIncome = deliveryUpdate.DeliveredUnitsThisMonth * deliveryContractBefore.UnitPrice;
+            RegisterSoldAircraftUnits(
+                deliveryContractBefore.AircraftDesignId,
+                deliveryUpdate.DeliveredUnitsThisMonth);
         }
 
         var completionBonusIncome = deliveryUpdate.CompletionBonusGranted > 0d
@@ -7625,6 +7659,17 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         }
     }
 
+    private void RegisterSoldAircraftUnits(string designId, int units)
+    {
+        if (string.IsNullOrWhiteSpace(designId) || units <= 0)
+        {
+            return;
+        }
+
+        _soldAircraftUnitsByDesignId.TryGetValue(designId, out var currentUnits);
+        _soldAircraftUnitsByDesignId[designId] = checked(currentUnits + units);
+    }
+
     private void DrawMyMachinesTab()
     {
         DrawSection("My machines");
@@ -7644,34 +7689,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void DrawMyMachinesReport()
     {
-        DrawSection("My machines overview");
-        DrawMetric("Saved Engines", _savedEngines.Count, "0");
-        DrawMetric("Saved Families", _savedFamilies.Count, "0");
-        DrawMetric("Saved Types", _savedAircraftDesigns.Count, "0");
-
-        DrawSection("Development Mode");
-        if (_engineVersionDevelopment is not null)
-        {
-            GUILayout.Label(
-                $"Engine version: {_engineVersionDevelopment.SourceDisplayName} | " +
-                $"development start {FormatUiInteger(_engineVersionDevelopment.SourceDevelopmentStartedYear)} | " +
-                $"variant start {FormatUiInteger(_engineVersionDevelopment.VariantDevelopmentStartedYear)}");
-            GUILayout.Label("Open Engine Designer to continue.");
-        }
-        else if (_typeVersionDevelopment is not null)
-        {
-            GUILayout.Label(
-                $"Type version: {_typeVersionDevelopment.SourceDisplayName} | " +
-                $"family {_typeVersionDevelopment.SourceFamilyDisplayName} | " +
-                $"development start {FormatUiInteger(_typeVersionDevelopment.SourceDevelopmentStartedYear)} | " +
-                $"variant start {FormatUiInteger(_typeVersionDevelopment.VariantDevelopmentStartedYear)}");
-            GUILayout.Label("Open Airframe + Type Designer to continue.");
-        }
-        else
-        {
-            GUILayout.Label("No active version-development session.");
-        }
-
         if (_myMachinesSubTab == 0)
         {
             DrawMyMachinesSelectedEngineReport();
@@ -8005,7 +8022,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void DrawMyMachinesSelectedTypeReport()
     {
-        DrawSection("Selected Type Parameters");
         if (_savedAircraftDesigns.Count == 0)
         {
             GUILayout.Label("No types saved.");
@@ -8025,12 +8041,6 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         TryDrawAircraftPictureById(selected.AircraftPictureId, 320f, 200f);
         DrawParameterValueRow("Name", selected.Name);
         DrawParameterValueRow("Development Start Year", FormatUiInteger(selected.DevelopmentStartedYear));
-        DrawParameterValueRow("Current Variant Start Year", FormatUiInteger(selected.VariantDevelopmentStartedYear));
-        DrawParameterValueRow("Approved Year", FormatApprovedYear(selected.ApprovedYear));
-        if (TryResolveResearchTimeMonthsFromResearchBoard(ResearchSubjectType.AircraftType, selected.TypeResearchId, out var typeResearchTimeMonths))
-        {
-            DrawParameterValueRow("Engineering Time (months)", FormatUiInteger(typeResearchTimeMonths));
-        }
         DrawParameterValueRow("Qualified Categories", categories);
         DrawParameterValueRow(
             "Engine",
@@ -8046,14 +8056,22 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawParameterValueRow("Backup Systems", aircraft.Airframe.Parameters.HasBackupSystems ? "Enabled" : "Disabled");
         DrawParameterValueRow("Landing Gear", aircraft.Airframe.Parameters.LandingGearType.ToString());
         DrawParameterValueRow("Runway Type", aircraft.Airframe.Parameters.RunwayType.ToString());
-        DrawParameterValueRow("Cowling", FormatUiNumber(aircraft.Airframe.Parameters.EngineCowling, "0.00"));
-        DrawParameterValueRow("Aerodynamic Cleanliness (%)", FormatUiNumber(aircraft.Airframe.Parameters.AerodynamicCleanlinessPercent, "0.0"));
         DrawParameterValueRow("Fuel (L)", FormatUiNumber(aircraft.Airframe.Parameters.FuelAmountLiters, "0"));
-        DrawParameterValueRow("Precision Engineering", FormatUiInteger(aircraft.Airframe.Parameters.PrecisionEngineeringLevel));
-
-        DrawParameterValueRow("Range (km)", FormatUiNumber(aircraft.Performance.RangeKilometers, "0.0"));
-        DrawParameterValueRow("Cruise Speed (km/h)", FormatUiNumber(aircraft.Performance.OptimalCruiseSpeedMetersPerSecond * 3.6d, "0.0"));
-        DrawParameterValueRow("Useful Weight (kg)", FormatUiNumber(aircraft.Performance.PayloadCapacity.Kilograms, "0.0"));
+        var maximumSpeedKilometersPerHour = aircraft.Performance.MaxSpeedByAltitude.Count == 0
+            ? 0d
+            : aircraft.Performance.MaxSpeedByAltitude.Max(point => point.MaxSpeedMetersPerSecond) * 3.6d;
+        var certifiedRangeKilometers = AircraftNavigationRangePolicy.GetCertifiedRangeKilometers(
+            aircraft.TypeDefinition.NavigationEquipment,
+            aircraft.Performance.RangeKilometers);
+        var warehouseUnits = _productionFactory?.GetWarehouseUnits(selected.CatalogItem.DesignId) ?? 0;
+        var soldUnits = _soldAircraftUnitsByDesignId.TryGetValue(selected.CatalogItem.DesignId, out var recordedSoldUnits)
+            ? recordedSoldUnits
+            : 0;
+        DrawParameterValueRow("Maximum Speed (km/h)", FormatUiNumber(maximumSpeedKilometersPerHour, "0.0"));
+        DrawParameterValueRow("Certified Range (km)", FormatUiNumber(certifiedRangeKilometers, "0.0"));
+        DrawParameterValueRow("Payload (kg)", FormatUiNumber(aircraft.Performance.PayloadCapacity.Kilograms, "0.0"));
+        DrawParameterValueRow("Warehouse Units", FormatUiInteger(warehouseUnits));
+        DrawParameterValueRow("Units Sold", FormatUiInteger(soldUnits));
         DrawParameterValueRow("Overall Reliability", FormatUiNumber(aircraft.Performance.OverallReliability, "0.000"));
         DrawParameterValueRow("Production Parts", FormatUiNumber(aircraft.Performance.TotalProductionCost, "0"));
         DrawParameterValueRow("Complete Production Cost", FormatUiNumber(aircraft.Performance.CompleteProductionCost, "0"));
@@ -15560,6 +15578,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         public List<StringDoubleStateEntry> DeliveredContractProfitById { get; set; } = new();
 
+        public List<StringIntStateEntry> SoldAircraftUnitsByDesignId { get; set; } = new();
+
         public List<string> FiredHistoricalCampaignEventIds { get; set; } = new();
 
         public List<HistoricalCampaignArchiveEntry> HistoricalCampaignArchiveEntries { get; set; } = new();
@@ -15741,6 +15761,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         public string Key { get; set; } = string.Empty;
 
         public double Value { get; set; }
+    }
+
+    private sealed class StringIntStateEntry
+    {
+        public string Key { get; set; } = string.Empty;
+
+        public int Value { get; set; }
     }
 }
 
