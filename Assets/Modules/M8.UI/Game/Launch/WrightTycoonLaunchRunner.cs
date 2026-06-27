@@ -5,6 +5,7 @@ using System.Linq;
 using Newtonsoft.Json;
 using System.Collections.Generic;
 using UnityEngine;
+using WrightTycoon.Game.Audio;
 using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Accounting;
 using WrightTycoon.Core.Airframes;
@@ -476,9 +477,13 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
     private string[] _availableResolutionLabels = Array.Empty<string>();
     private int _selectedResolutionOptionIndex;
     private string _optionsActionMessage = string.Empty;
+    private RuntimeScreen _optionsReturnScreen = RuntimeScreen.Intro;
+    private MusicPlaylistPlayer? _musicPlaylistPlayer;
 
     private void Awake()
     {
+        _musicPlaylistPlayer = gameObject.GetComponent<MusicPlaylistPlayer>()
+            ?? gameObject.AddComponent<MusicPlaylistPlayer>();
         InitializeSaveSystem();
         LoadBuildManifest();
         LoadIntroBackgroundTexture();
@@ -538,7 +543,15 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         DrawRect(root, new Color(0.08f, 0.12f, 0.18f, 0.98f));
 
         GUILayout.BeginArea(root);
+        GUILayout.BeginHorizontal();
         GUILayout.Label("Wright Tycoon Designer");
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button("Options", GUILayout.Width(120f), GUILayout.Height(26f)))
+        {
+            OpenOptionsMenu();
+        }
+
+        GUILayout.EndHorizontal();
         GUILayout.Label("Live tuning UI for M2 engines and M3/M4 airframe+type composition.");
 
         if (!_initialized)
@@ -1343,6 +1356,31 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.BeginArea(panelRect, GUI.skin.box);
         GUILayout.Label("Options");
         GUILayout.Space(4f);
+
+        GUILayout.Label("Music Volume");
+        var currentMusicVolume = _musicPlaylistPlayer?.Volume ?? MusicPlaylistPlayer.DefaultVolume;
+        var selectedMusicVolume = GUILayout.HorizontalSlider(currentMusicVolume, 0f, 1f, GUILayout.Height(28f));
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("Muted", GUILayout.Width(100f));
+        GUILayout.FlexibleSpace();
+        GUILayout.Label($"{Mathf.RoundToInt(selectedMusicVolume * 100f)}%", GUILayout.Width(60f));
+        GUILayout.FlexibleSpace();
+        GUILayout.Label("Full", GUILayout.Width(100f));
+        GUILayout.EndHorizontal();
+        if (_musicPlaylistPlayer is not null && !Mathf.Approximately(selectedMusicVolume, currentMusicVolume))
+        {
+            _musicPlaylistPlayer.Volume = selectedMusicVolume;
+        }
+
+        GUILayout.Space(10f);
+        GUILayout.Label("Music Credits");
+        GUILayout.Label("Hypnotic Chill (Extended 4 minute mix) — cynicmusic");
+        GUILayout.Label("Young Visionaries_Looping — Eric Matyas");
+        GUILayout.Label("Riding Sky Waves_v001 — Eric Matyas");
+        GUILayout.Label("Network_v001_Looping — Eric Matyas");
+        GUILayout.Label("Scaling Up — Ruskerdax");
+        GUILayout.Space(12f);
+
         GUILayout.Label($"Current Resolution: {Screen.width} x {Screen.height}");
         GUILayout.Label("Select a resolution and apply it. Text stays at 16 px or larger.");
         GUILayout.Space(10f);
@@ -1369,7 +1407,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (GUILayout.Button("Back", GUILayout.Height(44f)))
         {
-            _runtimeScreen = RuntimeScreen.Intro;
+            _runtimeScreen = _optionsReturnScreen;
         }
 
         if (!string.IsNullOrWhiteSpace(_optionsActionMessage))
@@ -1389,6 +1427,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void OpenOptionsMenu()
     {
+        _optionsReturnScreen = _runtimeScreen;
         RefreshResolutionOptions();
         _optionsActionMessage = string.Empty;
         _runtimeScreen = RuntimeScreen.OptionsMenu;
