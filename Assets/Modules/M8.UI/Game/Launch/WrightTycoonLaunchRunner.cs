@@ -1344,8 +1344,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
             RefreshResolutionOptions();
         }
 
-        var panelWidth = Mathf.Min(760f, virtualScreenSize.x - 40f);
-        var panelHeight = Mathf.Min(620f, virtualScreenSize.y - 40f);
+        var panelWidth = Mathf.Min(920f, virtualScreenSize.x - 20f);
+        var panelHeight = Mathf.Min(760f, virtualScreenSize.y - 20f);
         var panelRect = new Rect(
             (virtualScreenSize.x - panelWidth) * 0.5f,
             (virtualScreenSize.y - panelHeight) * 0.5f,
@@ -1387,7 +1387,7 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (_availableResolutionLabels.Length > 0)
         {
-            var columns = _availableResolutionLabels.Length >= 8 ? 2 : 1;
+            var columns = _availableResolutionLabels.Length >= 6 ? 2 : 1;
             _selectedResolutionOptionIndex = GUILayout.SelectionGrid(
                 Mathf.Clamp(_selectedResolutionOptionIndex, 0, _availableResolutionLabels.Length - 1),
                 _availableResolutionLabels,
