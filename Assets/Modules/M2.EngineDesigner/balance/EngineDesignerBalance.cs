@@ -37,6 +37,21 @@ public static class EngineDesignerBalance
         public const double JetTurbineDiameterMaxMeters = 4.0d;
         public const double JetBypassRatioMin = 0.1d;
         public const double JetBypassRatioMax = 20d;
+        public static readonly double[] TurbofanBypassRatioCorrectionNodes =
+        {
+            0.5d, 1d, 1.5d, 2d, 3d, 4d, 5d, 8d, 10d, 15d, 20d,
+        };
+
+        public static readonly double[] TurbofanBypassThrustCorrectionPercent =
+        {
+            -4d, 0d, 3d, 5d, 9d, 12d, 14d, 19d, 21d, 24d, 25d,
+        };
+
+        public static readonly double[] TurbofanBypassSfcCorrectionPercent =
+        {
+            5d, 0d, -2d, -4d, -7d, -9d, -11d, -15d, -17d, -19d, -20d,
+        };
+
         public const double TurbofanLowBypassPenaltyBypassThreshold = 5d;
         public const double TurbofanLowBypassPenaltyStartThrustNewtons = 150000d;
         public const double TurbofanLowBypassPenaltyPer100kNewtons = 0.12d;
@@ -78,7 +93,7 @@ public static class EngineDesignerBalance
         public const double SuperchargerBoostAltitudeFactorMax = 1.0d;
 
         public const double JetAltitudeDensityExponentBase = 0.62d;
-        public const double JetAltitudeBypassExponentSlope = 0.015d;
+        public const double JetAltitudeBypassExponentSlope = 0d;
         public const double JetAltitudeBypassExponentMaxBypass = 15d;
         public const double JetAltitudeCompressionExponentSlope = 0.0018d;
         public const double JetAltitudeCompressionExponentReference = 20d;

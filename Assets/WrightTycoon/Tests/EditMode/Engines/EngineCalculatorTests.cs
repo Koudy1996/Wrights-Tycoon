@@ -253,6 +253,81 @@ public sealed class EngineCalculatorTests
         Assert.That(legacyReport.Reliability, Is.EqualTo(referenceReport.Reliability).Within(0.000001d));
     }
 
+    [TestCase(0.5d, 0.96d)]
+    [TestCase(1d, 1d)]
+    [TestCase(1.5d, 1.03d)]
+    [TestCase(2d, 1.05d)]
+    [TestCase(3d, 1.09d)]
+    [TestCase(4d, 1.12d)]
+    [TestCase(5d, 1.14d)]
+    [TestCase(8d, 1.19d)]
+    [TestCase(10d, 1.21d)]
+    [TestCase(15d, 1.24d)]
+    [TestCase(20d, 1.25d)]
+    public void TurbofanBypassRatio_UsesCalibratedThrustCorrectionTable(double bypassRatio, double expectedOutputRatio)
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateTurbofanDefinition();
+        var referenceParameters = CreateReferenceTurbofanParameters();
+        var comparedParameters = referenceParameters.Clone();
+        comparedParameters.BypassRatio = bypassRatio;
+
+        var referencePoint = calculator.Calculate(definition, referenceParameters, atmosphere).GetPerformanceAtAltitude(0d);
+        var comparedPoint = calculator.Calculate(definition, comparedParameters, atmosphere).GetPerformanceAtAltitude(0d);
+
+        Assert.That(comparedPoint.Output / referencePoint.Output, Is.EqualTo(expectedOutputRatio).Within(0.000001d));
+    }
+
+    [TestCase(0.5d, 1.05d)]
+    [TestCase(1d, 1d)]
+    [TestCase(1.5d, 0.98d)]
+    [TestCase(2d, 0.96d)]
+    [TestCase(3d, 0.93d)]
+    [TestCase(4d, 0.91d)]
+    [TestCase(5d, 0.89d)]
+    [TestCase(8d, 0.85d)]
+    [TestCase(10d, 0.83d)]
+    [TestCase(15d, 0.81d)]
+    [TestCase(20d, 0.80d)]
+    public void TurbofanBypassRatio_UsesCalibratedSpecificFuelCorrectionTable(double bypassRatio, double expectedSpecificFuelRatio)
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateTurbofanDefinition();
+        var referenceParameters = CreateReferenceTurbofanParameters();
+        var comparedParameters = referenceParameters.Clone();
+        comparedParameters.BypassRatio = bypassRatio;
+
+        var referencePoint = calculator.Calculate(definition, referenceParameters, atmosphere).GetPerformanceAtAltitude(0d);
+        var comparedPoint = calculator.Calculate(definition, comparedParameters, atmosphere).GetPerformanceAtAltitude(0d);
+        var referenceSpecificFuel = referencePoint.FuelConsumptionKilogramsPerHour / referencePoint.Output;
+        var comparedSpecificFuel = comparedPoint.FuelConsumptionKilogramsPerHour / comparedPoint.Output;
+
+        Assert.That(comparedSpecificFuel / referenceSpecificFuel, Is.EqualTo(expectedSpecificFuelRatio).Within(0.000001d));
+    }
+
+    [Test]
+    public void TurbofanBypassRatio_DoesNotApplyAdditionalAltitudeRetentionBonus()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateTurbofanDefinition();
+        var referenceParameters = CreateReferenceTurbofanParameters();
+        var highBypassParameters = referenceParameters.Clone();
+        highBypassParameters.BypassRatio = 20d;
+
+        var referenceReport = calculator.Calculate(definition, referenceParameters, atmosphere);
+        var highBypassReport = calculator.Calculate(definition, highBypassParameters, atmosphere);
+        var seaLevelRatio = highBypassReport.GetPerformanceAtAltitude(0d).Output
+            / referenceReport.GetPerformanceAtAltitude(0d).Output;
+        var tenKilometerRatio = highBypassReport.GetPerformanceAtAltitude(10000d).Output
+            / referenceReport.GetPerformanceAtAltitude(10000d).Output;
+
+        Assert.That(seaLevelRatio, Is.EqualTo(1.25d).Within(0.000001d));
+        Assert.That(tenKilometerRatio, Is.EqualTo(seaLevelRatio).Within(0.000001d));
+    }
+
     [Test]
     public void InlineEngine_MoreThanEightCylinders_ThrowsArgumentOutOfRangeException()
     {
@@ -996,6 +1071,16 @@ public sealed class EngineCalculatorTests
             CostPerOutputUnit = 152d,
             BaseProductionManDays = 98d,
             ComplexityFactor = 1.3d,
+        };
+
+    private static EngineParameters CreateReferenceTurbofanParameters() =>
+        new()
+        {
+            TurbineDiameterMeters = 1d,
+            BypassRatio = 1d,
+            CompressionRatio = 20d,
+            MaximumSpeed = 50000d,
+            CoolingEfficiency = 0.8d,
         };
 
     private static EngineDefinition CreateInlinePistonDefinition() =>

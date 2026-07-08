@@ -25,9 +25,15 @@ This keeps formulas pure/testable and external data JSON-ready.
 ### Jet / turbojet / turbofan
 
 - Sea-level thrust:
-  - `T0 = baseJetThrustPerSquareMeter * turbineDiameter^2 * bypassModifier * coolingFactor * boostFactor`
+  - `T0 = baseJetThrustPerSquareMeter * turbineDiameter^2 * bypassThrustFactor * coolingFactor * boostFactor`
 - Turbofan bypass:
-  - `bypassModifier = 1 + bypassRatio * 0.08`
+  - BPR 1:1 is the baseline.
+  - Thrust and SFC use log interpolation over calibrated BPR correction nodes.
+  - Thrust correction nodes plateau toward ultra-high-bypass ducted engines:
+    - `0.5: -4%`, `1: 0%`, `5: +14%`, `10: +21%`, `15: +24%`, `20: +25%`.
+  - SFC correction nodes model stronger fuel efficiency gains with diminishing returns:
+    - `0.5: +5%`, `1: 0%`, `5: -11%`, `10: -17%`, `15: -19%`, `20: -20%`.
+  - BPR is intentionally not counted again in jet altitude retention; altitude scaling uses compression/cooling and engine family effects.
 - Altitude scaling:
   - `T(h) = T0 * densityRatio(h) * optimizationFactor(h)`
 

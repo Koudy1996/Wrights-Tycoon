@@ -188,7 +188,7 @@ public sealed class EngineCalculator : IEngineCalculator
             else
             {
                 var bypassFuelFactor = definition.EngineType == EngineType.Turbofan
-                    ? Numeric.Clamp(1.15d - (parameters.BypassRatio * 0.009d), 0.7d, 1.18d)
+                    ? CalculateTurbofanBypassSpecificFuelFactor(parameters.BypassRatio)
                     : 1d;
                 var turbojetFuelFactor = definition.EngineType == EngineType.Turbojet
                     ? EngineDesignerBalance.Engine.TurbojetFuelConsumptionMultiplier
@@ -276,7 +276,7 @@ public sealed class EngineCalculator : IEngineCalculator
         // Jet family: thrust scales with turbine frontal area (diameter^2).
         var turbineAreaFactor = parameters.TurbineDiameterMeters * parameters.TurbineDiameterMeters;
         var bypassModifier = definition.EngineType == EngineType.Turbofan
-            ? 1d + (parameters.BypassRatio * 0.03d)
+            ? CalculateTurbofanBypassThrustFactor(parameters.BypassRatio)
             : 1d;
         // Better cooling hardware adds drag/mass complexity and trims peak thrust.
         var coolingFactor = 1.06d - (parameters.CoolingEfficiency * 0.16d);
@@ -302,6 +302,52 @@ public sealed class EngineCalculator : IEngineCalculator
         return definition.EngineType == EngineType.Turbofan
             ? ApplyLowBypassHighThrustScalingPenalty(baseThrust, parameters.BypassRatio)
             : baseThrust;
+    }
+
+    private static double CalculateTurbofanBypassThrustFactor(double bypassRatio) =>
+        1d + (InterpolateLogBypassCorrectionPercent(
+            bypassRatio,
+            EngineDesignerBalance.Engine.TurbofanBypassThrustCorrectionPercent) / 100d);
+
+    private static double CalculateTurbofanBypassSpecificFuelFactor(double bypassRatio) =>
+        1d + (InterpolateLogBypassCorrectionPercent(
+            bypassRatio,
+            EngineDesignerBalance.Engine.TurbofanBypassSfcCorrectionPercent) / 100d);
+
+    private static double InterpolateLogBypassCorrectionPercent(double bypassRatio, IReadOnlyList<double> correctionPercent)
+    {
+        var nodes = EngineDesignerBalance.Engine.TurbofanBypassRatioCorrectionNodes;
+        if (correctionPercent.Count != nodes.Length)
+        {
+            throw new InvalidOperationException("Turbofan bypass correction table must match the bypass node count.");
+        }
+
+        if (bypassRatio <= nodes[0])
+        {
+            return correctionPercent[0];
+        }
+
+        var lastIndex = nodes.Length - 1;
+        if (bypassRatio >= nodes[lastIndex])
+        {
+            return correctionPercent[lastIndex];
+        }
+
+        for (var index = 0; index < lastIndex; index++)
+        {
+            var lowerNode = nodes[index];
+            var upperNode = nodes[index + 1];
+            if (bypassRatio > upperNode)
+            {
+                continue;
+            }
+
+            var t = (System.Math.Log(bypassRatio) - System.Math.Log(lowerNode))
+                / (System.Math.Log(upperNode) - System.Math.Log(lowerNode));
+            return correctionPercent[index] + (t * (correctionPercent[index + 1] - correctionPercent[index]));
+        }
+
+        return correctionPercent[lastIndex];
     }
 
     private static double ApplyLowBypassHighThrustScalingPenalty(double thrustNewtons, double bypassRatio)
@@ -866,11 +912,9 @@ public sealed class EngineCalculator : IEngineCalculator
         EngineParameters parameters)
     {
         // Jets retain thrust with altitude better than linear density scaling.
-        // Higher bypass/compression/cooling reduce the effective degradation exponent.
-        var effectiveBypassRatio = engineType == EngineType.Turbofan ? parameters.BypassRatio : 0d;
+        // Compression/cooling reduce the effective degradation exponent; BPR is already handled by the calibrated
+        // turbofan bypass correction tables, so it is intentionally not counted again here.
         var exponent = EngineDesignerBalance.Engine.JetAltitudeDensityExponentBase
-            - (Numeric.Clamp(effectiveBypassRatio, 0d, EngineDesignerBalance.Engine.JetAltitudeBypassExponentMaxBypass)
-               * EngineDesignerBalance.Engine.JetAltitudeBypassExponentSlope)
             - ((parameters.CompressionRatio - EngineDesignerBalance.Engine.JetAltitudeCompressionExponentReference)
                * EngineDesignerBalance.Engine.JetAltitudeCompressionExponentSlope)
             - ((parameters.CoolingEfficiency - EngineDesignerBalance.Engine.JetAltitudeCoolingExponentReference)
