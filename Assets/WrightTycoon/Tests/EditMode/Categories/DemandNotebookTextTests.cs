@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using System.Runtime.Serialization;
 using NUnit.Framework;
+using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Simulation;
 
@@ -47,6 +48,15 @@ public sealed class DemandNotebookTextTests
         Assert.That(content, Does.Contain("Demand Type: Regional Jet"));
         Assert.That(content, Does.Not.Contain("Current Year:"));
         Assert.That(content, Does.Not.Contain("Forecast Year:"));
+    }
+
+    [Test]
+    public void MilitarySupportRoleRequirement_ListsCombatAndCargoModules()
+    {
+        var description = AircraftCategoryRequirementBalance.GetRoleDescription(
+            AircraftCategory.MilitaryStrategicSupport);
+
+        Assert.That(description, Is.EqualTo("Combat equipment or cargo space"));
     }
 
     private static Type RequireRunnerType() =>

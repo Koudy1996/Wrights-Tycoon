@@ -152,7 +152,10 @@ public sealed class CategoryComplianceEvaluator
                 return;
 
             case AircraftCategoryRoleRequirement.MilitarySupport:
-                Require(!type.HasPassengerCabin || !type.HasCombatEquipment, "Passenger cabin conflicts with combat equipment", unmet);
+                Require(!type.HasPassengerCabin, "Passenger cabin conflicts with military support category", unmet);
+                Require(!type.HasSpecialEquipment, "Special equipment conflicts with military support category", unmet);
+                Require(type.HasCargoSpace || type.HasCombatEquipment, "Combat equipment or cargo space required", unmet);
+                Require(!type.HasCargoSpace || !type.HasCombatEquipment, "Cargo space conflicts with combat equipment", unmet);
                 return;
 
             default:

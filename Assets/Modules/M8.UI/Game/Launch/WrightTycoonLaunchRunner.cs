@@ -11195,7 +11195,8 @@ public sealed class WrightTycoonLaunchRunner : MonoBehaviour
         return category is AircraftCategory.LightCargo
             or AircraftCategory.MediumCargo
             or AircraftCategory.HeavyCargo
-            or AircraftCategory.LongRangeCargo;
+            or AircraftCategory.LongRangeCargo
+            or AircraftCategory.MilitaryStrategicSupport;
     }
 
     private enum AircraftRoleModuleSelection

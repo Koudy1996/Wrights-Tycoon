@@ -102,7 +102,7 @@ public static class AircraftCategoryRequirementBalance
             AircraftCategoryRoleRequirement.CargoSpace => "Cargo space",
             AircraftCategoryRoleRequirement.SpecialEquipment => "Special equipment",
             AircraftCategoryRoleRequirement.CombatEquipment => "Combat equipment",
-            AircraftCategoryRoleRequirement.MilitarySupport => "Any military support role",
+            AircraftCategoryRoleRequirement.MilitarySupport => "Combat equipment or cargo space",
             _ => "Unknown role requirement",
         };
 }

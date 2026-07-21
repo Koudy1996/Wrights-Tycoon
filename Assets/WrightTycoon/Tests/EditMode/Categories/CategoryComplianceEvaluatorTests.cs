@@ -266,6 +266,34 @@ public sealed class CategoryComplianceEvaluatorTests
         Assert.That(categories, Has.Member(AircraftCategory.Bomber));
     }
 
+    [TestCase(true, false, true)]
+    [TestCase(false, true, true)]
+    [TestCase(false, false, false)]
+    [TestCase(true, true, false)]
+    public void Evaluate_MilitarySupport_AllowsExactlyCargoOrCombatModule(
+        bool hasCargoSpace,
+        bool hasCombatEquipment,
+        bool expectedCompliance)
+    {
+        var evaluator = new CategoryComplianceEvaluator();
+        var aircraft = CreateAircraft(
+            AircraftCategory.MilitaryStrategicSupport,
+            crewCount: 3,
+            speedAtSeaLevelMetersPerSecond: 500d / 3.6d,
+            rangeKilometers: 3000d,
+            payloadKilograms: 9000d,
+            totalWeightKilograms: 20000d,
+            maneuverability: 8d,
+            constructionStandard: AircraftConstructionStandard.ArmyGrade,
+            navigationEquipment: AircraftNavigationEquipment.AdvancedNavigationSuite,
+            hasCargoSpace: hasCargoSpace,
+            hasCombatEquipment: hasCombatEquipment);
+
+        var result = evaluator.Evaluate(aircraft);
+
+        Assert.That(result.IsCompliant, Is.EqualTo(expectedCompliance));
+    }
+
     private static AircraftModel CreateAircraft(
         AircraftCategory category,
         int crewCount,
