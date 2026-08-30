@@ -219,14 +219,21 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             CreateLoftPart("Fuselage", x, radiusScale, radiusScale, Vector3.zero, _fuselageMaterial, radius);
         }
 
-        var canopyLength = Mathf.Clamp(length * 0.15f, 0.58f, 1.15f);
-        var canopyX = length * 0.32f;
+        var canopyLength = Mathf.Clamp(length * 0.26f, 0.92f, 1.9f);
+        var canopyX = length * 0.27f;
         CreateLoftPart(
             "CockpitCanopy",
-            new[] { -canopyLength * 0.5f, -canopyLength * 0.34f, canopyLength * 0.20f, canopyLength * 0.5f },
-            new[] { 0.08f, 0.34f, 0.42f, 0.05f },
-            new[] { 0.08f, 0.58f, 0.48f, 0.05f },
-            new Vector3(canopyX, radius * 0.62f, 0f),
+            new[]
+            {
+                -canopyLength * 0.5f,
+                -canopyLength * 0.34f,
+                -canopyLength * 0.02f,
+                canopyLength * 0.31f,
+                canopyLength * 0.5f,
+            },
+            new[] { 0.04f, 0.43f, 0.62f, 0.5f, 0.04f },
+            new[] { 0.04f, 0.68f, 0.78f, 0.62f, 0.04f },
+            new Vector3(canopyX, radius * 0.67f, 0f),
             _glassMaterial,
             radius);
 
@@ -562,19 +569,30 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         AircraftPreviewLayout layout,
         int index)
     {
-        var cowlingLength = Mathf.Clamp(layout.FuselageRadius * 1.35f, 0.46f, 1.08f);
-        var cowlingRadius = layout.FuselageRadius * 0.92f;
+        var isRadial = moduleName == "Radial";
+        var cowlingLength = isRadial
+            ? Mathf.Clamp(layout.FuselageRadius * 1.7f, 0.58f, 1.18f)
+            : Mathf.Clamp(layout.FuselageRadius * 2.7f, 0.86f, 1.75f);
+        var cowlingRadiusY = layout.FuselageRadius * (isRadial ? 0.9f : 0.66f);
+        var cowlingRadiusZ = layout.FuselageRadius * (isRadial ? 0.9f : 0.82f);
         var noseX = layout.FuselageLength * 0.5f;
-        var cowlingCenter = new Vector3(noseX - (cowlingLength * 0.16f), 0f, 0f);
+        var cowlingCenter = new Vector3(noseX - (cowlingLength * 0.28f), 0f, 0f);
         CreateLoftPart(
             $"NoseCowling_{index}",
-            new[] { -cowlingLength * 0.5f, -cowlingLength * 0.2f, cowlingLength * 0.27f, cowlingLength * 0.5f },
-            new[] { 0.46f, 0.92f, 0.88f, 0.52f },
-            new[] { 0.46f, 0.92f, 0.88f, 0.52f },
+            new[]
+            {
+                -cowlingLength * 0.55f,
+                -cowlingLength * 0.32f,
+                0f,
+                cowlingLength * 0.34f,
+                cowlingLength * 0.55f,
+            },
+            new[] { 0.5f, 0.92f, 1f, 0.9f, 0.58f },
+            new[] { 0.5f, 0.94f, 1f, 0.88f, 0.55f },
             cowlingCenter,
             _fuselageMaterial,
-            cowlingRadius,
-            cowlingRadius,
+            cowlingRadiusY,
+            cowlingRadiusZ,
             12);
 
         var aircraftSize = Mathf.Sqrt(layout.WingArea);
@@ -584,7 +602,7 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             1.28f);
         var bladeCount = moduleName is "Radial" or "V" ? 3 : 2;
         BuildPropeller(
-            cowlingCenter.x + (cowlingLength * 0.53f),
+            cowlingCenter.x + (cowlingLength * 0.58f),
             0f,
             0f,
             propellerRadius,
@@ -596,16 +614,35 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
     {
         var bypassScale = Mathf.InverseLerp(0f, 20f, (float)bypassRatio);
         var intakeRadius = Mathf.Clamp(
-            layout.FuselageRadius * Mathf.Lerp(0.34f, 0.48f, bypassScale),
-            0.12f,
-            0.34f);
+            layout.FuselageRadius * Mathf.Lerp(0.7f, 0.82f, bypassScale),
+            0.22f,
+            0.58f);
         var exhaustRadius = intakeRadius * 0.68f;
-        var noseX = layout.FuselageLength * 0.505f;
+        var intakeFairingLength = Mathf.Clamp(layout.FuselageRadius * 1.55f, 0.58f, 1.24f);
+        var noseX = layout.FuselageLength * 0.5f;
+        var fairingCenterX = noseX - (intakeFairingLength * 0.24f);
+        var intakeX = fairingCenterX + (intakeFairingLength * 0.5f);
         var tailX = -layout.FuselageLength * 0.505f;
         var alongX = Quaternion.Euler(0f, 0f, 90f);
 
-        CreateCylinderPart($"CenterJetIntakeLip_{index}", new Vector3(noseX, 0f, 0f), intakeRadius, 0.055f, alongX, _engineMaterial, 12);
-        CreateCylinderPart($"CenterJetIntake_{index}", new Vector3(noseX + 0.032f, 0f, 0f), intakeRadius * 0.76f, 0.06f, alongX, _darkMaterial, 12);
+        CreateLoftPart(
+            $"CenterJetIntakeFairing_{index}",
+            new[]
+            {
+                -intakeFairingLength * 0.52f,
+                -intakeFairingLength * 0.28f,
+                intakeFairingLength * 0.08f,
+                intakeFairingLength * 0.5f,
+            },
+            new[] { 0.42f, 0.88f, 1f, 1f },
+            new[] { 0.42f, 0.88f, 1f, 1f },
+            new Vector3(fairingCenterX, 0f, 0f),
+            _fuselageMaterial,
+            intakeRadius,
+            intakeRadius,
+            12);
+        CreateCylinderPart($"CenterJetIntakeLip_{index}", new Vector3(intakeX, 0f, 0f), intakeRadius, 0.055f, alongX, _engineMaterial, 12);
+        CreateCylinderPart($"CenterJetIntake_{index}", new Vector3(intakeX + 0.032f, 0f, 0f), intakeRadius * 0.82f, 0.06f, alongX, _darkMaterial, 12);
         CreateCylinderPart($"CenterJetExhaustLip_{index}", new Vector3(tailX, 0f, 0f), exhaustRadius, 0.045f, alongX, _engineMaterial, 12);
         CreateCylinderPart($"CenterJetExhaust_{index}", new Vector3(tailX - 0.028f, 0f, 0f), exhaustRadius * 0.72f, 0.05f, alongX, _darkMaterial, 12);
     }

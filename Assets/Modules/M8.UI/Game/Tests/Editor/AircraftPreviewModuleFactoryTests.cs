@@ -92,8 +92,14 @@ public sealed class AircraftPreviewModuleFactoryTests
         _factory.Build(parameters, EngineType.Inline, 0d);
 
         var noseCowling = FindPart($"NoseCowling_{engineCount - 1}");
+        var fuselage = FindPart("Fuselage");
         Assert.That(noseCowling, Is.Not.Null);
+        Assert.That(fuselage, Is.Not.Null);
         Assert.That(noseCowling!.GetComponent<Renderer>().sharedMaterial, Is.SameAs(_materials[0]));
+        var cowlingBounds = noseCowling.GetComponent<Renderer>().bounds;
+        var fuselageBounds = fuselage!.GetComponent<Renderer>().bounds;
+        Assert.That(cowlingBounds.Intersects(fuselageBounds), Is.True);
+        Assert.That(cowlingBounds.size.x, Is.GreaterThan(cowlingBounds.size.y));
         Assert.That(CountParts("InlineCowling"), Is.EqualTo(expectedWingEngines));
     }
 
@@ -126,10 +132,17 @@ public sealed class AircraftPreviewModuleFactoryTests
         _factory.Build(parameters, EngineType.Turbojet, 0d);
 
         var centerIndex = engineCount - 1;
+        var fairing = FindPart($"CenterJetIntakeFairing_{centerIndex}");
         var intake = FindPart($"CenterJetIntake_{centerIndex}");
         var exhaust = FindPart($"CenterJetExhaust_{centerIndex}");
+        var fuselage = FindPart("Fuselage");
+        Assert.That(fairing, Is.Not.Null);
         Assert.That(intake, Is.Not.Null);
         Assert.That(exhaust, Is.Not.Null);
+        Assert.That(fuselage, Is.Not.Null);
+        Assert.That(fairing!.GetComponent<Renderer>().sharedMaterial, Is.SameAs(_materials[0]));
+        Assert.That(fairing.GetComponent<Renderer>().bounds.Intersects(
+            fuselage!.GetComponent<Renderer>().bounds), Is.True);
         Assert.That(intake!.localPosition.x, Is.GreaterThan(0f));
         Assert.That(exhaust!.localPosition.x, Is.LessThan(0f));
         Assert.That(CountParts("JetNacelle"), Is.EqualTo(expectedWingEngines));
@@ -205,6 +218,19 @@ public sealed class AircraftPreviewModuleFactoryTests
 
         Assert.That(evaluated, Is.GreaterThan(0));
         Assert.That(outwardScore / evaluated, Is.GreaterThan(0.1f));
+    }
+
+    [Test]
+    public void Build_CockpitCanopyIsLongAndProminent()
+    {
+        var parameters = CreateParameters();
+        _factory.Build(parameters, EngineType.Inline, 0d);
+
+        var fuselageBounds = FindPart("Fuselage")!.GetComponent<Renderer>().bounds;
+        var canopyBounds = FindPart("CockpitCanopy")!.GetComponent<Renderer>().bounds;
+
+        Assert.That(canopyBounds.size.x, Is.GreaterThan(fuselageBounds.size.x * 0.2f));
+        Assert.That(canopyBounds.max.y, Is.GreaterThan(fuselageBounds.max.y));
     }
 
     [Test]
