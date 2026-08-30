@@ -146,6 +146,71 @@ public sealed class AircraftPreviewModuleFactoryTests
         Assert.That(intake!.localPosition.x, Is.GreaterThan(0f));
         Assert.That(exhaust!.localPosition.x, Is.LessThan(0f));
         Assert.That(CountParts("JetNacelle"), Is.EqualTo(expectedWingEngines));
+        Assert.That(CountParts("CenterJetExhaustFairing"), Is.EqualTo(engineCount == 1 ? 1 : 0));
+    }
+
+    [Test]
+    public void Build_SingleJetIntakeFairingIsTwoThirdsShorterThanMultiEngineFairing()
+    {
+        var parameters = CreateParameters();
+        parameters.EngineCount = 1;
+        _factory.Build(parameters, EngineType.Turbojet, 0d);
+        var singleLength = FindPart("CenterJetIntakeFairing_0")!
+            .GetComponent<Renderer>().bounds.size.x;
+
+        parameters.EngineCount = 3;
+        _factory.Build(parameters, EngineType.Turbojet, 0d);
+        var multiLength = FindPart("CenterJetIntakeFairing_2")!
+            .GetComponent<Renderer>().bounds.size.x;
+
+        Assert.That(singleLength, Is.EqualTo(multiLength / 3f).Within(0.002f));
+    }
+
+    [TestCase(EngineType.Inline, "InlineCowling_0")]
+    [TestCase(EngineType.Radial, "RadialCowling_0")]
+    public void Build_WingMountedPistonNacelleHasAerodynamicTail(
+        EngineType engineType,
+        string cowlingName)
+    {
+        var parameters = CreateParameters();
+        parameters.EngineCount = 2;
+        _factory.Build(parameters, engineType, 0d);
+
+        var cowlingBounds = FindPart(cowlingName)!.GetComponent<Renderer>().bounds;
+        var tailBounds = FindPart("PistonNacelleTail_0")!.GetComponent<Renderer>().bounds;
+
+        Assert.That(tailBounds.max.x, Is.GreaterThanOrEqualTo(cowlingBounds.min.x));
+        Assert.That(tailBounds.min.x, Is.LessThan(cowlingBounds.min.x));
+    }
+
+    [Test]
+    public void Build_MultiEngineAircraftAddsCenteredNose()
+    {
+        var parameters = CreateParameters();
+        parameters.EngineCount = 2;
+        _factory.Build(parameters, EngineType.Turbojet, 0d);
+
+        var noseBounds = FindPart("CenteredMultiEngineNose")!.GetComponent<Renderer>().bounds;
+        Assert.That(noseBounds.center.y, Is.EqualTo(0f).Within(0.001f));
+        Assert.That(noseBounds.center.z, Is.EqualTo(0f).Within(0.001f));
+
+        parameters.EngineCount = 1;
+        _factory.Build(parameters, EngineType.Turbojet, 0d);
+        Assert.That(FindPart("CenteredMultiEngineNose"), Is.Null);
+    }
+
+    [Test]
+    public void Build_CargoConfigurationHasNoPassengerWindows()
+    {
+        var parameters = CreateParameters();
+
+        _factory.Build(parameters, EngineType.Inline, 0d, showPassengerWindows: false);
+        Assert.That(CountParts("CabinWindow"), Is.Zero);
+        Assert.That(CountParts("CargoWindowBlank"), Is.EqualTo(2));
+
+        _factory.Build(parameters, EngineType.Inline, 0d, showPassengerWindows: true);
+        Assert.That(CountParts("CabinWindow"), Is.GreaterThan(0));
+        Assert.That(CountParts("CargoWindowBlank"), Is.Zero);
     }
 
     [TestCase(TailType.Classic, "ClassicFin")]
@@ -338,6 +403,18 @@ public sealed class AircraftPreviewModuleFactoryTests
         renderer.ResetView();
 
         Assert.That(Quaternion.Angle(defaultRotation, renderer.ModelRotation), Is.LessThan(0.001f));
+    }
+
+    [Test]
+    public void PreviewRotation_MouseUpTurnsAircraftNoseUp()
+    {
+        using var renderer = new AircraftPreview3DRenderer();
+        var defaultNoseDirection = renderer.ModelRotation * Vector3.right;
+
+        renderer.RotateBy(new Vector2(0f, -20f));
+
+        var rotatedNoseDirection = renderer.ModelRotation * Vector3.right;
+        Assert.That(rotatedNoseDirection.y, Is.GreaterThan(defaultNoseDirection.y));
     }
 
     private int CountParts(string prefix)

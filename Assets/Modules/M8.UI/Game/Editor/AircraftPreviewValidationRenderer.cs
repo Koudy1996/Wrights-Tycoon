@@ -51,6 +51,7 @@ public static class AircraftPreviewValidationRenderer
             new PreviewCase("engine-turbojet-4", EngineType.Turbojet, 0d, 4, TailType.Classic, WingPosition.Low, WingShape.Swept),
             new PreviewCase("engine-turbofan-low-5", EngineType.Turbofan, 6d, 5, TailType.Classic, WingPosition.Low, WingShape.Swept),
             new PreviewCase("engine-turbofan-high-6", EngineType.Turbofan, 16d, 6, TailType.Classic, WingPosition.Low, WingShape.Swept),
+            new PreviewCase("cargo-no-windows", EngineType.Inline, 0d, 2, TailType.Classic, WingPosition.High, WingShape.Straight, showPassengerWindows: false),
         };
         var tailCases = new[]
         {
@@ -110,7 +111,11 @@ public static class AircraftPreviewValidationRenderer
             LandingGearType = LandingGearType.Fixed,
             MaterialType = MaterialType.Aluminum,
         };
-        var layout = factory.Build(parameters, previewCase.EngineType, previewCase.BypassRatio);
+        var layout = factory.Build(
+            parameters,
+            previewCase.EngineType,
+            previewCase.BypassRatio,
+            previewCase.ShowPassengerWindows);
 
         var cameraObject = new GameObject("Camera") { hideFlags = HideFlags.HideAndDontSave };
         cameraObject.transform.SetParent(root.transform, false);
@@ -227,7 +232,8 @@ public static class AircraftPreviewValidationRenderer
             WingPosition wingPosition,
             WingShape wingShape,
             double wingAspectRatio = 8d,
-            double wingAreaSquareMeters = 48d)
+            double wingAreaSquareMeters = 48d,
+            bool showPassengerWindows = true)
         {
             FileName = fileName;
             EngineType = engineType;
@@ -238,6 +244,7 @@ public static class AircraftPreviewValidationRenderer
             WingShape = wingShape;
             WingAspectRatio = wingAspectRatio;
             WingAreaSquareMeters = wingAreaSquareMeters;
+            ShowPassengerWindows = showPassengerWindows;
         }
 
         public string FileName { get; }
@@ -257,5 +264,7 @@ public static class AircraftPreviewValidationRenderer
         public double WingAspectRatio { get; }
 
         public double WingAreaSquareMeters { get; }
+
+        public bool ShowPassengerWindows { get; }
     }
 }

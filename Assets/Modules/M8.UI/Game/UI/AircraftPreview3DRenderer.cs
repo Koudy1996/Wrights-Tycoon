@@ -33,7 +33,12 @@ public sealed class AircraftPreview3DRenderer : IDisposable
 
     internal Quaternion ModelRotation => _modelRotation;
 
-    public bool Draw(Rect rect, AirframeParameters parameters, EngineType engineType, double bypassRatio)
+    public bool Draw(
+        Rect rect,
+        AirframeParameters parameters,
+        EngineType engineType,
+        double bypassRatio,
+        bool showPassengerWindows = true)
     {
         if (rect.width < 16f || rect.height < 16f)
         {
@@ -49,11 +54,11 @@ public sealed class AircraftPreview3DRenderer : IDisposable
         var resetRect = GetResetButtonRect(rect);
         HandleRotationInput(rect, resetRect);
 
-        var signature = BuildSignature(parameters, engineType, bypassRatio);
+        var signature = $"{BuildSignature(parameters, engineType, bypassRatio)}|{showPassengerWindows}";
         if (!string.Equals(signature, _lastSignature, StringComparison.Ordinal))
         {
             UpdateMaterialPalette(parameters.MaterialType);
-            _layout = _moduleFactory.Build(parameters, engineType, bypassRatio);
+            _layout = _moduleFactory.Build(parameters, engineType, bypassRatio, showPassengerWindows);
             _lastSignature = signature;
         }
 
@@ -290,7 +295,7 @@ public sealed class AircraftPreview3DRenderer : IDisposable
     internal void RotateBy(Vector2 mouseDelta)
     {
         var yaw = Quaternion.AngleAxis(-mouseDelta.x * RotationSensitivity, Vector3.up);
-        var pitch = Quaternion.AngleAxis(mouseDelta.y * RotationSensitivity, Vector3.right);
+        var pitch = Quaternion.AngleAxis(-mouseDelta.y * RotationSensitivity, Vector3.forward);
         _modelRotation = (yaw * pitch * _modelRotation).normalized;
     }
 
@@ -311,7 +316,10 @@ public sealed class AircraftPreview3DRenderer : IDisposable
         GUI.color = previousColor;
     }
 
-    private static string BuildSignature(AirframeParameters parameters, EngineType engineType, double bypassRatio)
+    private static string BuildSignature(
+        AirframeParameters parameters,
+        EngineType engineType,
+        double bypassRatio)
     {
         return string.Join(
             "|",

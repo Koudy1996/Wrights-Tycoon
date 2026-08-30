@@ -4570,7 +4570,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             aircraftVisualRect,
             _aircraftPreview.Airframe.Parameters,
             _aircraftPreview.Engine.Definition.EngineType,
-            _aircraftPreview.Engine.Parameters.BypassRatio);
+            _aircraftPreview.Engine.Parameters.BypassRatio,
+            showPassengerWindows: _aircraftPreview.TypeDefinition.HasPassengerCabin
+                && !_aircraftPreview.TypeDefinition.HasCargoSpace);
         if (!rendered3d)
         {
             // Fallback if 3D preview cannot be rendered in current graphics mode.
