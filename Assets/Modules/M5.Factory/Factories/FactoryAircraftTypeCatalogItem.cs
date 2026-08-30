@@ -11,17 +11,12 @@ public sealed class FactoryAircraftTypeCatalogItem
     public FactoryAircraftTypeCatalogItem(
         string designId,
         string displayName,
-        AircraftModel aircraft,
-        int requiredFactoryToolLevel,
-        int requiredLineToolLevel)
+        AircraftModel aircraft)
     {
         DesignId = designId ?? throw new ArgumentNullException(nameof(designId));
         DisplayName = displayName ?? throw new ArgumentNullException(nameof(displayName));
         Aircraft = aircraft ?? throw new ArgumentNullException(nameof(aircraft));
         QualifiedCategories = new AircraftCategoryQualificationEvaluator().GetQualifiedCategories(Aircraft);
-        RequiredFactoryToolLevel = requiredFactoryToolLevel;
-        RequiredLineToolLevel = requiredLineToolLevel;
-
         Validate();
     }
 
@@ -41,10 +36,6 @@ public sealed class FactoryAircraftTypeCatalogItem
     public bool QualifiesForCategory(AircraftCategory category, int qualificationYear) =>
         GetQualifiedCategoriesForYear(qualificationYear).Contains(category);
 
-    public int RequiredFactoryToolLevel { get; }
-
-    public int RequiredLineToolLevel { get; }
-
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(DesignId))
@@ -57,14 +48,5 @@ public sealed class FactoryAircraftTypeCatalogItem
             throw new ArgumentException("Display name cannot be empty.", nameof(DisplayName));
         }
 
-        if (RequiredFactoryToolLevel < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(RequiredFactoryToolLevel), "Required factory tool level must be >= 1.");
-        }
-
-        if (RequiredLineToolLevel < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(RequiredLineToolLevel), "Required line tool level must be >= 1.");
-        }
     }
 }

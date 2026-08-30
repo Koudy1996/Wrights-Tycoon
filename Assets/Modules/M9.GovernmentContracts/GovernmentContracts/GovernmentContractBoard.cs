@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Categories;
+using WrightTycoon.Core.Presentation;
 using WrightTycoon.Core.Simulation;
 
 namespace WrightTycoon.Core.GovernmentContracts;
@@ -207,7 +208,7 @@ public sealed class GovernmentContractBoard
 
         return new GovernmentContractAcceptanceResult(
             true,
-            $"Government contract accepted. Upfront funding granted: {upfrontFunding:0.00}.",
+            $"Government contract accepted. Upfront funding granted: {FinancialValueFormatter.FormatNumber(upfrontFunding, "0.00")}.",
             upfrontFunding,
             compliance);
     }

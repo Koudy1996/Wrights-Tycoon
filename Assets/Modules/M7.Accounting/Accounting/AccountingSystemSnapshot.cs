@@ -30,6 +30,14 @@ public sealed class AccountingMonthSnapshot
     public List<InventoryValueEntry> InventoryEntries { get; set; } = new();
 
     public double InventoryValue { get; set; }
+
+    public double LoanInterestExpenses { get; set; }
+
+    public double LoanFeeExpenses { get; set; }
+
+    public double LoanPrincipalReceived { get; set; }
+
+    public double LoanPrincipalRepaid { get; set; }
 }
 
 public sealed class AccountingTransactionSnapshot
@@ -47,4 +55,8 @@ public sealed class AccountingTransactionSnapshot
     public double Amount { get; set; }
 
     public double CashAfterTransaction { get; set; }
+
+    public int Kind { get; set; }
+
+    public string? ReferenceId { get; set; }
 }

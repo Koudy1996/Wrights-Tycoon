@@ -28,8 +28,6 @@ public sealed class AircraftTypeDefinition
 
     public TypeResearchModifierPoints ResearchModifiers { get; init; } = new();
 
-    public int RequiredLineToolLevel { get; init; } = 1;
-
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(Id))
@@ -45,11 +43,6 @@ public sealed class AircraftTypeDefinition
         if (string.IsNullOrWhiteSpace(DisplayName))
         {
             throw new ArgumentException("Type display name cannot be empty.", nameof(DisplayName));
-        }
-
-        if (RequiredLineToolLevel < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(RequiredLineToolLevel), "Required line tool level must be >= 1.");
         }
 
         if (!Enum.IsDefined(typeof(AircraftNavigationEquipment), NavigationEquipment))

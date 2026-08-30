@@ -10,7 +10,13 @@ public sealed record MonthlyAccountingSnapshot(
     double Income,
     AccountingCostBreakdown Costs,
     IReadOnlyDictionary<string, InventoryValueEntry> InventoryByDesign,
-    double InventoryValue)
+    double InventoryValue,
+    double LoanInterestExpenses = 0d,
+    double LoanFeeExpenses = 0d,
+    double LoanPrincipalReceived = 0d,
+    double LoanPrincipalRepaid = 0d)
 {
-    public double MonthlyProfitLoss => Income - Costs.TotalCosts;
+    public double OperatingProfitLoss => Income - Costs.TotalCosts;
+    public double MonthlyProfitLoss => OperatingProfitLoss - LoanInterestExpenses - LoanFeeExpenses;
+    public double NetFinancingCashFlow => LoanPrincipalReceived - LoanPrincipalRepaid - LoanInterestExpenses - LoanFeeExpenses;
 }

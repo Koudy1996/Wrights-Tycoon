@@ -24,8 +24,6 @@ public sealed class AircraftProductionLineState
 
     public double CarryOverManDays { get; private set; }
 
-    public int LineToolLevel { get; private set; } = 1;
-
     public int LifetimeProducedUnits { get; private set; }
 
     public void Validate()
@@ -59,20 +57,15 @@ public sealed class AircraftProductionLineState
             throw new ArgumentOutOfRangeException(nameof(CarryOverManDays), "Carry-over man-days must be >= 0.");
         }
 
-        if (LineToolLevel < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(LineToolLevel), "Line tool level must be >= 1.");
-        }
-
         if (LifetimeProducedUnits < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(LifetimeProducedUnits), "Lifetime produced units must be >= 0.");
         }
     }
 
-    public void AssignDesign(string? designId) => AssignedDesignId = string.IsNullOrWhiteSpace(designId) ? null : designId.Trim();
+    internal void AssignDesign(string? designId) => AssignedDesignId = string.IsNullOrWhiteSpace(designId) ? null : designId.Trim();
 
-    public void SetMonthlyProductionTargetUnits(int targetUnits)
+    internal void SetMonthlyProductionTargetUnits(int targetUnits)
     {
         if (targetUnits < 0 || targetUnits > FactoryBalance.MaximumAircraftPerLinePerMonth)
         {
@@ -84,7 +77,7 @@ public sealed class AircraftProductionLineState
         MonthlyProductionTargetUnits = targetUnits;
     }
 
-    public void SetTotalProductionTargetUnits(int targetUnits)
+    internal void SetTotalProductionTargetUnits(int targetUnits)
     {
         if (targetUnits < 0)
         {
@@ -94,7 +87,7 @@ public sealed class AircraftProductionLineState
         TotalProductionTargetUnits = targetUnits;
     }
 
-    public void SetAutoAssignedEmployees(int employees)
+    internal void SetAutoAssignedEmployees(int employees)
     {
         if (employees < 0)
         {
@@ -104,22 +97,7 @@ public sealed class AircraftProductionLineState
         Employees = employees;
     }
 
-    public void UpgradeLineToolLevel(int targetLevel)
-    {
-        if (targetLevel < LineToolLevel)
-        {
-            throw new InvalidOperationException("Line tooling cannot be downgraded.");
-        }
-
-        if (targetLevel < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(targetLevel), "Line tool level must be >= 1.");
-        }
-
-        LineToolLevel = targetLevel;
-    }
-
-    public void ApplyMonthResult(int producedUnits, double carryOverManDays)
+    internal void ApplyMonthResult(int producedUnits, double carryOverManDays)
     {
         if (producedUnits < 0)
         {
@@ -136,7 +114,7 @@ public sealed class AircraftProductionLineState
         CarryOverManDays = carryOverManDays;
     }
 
-    public void SetLifetimeProducedUnits(int producedUnits)
+    internal void SetLifetimeProducedUnits(int producedUnits)
     {
         if (producedUnits < 0)
         {
@@ -146,7 +124,7 @@ public sealed class AircraftProductionLineState
         LifetimeProducedUnits = producedUnits;
     }
 
-    public void SetCarryOverWithoutProduction(double carryOverManDays)
+    internal void SetCarryOverWithoutProduction(double carryOverManDays)
     {
         Numeric.ThrowIfNotFinite(carryOverManDays, nameof(carryOverManDays));
         if (carryOverManDays < 0d)

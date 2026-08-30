@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Globalization;
 using WrightTycoon.Core.Balance;
+using WrightTycoon.Core.Presentation;
 
 namespace WrightTycoon.Core.Research;
 
@@ -98,7 +99,7 @@ public sealed class ResearchBoard
         approvedProject = project;
         var speedBonusSuffix = speedBonusApplied ? " First-year speed bonus applied." : string.Empty;
         message =
-            $"Approved '{project.DisplayName}'. Cost: {FormatUiNumber(bookedExpense, "0.00")}, duration: {FormatUiInteger(project.ResearchTimeMonths)} months.{speedBonusSuffix}";
+            $"Approved '{project.DisplayName}'. Cost: {FinancialValueFormatter.FormatNumber(bookedExpense, "0.00")}, duration: {FormatUiInteger(project.ResearchTimeMonths)} months.{speedBonusSuffix}";
         return true;
     }
 
@@ -158,6 +159,18 @@ public sealed class ResearchBoard
 
         var researchId = BuildResearchId(subjectType, NormalizeSubjectId(subjectId));
         return _projects.TryGetValue(researchId, out var project) && project.IsCompleted;
+    }
+
+    public bool IsApprovedForDevelopment(ResearchSubjectType subjectType, string subjectId)
+    {
+        if (string.IsNullOrWhiteSpace(subjectId))
+        {
+            return false;
+        }
+
+        var researchId = BuildResearchId(subjectType, NormalizeSubjectId(subjectId));
+        return _projects.TryGetValue(researchId, out var project)
+            && project.Status is ResearchStatus.Ongoing or ResearchStatus.Completed;
     }
 
     public bool TryGetResearchCost(ResearchSubjectType subjectType, string subjectId, out double researchCost)
@@ -277,9 +290,6 @@ public sealed class ResearchBoard
         culture.NumberFormat.NumberGroupSizes = new[] { 3 };
         return culture;
     }
-
-    private static string FormatUiNumber(double value, string format) =>
-        value.ToString($"#,##{format}", UiNumberCulture);
 
     private static string FormatUiInteger(int value) =>
         value.ToString("#,##0", UiNumberCulture);

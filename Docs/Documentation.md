@@ -32,10 +32,10 @@ Tabs (left panel = inputs/actions, right panel = report/preview):
 - **Engine Designer**: edit parameters, preview stats, and **Save Engine** for use in aircraft designs.
 - **Airframe + Type Designer**: configure a family/type (airframe parameters, category compliance, etc.), then **Save Family** and **Save Aircraft Design**.
 - **Research**: monthly research progression and approvals.
-- **Factory**: assign saved aircraft designs to production lines and run month-by-month production; outputs go to warehouse stock.
+- **Factory**: build any number of 80 million factories over 18 months. Each factory has one type-specific production line and costs 600 thousand per operational month. Production equipment is tracked in the company-wide Central Equipment Depot, may be installed in any empty factory, and multiple equipment sets may serve the same aircraft type. Stored equipment and dismantling are free; reinstallation is paid. Production targets persist through installation and are capped by the selected automation tier. Outputs go to company-wide aircraft warehouse stock.
 - **Contracts**: contracts are generated when you press **Next Month**; select how to fulfill them (typically from warehouse stock) and deliver.
 - **Government Contracts**: separate contract flow for government inventory/delivery.
-- **Finance**: summary of income/expenses and per-month details once months have been processed.
+- **Finance**: summary of operating income/expenses, financing cash flow, transactions and loans. Standard amortized and interest-only loans share the same health-based limit, APR, fee and terms and may be used for any purpose. Principal is kept outside profit/loss, while interest and fees reduce net profit. Partial or full repayment is available at any time. The first negative cash event may offer a one-time emergency loan before bankruptcy.
 
 ### Saves, Logs, and “Player Info”
 
@@ -120,6 +120,7 @@ Main balance files:
 - `Assets/Modules/M3.PlaneDesigner/balance/PlaneDesignerBalance.cs`
 - `Assets/Modules/M5.Factory/balance/FactoryBalance.cs`
 - `Assets/Modules/M6.Contracts/balance/ContractBalance.cs`
+- `Assets/Modules/M7.Accounting/Accounting/LoanBalance.cs`
 
 Legacy compatibility binding (UI-facing):
 

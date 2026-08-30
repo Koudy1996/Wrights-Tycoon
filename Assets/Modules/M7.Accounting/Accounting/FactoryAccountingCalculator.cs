@@ -9,7 +9,9 @@ public sealed class FactoryAccountingCalculator
 {
     public AccountingCostBreakdown CalculateMonthlyCosts(
         FactoryMonthlyProductionReport report,
-        IReadOnlyDictionary<string, FactoryAircraftTypeCatalogItem> catalog)
+        IReadOnlyDictionary<string, FactoryAircraftTypeCatalogItem> catalog,
+        double factoryMaintenanceExpenses = 0d,
+        double activeEquipmentExpenses = 0d)
     {
         if (report is null)
         {
@@ -21,8 +23,6 @@ public sealed class FactoryAccountingCalculator
             throw new ArgumentNullException(nameof(catalog));
         }
 
-        var fixedProductionLineExpenses = 0d;
-
         var variablePlaneStaffExpenses = 0d;
         var variablePlaneBuildExpenses = 0d;
         var variableEngineBuildExpenses = 0d;
@@ -30,17 +30,6 @@ public sealed class FactoryAccountingCalculator
         foreach (var line in report.LineReports)
         {
             variablePlaneStaffExpenses += line.Employees * FactoryBalance.PlaneStaffMonthlyCostPerEmployee;
-
-            if (string.IsNullOrWhiteSpace(line.AssignedDesignId)
-                || !catalog.TryGetValue(line.AssignedDesignId, out var assignedDesign))
-            {
-                fixedProductionLineExpenses += FactoryBalance.UnassignedLineMonthlyStandbyCost;
-            }
-            else
-            {
-                fixedProductionLineExpenses += assignedDesign.Aircraft.Performance.CompleteProductionCost
-                    * FactoryBalance.AssignedLineMonthlyAircraftCostShare;
-            }
 
             if (line.ProducedUnits <= 0 || string.IsNullOrWhiteSpace(line.AssignedDesignId))
             {
@@ -68,7 +57,8 @@ public sealed class FactoryAccountingCalculator
             * FactoryBalance.EngineStaffMonthlyCostPerEmployee;
 
         return new AccountingCostBreakdown(
-            fixedProductionLineExpenses,
+            factoryMaintenanceExpenses,
+            activeEquipmentExpenses,
             variableEngineStaffExpenses,
             variableEngineBuildExpenses,
             variablePlaneStaffExpenses,

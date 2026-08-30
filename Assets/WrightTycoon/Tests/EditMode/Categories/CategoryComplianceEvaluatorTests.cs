@@ -32,6 +32,48 @@ public sealed class CategoryComplianceEvaluatorTests
     }
 
     [Test]
+    public void Evaluate_UsesHighestSpeedAcrossAllAltitudeSamples()
+    {
+        var evaluator = new CategoryComplianceEvaluator();
+        var aircraft = CreateAircraft(
+            AircraftCategory.LightSportAndRecreational,
+            crewCount: 2,
+            speedAtSeaLevelMetersPerSecond: 10d,
+            rangeKilometers: 520d,
+            payloadKilograms: 260d,
+            totalWeightKilograms: 900d,
+            constructionStandard: AircraftConstructionStandard.Ultralight,
+            speedAtFiveKilometersMetersPerSecond: 24d,
+            speedAtTenKilometersMetersPerSecond: 20d);
+
+        var result = evaluator.Evaluate(aircraft);
+
+        Assert.That(result.IsCompliant, Is.True);
+        Assert.That(string.Join(" | ", result.UnmetRequirements), Does.Not.Contain("Speed"));
+    }
+
+    [Test]
+    public void Evaluate_RejectsSpeedWhenEveryAltitudeSampleIsBelowMinimum()
+    {
+        var evaluator = new CategoryComplianceEvaluator();
+        var aircraft = CreateAircraft(
+            AircraftCategory.LightSportAndRecreational,
+            crewCount: 2,
+            speedAtSeaLevelMetersPerSecond: 10d,
+            rangeKilometers: 520d,
+            payloadKilograms: 260d,
+            totalWeightKilograms: 900d,
+            constructionStandard: AircraftConstructionStandard.Ultralight,
+            speedAtFiveKilometersMetersPerSecond: 15d,
+            speedAtTenKilometersMetersPerSecond: 20d);
+
+        var result = evaluator.Evaluate(aircraft);
+
+        Assert.That(result.IsCompliant, Is.False);
+        Assert.That(result.UnmetRequirements, Has.Some.Contains("Speed"));
+    }
+
+    [Test]
     public void Evaluate_ReturnsDetailedUnmetRequirements_WhenAircraftMissesMinimumsOrWeightCeiling()
     {
         var evaluator = new CategoryComplianceEvaluator();
@@ -309,7 +351,9 @@ public sealed class CategoryComplianceEvaluatorTests
         bool hasCargoSpace = false,
         double weaponPayloadKilograms = 0d,
         bool hasSpecialEquipment = false,
-        bool hasCombatEquipment = false)
+        bool hasCombatEquipment = false,
+        double? speedAtFiveKilometersMetersPerSecond = null,
+        double? speedAtTenKilometersMetersPerSecond = null)
     {
         var family = new AircraftFamilyDefinition
         {
@@ -393,8 +437,8 @@ public sealed class CategoryComplianceEvaluatorTests
             new[]
             {
                 new AircraftPerformancePoint(0d, speedAtSeaLevelMetersPerSecond),
-                new AircraftPerformancePoint(5000d, speedAtSeaLevelMetersPerSecond),
-                new AircraftPerformancePoint(10000d, speedAtSeaLevelMetersPerSecond),
+                new AircraftPerformancePoint(5000d, speedAtFiveKilometersMetersPerSecond ?? speedAtSeaLevelMetersPerSecond),
+                new AircraftPerformancePoint(10000d, speedAtTenKilometersMetersPerSecond ?? speedAtSeaLevelMetersPerSecond),
             },
             rangeKilometers,
             Mass.FromKilograms(payloadKilograms),

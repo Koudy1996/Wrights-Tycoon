@@ -7,16 +7,21 @@ using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Math;
+using WrightTycoon.Core.Headquarters;
 
 namespace WrightTycoon.Core.Contracts;
 
 public sealed class ContractEvaluator : IContractEvaluator
 {
     private readonly Func<int>? _qualificationYearProvider;
+    private readonly Func<int>? _companyQualityLevelProvider;
 
-    public ContractEvaluator(Func<int>? qualificationYearProvider = null)
+    public ContractEvaluator(
+        Func<int>? qualificationYearProvider = null,
+        Func<int>? companyQualityLevelProvider = null)
     {
         _qualificationYearProvider = qualificationYearProvider;
+        _companyQualityLevelProvider = companyQualityLevelProvider;
     }
 
     public ContractEvaluationReport Evaluate(Contract contract, WrightTycoon.Core.Aircraft.Aircraft aircraft)
@@ -56,7 +61,9 @@ public sealed class ContractEvaluator : IContractEvaluator
         if (requirements.MinimumReliability.HasValue)
         {
             var minimumReliability = requirements.MinimumReliability.Value;
-            var actualReliability = aircraft.Performance.OverallReliability;
+            var actualReliability = HeadquartersBalance.ApplyCompanyReliabilityBonus(
+                aircraft.Performance.OverallReliability,
+                _companyQualityLevelProvider?.Invoke() ?? 0);
             if (actualReliability + Numeric.Epsilon < minimumReliability)
             {
                 unmetRequirements.Add($"Reliability {FormatUiNumber(actualReliability, "0.000")} < {FormatUiNumber(minimumReliability, "0.000")}");

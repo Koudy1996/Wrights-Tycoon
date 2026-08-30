@@ -436,15 +436,9 @@ public sealed class EngineCalculator : IEngineCalculator
             var bypass = parameters.BypassRatio;
             fanBypassFactor = 0.58d + (0.03d * System.Math.Sqrt(System.Math.Max(bypass, JetBypassRatioMin)));
             coreScale = 0.23d + (0.42d / (bypass + 0.8d));
-
-            if (bypass < 2d)
-            {
-                coreScale *= 1d + (((2d - bypass) / 2d) * 0.7d);
-            }
-
-            bypassHardware = bypass * 6d;
-            var lowBypassRpmFactor = 1d + (1.2d / (bypass + 0.5d));
-            rpmHardware = System.Math.Max(0d, parameters.MaximumSpeed - 5000d) * 0.022d * lowBypassRpmFactor;
+            bypassHardware = (bypass * 6d) + (System.Math.Max(0d, 1d - bypass) * 20d);
+            var highBypassRpmFactor = 1.65d + (0.15d * bypass);
+            rpmHardware = System.Math.Max(0d, parameters.MaximumSpeed - 5000d) * 0.022d * highBypassRpmFactor;
         }
         else
         {
@@ -454,8 +448,8 @@ public sealed class EngineCalculator : IEngineCalculator
             rpmHardware = System.Math.Max(0d, parameters.MaximumSpeed - 5000d) * 0.018d;
         }
 
-        // Split jet mass into fan casing + core hardware so low-bypass high-RPM designs
-        // can stay heavy even with smaller fan diameters.
+        // Split jet mass into fan casing + core hardware. Turbofan spool and fan
+        // hardware now become heavier as bypass ratio rises at otherwise fixed inputs.
         var fanMass = turbineAreaFactor
             * definition.WeightPerTurbineSquareMeter
             * fanBypassFactor

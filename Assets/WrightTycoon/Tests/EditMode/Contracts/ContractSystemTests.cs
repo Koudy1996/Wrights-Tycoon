@@ -613,6 +613,33 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    public void Evaluator_AppliesCompanyQualityWithoutMutatingAircraft()
+    {
+        var qualityLevel = 2;
+        var evaluator = new ContractEvaluator(companyQualityLevelProvider: () => qualityLevel);
+        var aircraft = CreateAircraft(
+            reliability: 0.84d,
+            rangeKilometers: 1800d,
+            speedAtSeaLevel: 90d,
+            speedAtFiveKilometers: 84d,
+            speedAtTenKilometers: 78d,
+            payloadKilograms: 3100d,
+            crewCount: 2);
+        var contract = new Contract(
+            "ctr.test.company-quality",
+            "Quality Air",
+            quantityUnits: 20,
+            deadlineMonths: 12,
+            new ContractRequirements { MinimumReliability = 0.86d },
+            createdMonthIndex: 0);
+
+        var evaluation = evaluator.Evaluate(contract, aircraft);
+
+        Assert.That(evaluation.CanDeliver, Is.True);
+        Assert.That(aircraft.Performance.OverallReliability, Is.EqualTo(0.84d).Within(1e-9));
+    }
+
+    [Test]
     public void Evaluator_BlocksDelivery_WhenRunwayRequirementIsTooShort()
     {
         var evaluator = new ContractEvaluator();
@@ -906,9 +933,7 @@ public sealed class ContractSystemTests
             ["design.stock"] = new FactoryAircraftTypeCatalogItem(
                 "design.stock",
                 "Stock Aircraft",
-                aircraft,
-                requiredFactoryToolLevel: 1,
-                requiredLineToolLevel: 1),
+                aircraft),
         };
 
         var deliveryService = new ContractWarehouseDeliveryService(board, warehouse);
@@ -957,9 +982,7 @@ public sealed class ContractSystemTests
             ["design.stock"] = new FactoryAircraftTypeCatalogItem(
                 "design.stock",
                 "Stock Aircraft",
-                aircraft,
-                requiredFactoryToolLevel: 1,
-                requiredLineToolLevel: 1),
+                aircraft),
         };
 
         var deliveryService = new ContractWarehouseDeliveryService(board, warehouse);

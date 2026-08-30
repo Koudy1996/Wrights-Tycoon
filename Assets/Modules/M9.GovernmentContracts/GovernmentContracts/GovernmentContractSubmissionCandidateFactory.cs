@@ -5,6 +5,7 @@ using WrightTycoon.Core.Airframes;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Categories;
 using WrightTycoon.Core.Factories;
+using WrightTycoon.Core.Headquarters;
 
 namespace WrightTycoon.Core.GovernmentContracts;
 
@@ -14,7 +15,8 @@ public static class GovernmentContractSubmissionCandidateFactory
         FactoryAircraftTypeCatalogItem catalogItem,
         AircraftLifecycleStage lifecycleStage,
         GovernmentContractDevelopmentPriceBreakdown? developmentPriceBreakdown = null,
-        int? qualificationYear = null)
+        int? qualificationYear = null,
+        int companyQualityLevel = 0)
     {
         if (catalogItem is null)
         {
@@ -25,7 +27,7 @@ public static class GovernmentContractSubmissionCandidateFactory
         var qualifiedCategories = qualificationYear.HasValue
             ? catalogItem.GetQualifiedCategoriesForYear(qualificationYear.Value)
             : catalogItem.QualifiedCategories;
-        var metrics = BuildMetrics(aircraft, qualifiedCategories);
+        var metrics = BuildMetrics(aircraft, qualifiedCategories, companyQualityLevel);
         return new GovernmentContractSubmissionCandidate(
             catalogItem.DesignId,
             catalogItem.DisplayName,
@@ -40,7 +42,8 @@ public static class GovernmentContractSubmissionCandidateFactory
         AircraftLifecycleStage lifecycleStage,
         WrightTycoon.Core.Aircraft.Aircraft aircraft,
         GovernmentContractDevelopmentPriceBreakdown? developmentPriceBreakdown = null,
-        int? qualificationYear = null)
+        int? qualificationYear = null,
+        int companyQualityLevel = 0)
     {
         if (aircraft is null)
         {
@@ -51,7 +54,7 @@ public static class GovernmentContractSubmissionCandidateFactory
         var qualifiedCategories = qualificationYear.HasValue
             ? qualificationEvaluator.GetQualifiedCategories(aircraft, qualificationYear.Value)
             : qualificationEvaluator.GetQualifiedCategories(aircraft);
-        var metrics = BuildMetrics(aircraft, qualifiedCategories);
+        var metrics = BuildMetrics(aircraft, qualifiedCategories, companyQualityLevel);
         return new GovernmentContractSubmissionCandidate(
             designId,
             displayName,
@@ -62,7 +65,8 @@ public static class GovernmentContractSubmissionCandidateFactory
 
     private static GovernmentContractAircraftMetrics BuildMetrics(
         WrightTycoon.Core.Aircraft.Aircraft aircraft,
-        IReadOnlyList<AircraftCategory> qualifiedCategories)
+        IReadOnlyList<AircraftCategory> qualifiedCategories,
+        int companyQualityLevel)
     {
         var lowSpeed = GetSpeedAtAltitude(aircraft.Performance, GovernmentContractBalance.SpeedAltitudeLowMeters);
         var mediumSpeed = GetSpeedAtAltitude(aircraft.Performance, GovernmentContractBalance.SpeedAltitudeMediumMeters);
@@ -80,7 +84,9 @@ public static class GovernmentContractSubmissionCandidateFactory
             highSpeed,
             certifiedRangeKilometers,
             aircraft.Performance.PayloadCapacity.Kilograms,
-            aircraft.Performance.OverallReliability,
+            HeadquartersBalance.ApplyCompanyReliabilityBonus(
+                aircraft.Performance.OverallReliability,
+                companyQualityLevel),
             aircraft.Airframe.Performance.Maneuverability,
             aircraft.Airframe.Parameters.CrewCount,
             runwayLength,

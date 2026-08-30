@@ -8,10 +8,11 @@ public sealed record FactoryMonthlyProductionReport(
     SimulationDate Date,
     IReadOnlyList<LineProductionReport> LineReports,
     EngineFactoryProductionReport EngineFactoryReport,
-    int FactoryToolLevel,
     double TotalAvailableManDays,
     double TotalUsedManDays,
     double CapacityUtilization,
     int TotalAircraftProduced,
     IReadOnlyDictionary<string, int> WarehouseUnitsByDesign,
-    int TotalWarehouseUnits);
+    int TotalWarehouseUnits,
+    double TotalFactoryMaintenanceExpenses,
+    double TotalActiveEquipmentExpenses);

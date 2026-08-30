@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 using WrightTycoon.Core.Balance;
 using WrightTycoon.Core.Engines;
@@ -326,6 +327,31 @@ public sealed class EngineCalculatorTests
 
         Assert.That(seaLevelRatio, Is.EqualTo(1.25d).Within(0.000001d));
         Assert.That(tenKilometerRatio, Is.EqualTo(seaLevelRatio).Within(0.000001d));
+    }
+
+    [Test]
+    public void TurbofanBypassRatio_HigherRatioIncreasesWeightAtFixedInputs()
+    {
+        var calculator = new EngineCalculator();
+        var atmosphere = new IsaAtmosphereModel();
+        var definition = CreateTurbofanDefinition();
+        var bypassRatios = new[] { 0.5d, 1d, 2d, 4d, 8d, 12d, 20d };
+        var weights = bypassRatios
+            .Select(bypassRatio =>
+            {
+                var parameters = CreateReferenceTurbofanParameters();
+                parameters.BypassRatio = bypassRatio;
+                return calculator.Calculate(definition, parameters, atmosphere).Weight.Kilograms;
+            })
+            .ToArray();
+
+        for (var index = 1; index < weights.Length; index++)
+        {
+            Assert.That(
+                weights[index],
+                Is.GreaterThan(weights[index - 1]),
+                $"Expected bypass ratio {bypassRatios[index]:0.0} to be heavier than {bypassRatios[index - 1]:0.0}.");
+        }
     }
 
     [Test]

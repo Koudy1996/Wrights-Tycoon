@@ -41,8 +41,6 @@ public sealed class AircraftFamilyDefinition
 
     public AircraftCategory Category { get; init; } = AircraftCategory.LightSportAndRecreational;
 
-    public int RequiredFactoryToolLevel { get; init; } = 1;
-
     public HistoricalCampaignTechnologyModifiers? InstalledEngineTechnologyModifiers { get; init; }
 
     public EngineParameters BaseEngineParameters { get; init; } = new();
@@ -123,11 +121,6 @@ public sealed class AircraftFamilyDefinition
 
         _ = AircraftCategoryCatalog.GetProfile(Category);
 
-        if (RequiredFactoryToolLevel < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(RequiredFactoryToolLevel), "Required factory tool level must be >= 1.");
-        }
-
         if (BaseDevelopmentCost < 0d)
         {
             throw new ArgumentOutOfRangeException(nameof(BaseDevelopmentCost), "Base development cost must be >= 0.");
@@ -162,7 +155,6 @@ public sealed class AircraftFamilyDefinition
             LockedWingShape = LockedWingShape,
             LockedWingPosition = LockedWingPosition,
             Category = Category,
-            RequiredFactoryToolLevel = RequiredFactoryToolLevel,
             InstalledEngineTechnologyModifiers = modifiers.HasValue
                 ? HistoricalCampaignTechnologyModifiers.Sanitize(modifiers.Value)
                 : null,
@@ -218,7 +210,6 @@ public sealed class AircraftFamilyDefinition
             LockedWingShape = LockedWingShape,
             LockedWingPosition = LockedWingPosition,
             Category = Category,
-            RequiredFactoryToolLevel = RequiredFactoryToolLevel,
             InstalledEngineTechnologyModifiers = technologyModifiers.HasValue
                 ? HistoricalCampaignTechnologyModifiers.Sanitize(technologyModifiers.Value)
                 : null,

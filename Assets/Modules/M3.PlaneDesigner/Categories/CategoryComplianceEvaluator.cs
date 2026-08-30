@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Globalization;
 using WrightTycoon.Core.Aircraft;
 using WrightTycoon.Core.Airframes;
@@ -55,7 +54,7 @@ public sealed class CategoryComplianceEvaluator
                 $"Wood/Fabric limit exceeded: {FormatUiNumber(weight, "0.0")} kg > {FormatUiNumber(PlaneDesignerBalance.Airframe.WoodFabricMaximumTotalWeightKilograms, "0.0")} kg");
         }
 
-        var speedMetersPerSecond = GetSpeedAtAltitudeMeters(aircraft.Performance, 0d);
+        var speedMetersPerSecond = GetMaximumSpeedMetersPerSecond(aircraft.Performance);
         var speedKilometersPerHour = speedMetersPerSecond * 3.6d;
         if (speedKilometersPerHour < profile.MinRequiredSpeedKilometersPerHour)
         {
@@ -233,55 +232,22 @@ public sealed class CategoryComplianceEvaluator
 
     private static string FormatUiInteger(int value) =>
         value.ToString("#,##0", UiNumberCulture);
-    private static double GetSpeedAtAltitudeMeters(AircraftPerformanceReport performance, double altitudeMeters)
+    private static double GetMaximumSpeedMetersPerSecond(AircraftPerformanceReport performance)
     {
-        var points = performance.MaxSpeedByAltitude
-            .OrderBy(point => point.AltitudeMeters)
-            .ToArray();
-
-        if (points.Length == 0)
+        if (performance.MaxSpeedByAltitude.Count == 0)
         {
             return 0d;
         }
 
-        for (var index = 0; index < points.Length; index++)
+        var maximumSpeed = 0d;
+        for (var index = 0; index < performance.MaxSpeedByAltitude.Count; index++)
         {
-            if (Numeric.AlmostEqual(points[index].AltitudeMeters, altitudeMeters, tolerance: 1e-3))
-            {
-                return points[index].MaxSpeedMetersPerSecond;
-            }
+            maximumSpeed = System.Math.Max(
+                maximumSpeed,
+                performance.MaxSpeedByAltitude[index].MaxSpeedMetersPerSecond);
         }
 
-        if (altitudeMeters <= points[0].AltitudeMeters)
-        {
-            return points[0].MaxSpeedMetersPerSecond;
-        }
-
-        if (altitudeMeters >= points[points.Length - 1].AltitudeMeters)
-        {
-            return points[points.Length - 1].MaxSpeedMetersPerSecond;
-        }
-
-        for (var index = 1; index < points.Length; index++)
-        {
-            var left = points[index - 1];
-            var right = points[index];
-            if (altitudeMeters < left.AltitudeMeters || altitudeMeters > right.AltitudeMeters)
-            {
-                continue;
-            }
-
-            var span = right.AltitudeMeters - left.AltitudeMeters;
-            if (span <= Numeric.Epsilon)
-            {
-                return right.MaxSpeedMetersPerSecond;
-            }
-
-            var blend = (altitudeMeters - left.AltitudeMeters) / span;
-            return left.MaxSpeedMetersPerSecond + ((right.MaxSpeedMetersPerSecond - left.MaxSpeedMetersPerSecond) * blend);
-        }
-
-        return points[0].MaxSpeedMetersPerSecond;
+        return maximumSpeed;
     }
 }
 

@@ -13,6 +13,38 @@ namespace WrightTycoon.Core.Tests.Aircraft;
 public sealed class DesignerFamilyAutoSaveTests
 {
     [Test]
+    public void SavedAircraftDecommissionState_RoundTripsAndLegacyStateDefaultsToActive()
+    {
+        var runnerType = Type.GetType(
+            "WrightTycoon.Game.Launch.WrightTycoonLaunchRunner, WrightTycoon.Game",
+            throwOnError: true)!;
+        var stateType = runnerType.GetNestedType(
+            "SavedAircraftDesignState",
+            BindingFlags.NonPublic)!;
+        var decommissionedProperty = stateType.GetProperty(
+            "IsDecommissioned",
+            BindingFlags.Public | BindingFlags.Instance)!;
+        var jsonConvertType = Type.GetType(
+            "Newtonsoft.Json.JsonConvert, Newtonsoft.Json",
+            throwOnError: true)!;
+        var serializeMethod = jsonConvertType.GetMethod(
+            "SerializeObject",
+            new[] { typeof(object) })!;
+        var deserializeMethod = jsonConvertType.GetMethod(
+            "DeserializeObject",
+            new[] { typeof(string), typeof(Type) })!;
+
+        var state = Activator.CreateInstance(stateType, nonPublic: true)!;
+        decommissionedProperty.SetValue(state, true);
+        var json = (string)serializeMethod.Invoke(null, new[] { state })!;
+        var restored = deserializeMethod.Invoke(null, new object[] { json, stateType })!;
+        var legacyRestored = deserializeMethod.Invoke(null, new object[] { "{}", stateType })!;
+
+        Assert.That(decommissionedProperty.GetValue(restored), Is.True);
+        Assert.That(decommissionedProperty.GetValue(legacyRestored), Is.False);
+    }
+
+    [Test]
     public void EnsureFamilySaved_AddsMissingFamilyExactlyOnce()
     {
         var runnerType = Type.GetType(

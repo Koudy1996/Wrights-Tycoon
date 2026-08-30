@@ -126,4 +126,38 @@ public sealed class ResearchBoardTests
         Assert.That(canceled, Is.False);
         Assert.That(message, Does.Contain("cannot be canceled"));
     }
+
+    [Test]
+    public void IsApprovedForDevelopment_RequiresOngoingOrCompletedResearch()
+    {
+        var board = new ResearchBoard();
+        var quote = new ResearchQuote(2000d, 2, 0.4d);
+        board.UpsertProposal(
+            ResearchSubjectType.AircraftType,
+            "type.sample",
+            "Sample Type",
+            quote);
+
+        Assert.That(
+            board.IsApprovedForDevelopment(ResearchSubjectType.AircraftType, "type.sample"),
+            Is.False);
+
+        board.TryApproveProposal(
+            ResearchSubjectType.AircraftType,
+            "type.sample",
+            expenseMonthIndex: 20,
+            out _,
+            out _);
+
+        Assert.That(
+            board.IsApprovedForDevelopment(ResearchSubjectType.AircraftType, "type.sample"),
+            Is.True);
+
+        board.AdvanceMonth(21);
+        board.AdvanceMonth(22);
+
+        Assert.That(
+            board.IsApprovedForDevelopment(ResearchSubjectType.AircraftType, "type.sample"),
+            Is.True);
+    }
 }

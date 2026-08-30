@@ -1,6 +1,8 @@
 namespace WrightTycoon.Core.Factories;
 
 public sealed record LineProductionReport(
+    string FactoryId,
+    string FactoryDisplayName,
     string LineId,
     string? AssignedDesignId,
     string AssignedDesignName,
@@ -8,7 +10,6 @@ public sealed record LineProductionReport(
     int TargetUnits,
     int TotalProductionTargetUnits,
     int LifetimeProducedUnits,
-    int LineToolLevel,
     int ProducedUnits,
     double AvailableManDays,
     double UsedManDays,
@@ -16,9 +17,11 @@ public sealed record LineProductionReport(
     int CapacityUnitsAtCurrentStaff,
     bool IsBlocked,
     string StatusMessage,
-    int RequiredFactoryToolLevel,
-    int RequiredLineToolLevel,
     int RequiredEngines,
     int EngineFactoryEmployees,
     int EngineDiscardedEngines,
-    int WarehouseUnitsAfterProduction);
+    int WarehouseUnitsAfterProduction,
+    double BaselineLaborExpenses,
+    double ActualLaborExpenses,
+    double GrossLaborSavings,
+    double ActiveEquipmentExpenses);

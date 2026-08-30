@@ -96,6 +96,8 @@ public sealed class AccountingSystem
                 Description = transaction.Description,
                 Amount = transaction.Amount,
                 CashAfterTransaction = transaction.CashAfterTransaction,
+                Kind = (int)transaction.Kind,
+                ReferenceId = transaction.ReferenceId,
             });
         }
 
@@ -141,6 +143,10 @@ public sealed class AccountingSystem
                     Costs = month.Costs ?? AccountingCostBreakdown.Zero,
                     HasFactoryCostsBooked = month.HasFactoryCostsBooked,
                     CashAfterTransactions = month.CashAfterTransactions,
+                    LoanInterestExpenses = System.Math.Max(0d, month.LoanInterestExpenses),
+                    LoanFeeExpenses = System.Math.Max(0d, month.LoanFeeExpenses),
+                    LoanPrincipalReceived = System.Math.Max(0d, month.LoanPrincipalReceived),
+                    LoanPrincipalRepaid = System.Math.Max(0d, month.LoanPrincipalRepaid),
                 };
 
                 if (month.InventoryEntries is not null)
@@ -192,7 +198,11 @@ public sealed class AccountingSystem
                     date,
                     transaction.Description.Trim(),
                     transaction.Amount,
-                    transaction.CashAfterTransaction));
+                    transaction.CashAfterTransaction,
+                    Enum.IsDefined(typeof(AccountingTransactionKind), transaction.Kind)
+                        ? (AccountingTransactionKind)transaction.Kind
+                        : AccountingTransactionKind.Unknown,
+                    string.IsNullOrWhiteSpace(transaction.ReferenceId) ? null : transaction.ReferenceId.Trim()));
 
                 if (transaction.Sequence >= _nextTransactionSequence)
                 {
@@ -279,18 +289,129 @@ public sealed class AccountingSystem
         accumulator.Income += income;
         accumulator.SetInventory(inventoryByDesign);
 
-        AppendTransaction(monthIndex, date, description.Trim(), income);
+        AppendTransaction(monthIndex, date, description.Trim(), income, AccountingTransactionKind.OperatingIncome);
         accumulator.CashAfterTransactions = Cash;
+    }
+
+    public void RegisterCapitalExpense(
+        int monthIndex,
+        SimulationDate date,
+        double expense,
+        string description)
+    {
+        if (monthIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(monthIndex), "Month index must be >= 0.");
+        }
+
+        Numeric.ThrowIfNotFinite(expense, nameof(expense));
+        if (expense < 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expense), "Expense must be >= 0.");
+        }
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Description cannot be empty.", nameof(description));
+        }
+
+        var accumulator = GetOrCreateAccumulator(monthIndex, date);
+        AppendTransaction(monthIndex, date, description.Trim(), -expense, AccountingTransactionKind.CapitalExpense);
+        accumulator.CashAfterTransactions = Cash;
+    }
+
+    public void RegisterLoanDisbursement(
+        int monthIndex,
+        SimulationDate date,
+        double principal,
+        string loanId,
+        string description = "Loan proceeds.")
+    {
+        ValidateLoanTransaction(monthIndex, principal, loanId, description, nameof(principal));
+        var accumulator = GetOrCreateAccumulator(monthIndex, date);
+        accumulator.LoanPrincipalReceived += principal;
+        AppendTransaction(monthIndex, date, description.Trim(), principal, AccountingTransactionKind.LoanPrincipalReceived, loanId.Trim());
+        accumulator.CashAfterTransactions = Cash;
+    }
+
+    public void RegisterLoanDebtService(
+        int monthIndex,
+        SimulationDate date,
+        double interest,
+        double principal,
+        string loanId)
+    {
+        ValidateLoanTransaction(monthIndex, interest, loanId, "Loan interest payment.", nameof(interest));
+        Numeric.ThrowIfNotFinite(principal, nameof(principal));
+        if (principal < 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(principal), "Principal must be >= 0.");
+        }
+
+        var accumulator = GetOrCreateAccumulator(monthIndex, date);
+        if (interest > 0d)
+        {
+            accumulator.LoanInterestExpenses += interest;
+            AppendTransaction(monthIndex, date, "Loan interest payment.", -interest, AccountingTransactionKind.LoanInterestPaid, loanId.Trim());
+        }
+
+        if (principal > 0d)
+        {
+            accumulator.LoanPrincipalRepaid += principal;
+            AppendTransaction(monthIndex, date, "Loan principal repayment.", -principal, AccountingTransactionKind.LoanPrincipalRepaid, loanId.Trim());
+        }
+
+        accumulator.CashAfterTransactions = Cash;
+    }
+
+    public void RegisterLoanFee(
+        int monthIndex,
+        SimulationDate date,
+        double fee,
+        string loanId,
+        string description = "Loan fee.")
+    {
+        ValidateLoanTransaction(monthIndex, fee, loanId, description, nameof(fee));
+        var accumulator = GetOrCreateAccumulator(monthIndex, date);
+        accumulator.LoanFeeExpenses += fee;
+        AppendTransaction(monthIndex, date, description.Trim(), -fee, AccountingTransactionKind.LoanFeePaid, loanId.Trim());
+        accumulator.CashAfterTransactions = Cash;
+    }
+
+    private static void ValidateLoanTransaction(int monthIndex, double amount, string loanId, string description, string parameterName)
+    {
+        if (monthIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(monthIndex), "Month index must be >= 0.");
+        }
+
+        Numeric.ThrowIfNotFinite(amount, parameterName);
+        if (amount < 0d)
+        {
+            throw new ArgumentOutOfRangeException(parameterName, "Amount must be >= 0.");
+        }
+
+        if (string.IsNullOrWhiteSpace(loanId))
+        {
+            throw new ArgumentException("Loan id cannot be empty.", nameof(loanId));
+        }
+
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            throw new ArgumentException("Description cannot be empty.", nameof(description));
+        }
     }
 
     private void ApplyFactoryCostTransactions(int monthIndex, SimulationDate date, AccountingCostBreakdown costs)
     {
-        ApplyCostComponentTransaction(monthIndex, date, "Factory fixed costs - production lines.", costs.FixedProductionLineExpenses);
+        ApplyCostComponentTransaction(monthIndex, date, "Factory property maintenance.", costs.FactoryMaintenanceExpenses);
+        ApplyCostComponentTransaction(monthIndex, date, "Active production equipment maintenance.", costs.ActiveEquipmentExpenses);
         ApplyCostComponentTransaction(monthIndex, date, "Factory variable costs - engine staff.", costs.VariableEngineStaffExpenses);
         ApplyCostComponentTransaction(monthIndex, date, "Factory variable costs - engine build.", costs.VariableEngineBuildExpenses);
         ApplyCostComponentTransaction(monthIndex, date, "Factory variable costs - aircraft staff.", costs.VariablePlaneStaffExpenses);
         ApplyCostComponentTransaction(monthIndex, date, "Factory variable costs - aircraft build.", costs.VariablePlaneBuildExpenses);
         ApplyCostComponentTransaction(monthIndex, date, "Factory variable costs - R&D.", costs.VariableResearchExpenses);
+        ApplyCostComponentTransaction(monthIndex, date, "Headquarters operating costs.", costs.HeadquartersExpenses);
     }
 
     private void ApplyCostComponentTransaction(int monthIndex, SimulationDate date, string description, double amount)
@@ -301,10 +422,16 @@ public sealed class AccountingSystem
             return;
         }
 
-        AppendTransaction(monthIndex, date, description, -amount);
+        AppendTransaction(monthIndex, date, description, -amount, AccountingTransactionKind.OperatingExpense);
     }
 
-    private void AppendTransaction(int monthIndex, SimulationDate date, string description, double amount)
+    private void AppendTransaction(
+        int monthIndex,
+        SimulationDate date,
+        string description,
+        double amount,
+        AccountingTransactionKind kind = AccountingTransactionKind.Unknown,
+        string? referenceId = null)
     {
         Numeric.ThrowIfNotFinite(amount, nameof(amount));
         if (string.IsNullOrWhiteSpace(description))
@@ -319,7 +446,9 @@ public sealed class AccountingSystem
             date,
             description.Trim(),
             amount,
-            Cash));
+            Cash,
+            kind,
+            referenceId));
     }
 
     private MonthlyAccumulator GetOrCreateAccumulator(int monthIndex, SimulationDate date)
@@ -356,6 +485,14 @@ public sealed class AccountingSystem
 
         public double InventoryValue { get; private set; }
 
+        public double LoanInterestExpenses { get; set; }
+
+        public double LoanFeeExpenses { get; set; }
+
+        public double LoanPrincipalReceived { get; set; }
+
+        public double LoanPrincipalRepaid { get; set; }
+
         public Dictionary<string, InventoryValueEntry> InventoryByDesign { get; } = new(StringComparer.Ordinal);
 
         public double CashAfterTransactions { get; set; }
@@ -383,7 +520,11 @@ public sealed class AccountingSystem
                 Income,
                 Costs,
                 new Dictionary<string, InventoryValueEntry>(InventoryByDesign, StringComparer.Ordinal),
-                InventoryValue);
+                InventoryValue,
+                LoanInterestExpenses,
+                LoanFeeExpenses,
+                LoanPrincipalReceived,
+                LoanPrincipalRepaid);
         }
 
         public AccountingMonthSnapshot ToSnapshotState()
@@ -405,6 +546,10 @@ public sealed class AccountingSystem
                 HasFactoryCostsBooked = HasFactoryCostsBooked,
                 InventoryEntries = inventoryEntries,
                 InventoryValue = InventoryValue,
+                LoanInterestExpenses = LoanInterestExpenses,
+                LoanFeeExpenses = LoanFeeExpenses,
+                LoanPrincipalReceived = LoanPrincipalReceived,
+                LoanPrincipalRepaid = LoanPrincipalRepaid,
             };
         }
     }
