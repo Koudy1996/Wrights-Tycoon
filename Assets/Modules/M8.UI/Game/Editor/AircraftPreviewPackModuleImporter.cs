@@ -75,7 +75,7 @@ public static class AircraftPreviewPackModuleImporter
         var halfHeight = Mathf.Max(0.001f, selectedBounds.extents.y);
         var halfWidth = Mathf.Max(0.001f, selectedBounds.extents.x);
         return RemapMesh(
-            "SimpleAircraftPack_Fuselage",
+            "PackFuselage",
             source,
             selectedTriangles,
             vertex => new Vector3(
@@ -94,7 +94,7 @@ public static class AircraftPreviewPackModuleImporter
         var bounds = source.bounds;
         var radius = Mathf.Max(0.001f, Mathf.Max(bounds.extents.x, bounds.extents.y));
         return RemapMesh(
-            "SimpleAircraftPack_Propeller",
+            "PackPropeller",
             source,
             source.triangles,
             vertex => new Vector3(
@@ -139,6 +139,13 @@ public static class AircraftPreviewPackModuleImporter
             }
 
             triangles[index] = targetIndex;
+        }
+
+        // Swapping the pack's X/Z axes is a reflection. Reverse every triangle so the generated
+        // hull keeps outward-facing normals instead of rendering only its far side like glass.
+        for (var index = 0; index < triangles.Length; index += 3)
+        {
+            (triangles[index + 1], triangles[index + 2]) = (triangles[index + 2], triangles[index + 1]);
         }
 
         var mesh = new Mesh { name = name };

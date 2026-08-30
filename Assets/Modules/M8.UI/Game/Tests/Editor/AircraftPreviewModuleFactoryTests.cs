@@ -122,6 +122,47 @@ public sealed class AircraftPreviewModuleFactoryTests
         Assert.That(CountParts("PackPropeller"), Is.EqualTo(3));
     }
 
+    [Test]
+    public void PackFuselage_HasOutwardFacingCabinNormals()
+    {
+        var mesh = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackFuselage");
+        Assert.That(mesh, Is.Not.Null);
+
+        var vertices = mesh!.vertices;
+        var normals = mesh.normals;
+        var outwardScore = 0f;
+        var evaluated = 0;
+        for (var index = 0; index < vertices.Length; index++)
+        {
+            var radial = new Vector3(0f, vertices[index].y, vertices[index].z);
+            if (radial.sqrMagnitude < 0.04f)
+            {
+                continue;
+            }
+
+            outwardScore += Vector3.Dot(normals[index], radial.normalized);
+            evaluated++;
+        }
+
+        Assert.That(evaluated, Is.GreaterThan(0));
+        Assert.That(outwardScore / evaluated, Is.GreaterThan(0.1f));
+    }
+
+    [Test]
+    public void Build_WingPylonBridgesNacelleAndWing()
+    {
+        var parameters = CreateParameters();
+        parameters.EngineCount = 2;
+        _factory.Build(parameters, EngineType.Radial, 0d);
+
+        var wing = FindPart("MainWingLeft")!.GetComponent<Renderer>().bounds;
+        var nacelle = FindPart("RadialCowling_0")!.GetComponent<Renderer>().bounds;
+        var pylon = FindPart("EnginePylon_0")!.GetComponent<Renderer>().bounds;
+
+        Assert.That(pylon.max.y, Is.GreaterThanOrEqualTo(wing.min.y - 0.01f));
+        Assert.That(pylon.min.y, Is.LessThanOrEqualTo(nacelle.max.y + 0.01f));
+    }
+
     private int CountParts(string prefix)
     {
         return _root.GetComponentsInChildren<Transform>(true)

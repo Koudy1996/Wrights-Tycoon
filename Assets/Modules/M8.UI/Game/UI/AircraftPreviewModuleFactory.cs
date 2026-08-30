@@ -447,13 +447,6 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         var engineCount = Mathf.Clamp(parameters.EngineCount, 1, 6);
         var moduleName = ResolveEngineModuleName(engineType, bypassRatio);
         var isJet = engineType is EngineType.Turbojet or EngineType.Turbofan;
-        var wingY = parameters.WingPosition switch
-        {
-            WingPosition.High => layout.FuselageRadius * 0.62f,
-            WingPosition.Low => -layout.FuselageRadius * 0.58f,
-            WingPosition.Biplane => -layout.FuselageRadius * 0.18f,
-            _ => 0f,
-        };
 
         if (engineCount == 1)
         {
@@ -467,9 +460,13 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             var normalizedStation = stations[index];
             var z = normalizedStation * layout.Span * 0.5f;
             var x = (layout.WingChord * 0.38f) - (Mathf.Abs(normalizedStation) * layout.Span * 0.035f);
-            var y = wingY - (isJet ? 0.43f : 0.34f);
-            BuildEngineModule(moduleName, engineType, bypassRatio, new Vector3(x, y, z), isJet ? 0.9f : 0.98f, index);
-            BuildEnginePylon(index, new Vector3(x, y, z), layout.FuselageRadius);
+            var scale = isJet ? 0.9f : 0.98f;
+            var engineRadius = ResolveEngineRadius(moduleName, bypassRatio) * scale;
+            var wingBottomY = CalculateWingBottomY(parameters, layout, normalizedStation);
+            var y = wingBottomY - engineRadius + 0.025f;
+            var position = new Vector3(x, y, z);
+            BuildEngineModule(moduleName, engineType, bypassRatio, position, scale, index);
+            BuildEnginePylon(index, position, engineRadius, wingBottomY);
         }
 
         if ((engineCount % 2) != 0)
@@ -481,13 +478,50 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         }
     }
 
-    private void BuildEnginePylon(int index, Vector3 enginePosition, float fuselageRadius)
+    private static float ResolveEngineRadius(string moduleName, double bypassRatio)
     {
+        return moduleName switch
+        {
+            "Radial" => 0.29f,
+            "V" => 0.20f,
+            "Turbojet" => 0.18f,
+            "HighBypassTurbofan" => Mathf.Lerp(0.29f, 0.38f, Mathf.InverseLerp(10f, 20f, (float)bypassRatio)),
+            "LowBypassTurbofan" => 0.24f,
+            _ => 0.17f,
+        };
+    }
+
+    private static float CalculateWingBottomY(
+        AirframeParameters parameters,
+        AircraftPreviewLayout layout,
+        float normalizedStation)
+    {
+        var wingY = parameters.WingPosition switch
+        {
+            WingPosition.High => layout.FuselageRadius * 0.62f,
+            WingPosition.Low => -layout.FuselageRadius * 0.58f,
+            WingPosition.Biplane => -layout.FuselageRadius * 0.18f,
+            _ => 0f,
+        };
+        var rootOffset = layout.FuselageRadius * 0.45f;
+        var halfSpan = layout.Span * 0.5f;
+        var station = Mathf.Abs(normalizedStation) * halfSpan;
+        var dihedral = parameters.WingPosition == WingPosition.High ? -0.07f : 0.12f;
+        var stationProgress = Mathf.InverseLerp(rootOffset, halfSpan, station);
+        var centerY = wingY + (halfSpan * dihedral * 0.12f * stationProgress);
+        var thickness = Mathf.Clamp(0.07f + (layout.WingChord * 0.045f), 0.09f, 0.18f);
+        return centerY - (thickness * 0.5f);
+    }
+
+    private void BuildEnginePylon(int index, Vector3 enginePosition, float engineRadius, float wingBottomY)
+    {
+        var nacelleTopY = enginePosition.y + (engineRadius * 0.72f);
+        var attachmentY = wingBottomY + 0.025f;
         var polygon = new[]
         {
-            enginePosition + new Vector3(0.22f, 0.08f, -0.035f),
-            enginePosition + new Vector3(0.06f, fuselageRadius * 0.70f, -0.035f),
-            enginePosition + new Vector3(-0.18f, 0.08f, -0.035f),
+            new Vector3(enginePosition.x + 0.22f, nacelleTopY, enginePosition.z - 0.035f),
+            new Vector3(enginePosition.x + 0.06f, attachmentY, enginePosition.z - 0.035f),
+            new Vector3(enginePosition.x - 0.18f, nacelleTopY, enginePosition.z - 0.035f),
         };
         CreateExtrudedPolygonPart($"EnginePylon_{index}", polygon, Vector3.forward * 0.07f, _engineMaterial);
     }

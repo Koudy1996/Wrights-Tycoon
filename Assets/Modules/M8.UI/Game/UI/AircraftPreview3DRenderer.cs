@@ -316,6 +316,7 @@ public sealed class AircraftPreview3DRenderer : IDisposable
         {
             hideFlags = HideFlags.HideAndDontSave,
         };
+        ConfigureOpaque(material);
         SetMaterialColor(material, color);
         if (material.HasProperty("_Metallic"))
         {
@@ -333,6 +334,30 @@ public sealed class AircraftPreview3DRenderer : IDisposable
         }
 
         return material;
+    }
+
+    private static void ConfigureOpaque(Material material)
+    {
+        if (material.HasProperty("_Mode"))
+        {
+            material.SetFloat("_Mode", 0f);
+        }
+
+        if (material.HasProperty("_Surface"))
+        {
+            material.SetFloat("_Surface", 0f);
+        }
+
+        if (material.HasProperty("_ZWrite"))
+        {
+            material.SetFloat("_ZWrite", 1f);
+        }
+
+        material.DisableKeyword("_ALPHATEST_ON");
+        material.DisableKeyword("_ALPHABLEND_ON");
+        material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        material.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        material.renderQueue = -1;
     }
 
     private static void SetMaterialColor(Material material, Color color)
