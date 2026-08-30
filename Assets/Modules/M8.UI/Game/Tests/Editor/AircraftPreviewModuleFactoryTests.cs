@@ -150,20 +150,24 @@ public sealed class AircraftPreviewModuleFactoryTests
     }
 
     [Test]
-    public void Build_SingleJetIntakeFairingIsTwoThirdsShorterThanMultiEngineFairing()
+    public void Build_SingleJetIntakeUsesFullTransitionWithLimitedProtrusion()
     {
         var parameters = CreateParameters();
         parameters.EngineCount = 1;
-        _factory.Build(parameters, EngineType.Turbojet, 0d);
+        var singleLayout = _factory.Build(parameters, EngineType.Turbojet, 0d);
         var singleLength = FindPart("CenterJetIntakeFairing_0")!
             .GetComponent<Renderer>().bounds.size.x;
+        var singleIntakeX = FindPart("CenterJetIntakeLip_0")!.localPosition.x;
 
         parameters.EngineCount = 3;
         _factory.Build(parameters, EngineType.Turbojet, 0d);
         var multiLength = FindPart("CenterJetIntakeFairing_2")!
             .GetComponent<Renderer>().bounds.size.x;
 
-        Assert.That(singleLength, Is.EqualTo(multiLength / 3f).Within(0.002f));
+        var protrusion = singleIntakeX - (singleLayout.FuselageLength * 0.5f);
+        Assert.That(singleLength, Is.EqualTo(multiLength).Within(0.002f));
+        Assert.That(protrusion, Is.GreaterThan(0f));
+        Assert.That(protrusion, Is.LessThanOrEqualTo(singleLength * 0.11f));
     }
 
     [TestCase(EngineType.Inline, "InlineCowling_0")]
@@ -184,19 +188,34 @@ public sealed class AircraftPreviewModuleFactoryTests
     }
 
     [Test]
-    public void Build_MultiEngineAircraftAddsCenteredNose()
+    public void Build_MultiEngineAircraftRecentersOriginalFuselageNoseWithoutChangingStructure()
     {
+        var packFuselage = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackFuselage");
+        Assert.That(packFuselage, Is.Not.Null);
         var parameters = CreateParameters();
         parameters.EngineCount = 2;
         _factory.Build(parameters, EngineType.Turbojet, 0d);
 
-        var noseBounds = FindPart("CenteredMultiEngineNose")!.GetComponent<Renderer>().bounds;
-        Assert.That(noseBounds.center.y, Is.EqualTo(0f).Within(0.001f));
-        Assert.That(noseBounds.center.z, Is.EqualTo(0f).Within(0.001f));
+        var centeredMesh = FindPart("Fuselage")!.GetComponent<MeshFilter>().sharedMesh;
+        Assert.That(centeredMesh, Is.Not.SameAs(packFuselage));
+        Assert.That(centeredMesh.vertexCount, Is.EqualTo(packFuselage!.vertexCount));
+        Assert.That(centeredMesh.triangles.Length, Is.EqualTo(packFuselage.triangles.Length));
+        Assert.That(centeredMesh.bounds.size.y, Is.EqualTo(packFuselage.bounds.size.y).Within(0.001f));
+        Assert.That(centeredMesh.bounds.size.z, Is.EqualTo(packFuselage.bounds.size.z).Within(0.001f));
+
+        var frontBandStartX = Mathf.Lerp(centeredMesh.bounds.min.x, centeredMesh.bounds.max.x, 0.9f);
+        var frontY = centeredMesh.vertices
+            .Where(vertex => vertex.x >= frontBandStartX)
+            .Average(vertex => vertex.y);
+        var originalFrontBandStartX = Mathf.Lerp(packFuselage.bounds.min.x, packFuselage.bounds.max.x, 0.9f);
+        var originalFrontY = packFuselage.vertices
+            .Where(vertex => vertex.x >= originalFrontBandStartX)
+            .Average(vertex => vertex.y);
+        Assert.That(Mathf.Abs(frontY), Is.LessThan(Mathf.Abs(originalFrontY)));
 
         parameters.EngineCount = 1;
         _factory.Build(parameters, EngineType.Turbojet, 0d);
-        Assert.That(FindPart("CenteredMultiEngineNose"), Is.Null);
+        Assert.That(FindPart("Fuselage")!.GetComponent<MeshFilter>().sharedMesh, Is.SameAs(packFuselage));
     }
 
     [Test]
@@ -250,13 +269,13 @@ public sealed class AircraftPreviewModuleFactoryTests
         Assert.That(propellerMesh, Is.Not.Null);
 
         var parameters = CreateParameters();
-        parameters.EngineCount = 3;
+        parameters.EngineCount = 1;
         _factory.Build(parameters, EngineType.Radial, 0d);
 
         var fuselage = FindPart("Fuselage");
         Assert.That(fuselage, Is.Not.Null);
         Assert.That(fuselage!.GetComponent<MeshFilter>().sharedMesh, Is.SameAs(fuselageMesh));
-        Assert.That(CountParts("PackPropeller"), Is.EqualTo(3));
+        Assert.That(CountParts("PackPropeller"), Is.EqualTo(1));
     }
 
     [Test]

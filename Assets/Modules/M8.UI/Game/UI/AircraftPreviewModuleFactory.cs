@@ -201,9 +201,12 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         var radius = layout.FuselageRadius;
         if (_packFuselageMesh != null)
         {
+            var fuselageMesh = parameters.EngineCount > 1
+                ? CreateCenteredMultiEngineFuselageMesh(_packFuselageMesh)
+                : _packFuselageMesh;
             CreateSharedMeshPart(
                 "Fuselage",
-                _packFuselageMesh,
+                fuselageMesh,
                 Vector3.zero,
                 new Vector3(length, radius, radius),
                 Quaternion.identity,
@@ -224,11 +227,6 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             };
             var radiusScale = new[] { 0.10f, 0.52f, 0.88f, 1f, 1f, 0.94f, 0.58f, 0.06f };
             CreateLoftPart("Fuselage", x, radiusScale, radiusScale, Vector3.zero, _fuselageMaterial, radius);
-        }
-
-        if (parameters.EngineCount > 1)
-        {
-            BuildCenteredMultiEngineNose(layout);
         }
 
         var canopyLength = Mathf.Clamp(length * 0.26f, 0.92f, 1.9f);
@@ -309,27 +307,50 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             _fuselageMaterial);
     }
 
-    private void BuildCenteredMultiEngineNose(AircraftPreviewLayout layout)
+    private Mesh CreateCenteredMultiEngineFuselageMesh(Mesh source)
     {
-        var noseLength = Mathf.Clamp(layout.FuselageRadius * 1.7f, 0.58f, 1.25f);
-        var noseX = layout.FuselageLength * 0.5f;
-        var noseCenterX = noseX - (noseLength * 0.5f);
-        CreateLoftPart(
-            "CenteredMultiEngineNose",
-            new[]
+        var centered = UnityEngine.Object.Instantiate(source);
+        centered.name = "PackFuselageCenteredNose";
+        centered.hideFlags = HideFlags.HideAndDontSave;
+
+        var vertices = centered.vertices;
+        var bounds = centered.bounds;
+        var blendStartX = Mathf.Lerp(bounds.min.x, bounds.max.x, 0.64f);
+        var frontBandStartX = Mathf.Lerp(bounds.min.x, bounds.max.x, 0.9f);
+        var frontYSum = 0f;
+        var frontBlendWeight = 0f;
+        var frontVertexCount = 0;
+        for (var index = 0; index < vertices.Length; index++)
+        {
+            if (vertices[index].x >= frontBandStartX)
             {
-                -noseLength * 0.65f,
-                -noseLength * 0.25f,
-                noseLength * 0.3f,
-                noseLength * 0.75f,
-            },
-            new[] { 1.05f, 1.06f, 0.88f, 0.04f },
-            new[] { 1.05f, 1.06f, 0.88f, 0.04f },
-            new Vector3(noseCenterX, 0f, 0f),
-            _fuselageMaterial,
-            layout.FuselageRadius,
-            layout.FuselageRadius,
-            12);
+                var progress = Mathf.InverseLerp(blendStartX, bounds.max.x, vertices[index].x);
+                var smoothProgress = progress * progress * (3f - (2f * progress));
+                frontYSum += vertices[index].y;
+                frontBlendWeight += smoothProgress;
+                frontVertexCount++;
+            }
+        }
+
+        if (frontVertexCount > 0 && frontBlendWeight > 0f)
+        {
+            var centerlineCorrection = frontYSum / frontBlendWeight;
+            for (var index = 0; index < vertices.Length; index++)
+            {
+                var progress = Mathf.InverseLerp(blendStartX, bounds.max.x, vertices[index].x);
+                var smoothProgress = progress * progress * (3f - (2f * progress));
+                vertices[index].y = Mathf.Clamp(
+                    vertices[index].y - (centerlineCorrection * smoothProgress),
+                    bounds.min.y,
+                    bounds.max.y);
+            }
+        }
+
+        centered.vertices = vertices;
+        centered.RecalculateNormals();
+        centered.RecalculateBounds();
+        _meshes.Add(centered);
+        return centered;
     }
 
     private void BuildWings(AirframeParameters parameters, AircraftPreviewLayout layout)
@@ -684,11 +705,9 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             0.58f);
         var exhaustRadius = intakeRadius * 0.68f;
         var standardIntakeFairingLength = Mathf.Clamp(layout.FuselageRadius * 1.55f, 0.58f, 1.24f);
-        var intakeFairingLength = isSingleEngine
-            ? standardIntakeFairingLength / 3f
-            : standardIntakeFairingLength;
+        var intakeFairingLength = standardIntakeFairingLength;
         var noseX = layout.FuselageLength * 0.5f;
-        var fairingCenterX = noseX - (intakeFairingLength * 0.24f);
+        var fairingCenterX = noseX - (intakeFairingLength * (isSingleEngine ? 0.4f : 0.24f));
         var intakeX = fairingCenterX + (intakeFairingLength * 0.5f);
         var tailX = -layout.FuselageLength * 0.505f;
         var alongX = Quaternion.Euler(0f, 0f, 90f);
