@@ -65,6 +65,7 @@ public static class AircraftPreviewPackModuleImporter
             }
         }
 
+        selectedTriangles = SelectFuselageShell(sourceVertices, selectedTriangles);
         if (selectedTriangles.Count == 0)
         {
             throw new InvalidOperationException("The Simple Aircraft Pack fuselage extraction produced no triangles.");
@@ -87,6 +88,82 @@ public static class AircraftPreviewPackModuleImporter
     private static bool IsInsideFuselageEnvelope(Vector3 vertex)
     {
         return Mathf.Abs(vertex.x) <= 1.45f && vertex.y <= 3.35f;
+    }
+
+    private static List<int> SelectFuselageShell(
+        IReadOnlyList<Vector3> vertices,
+        IReadOnlyList<int> selectedTriangles)
+    {
+        var triangleCount = selectedTriangles.Count / 3;
+        var parents = Enumerable.Range(0, triangleCount).ToArray();
+        var triangleByPosition = new Dictionary<Vector3Int, int>();
+
+        for (var triangle = 0; triangle < triangleCount; triangle++)
+        {
+            for (var corner = 0; corner < 3; corner++)
+            {
+                var vertex = vertices[selectedTriangles[(triangle * 3) + corner]];
+                var positionKey = new Vector3Int(
+                    Mathf.RoundToInt(vertex.x * 10_000f),
+                    Mathf.RoundToInt(vertex.y * 10_000f),
+                    Mathf.RoundToInt(vertex.z * 10_000f));
+                if (triangleByPosition.TryGetValue(positionKey, out var neighbour))
+                {
+                    Union(parents, triangle, neighbour);
+                }
+                else
+                {
+                    triangleByPosition.Add(positionKey, triangle);
+                }
+            }
+        }
+
+        var components = new Dictionary<int, List<int>>();
+        for (var triangle = 0; triangle < triangleCount; triangle++)
+        {
+            var root = FindRoot(parents, triangle);
+            if (!components.TryGetValue(root, out var component))
+            {
+                component = new List<int>();
+                components.Add(root, component);
+            }
+
+            component.Add(selectedTriangles[triangle * 3]);
+            component.Add(selectedTriangles[(triangle * 3) + 1]);
+            component.Add(selectedTriangles[(triangle * 3) + 2]);
+        }
+
+        // The passenger shell is the only connected component spanning almost the full aircraft.
+        // Seats and other cabin props are separate, shorter components; excluding them removes the
+        // small protrusions that previously appeared above the generated passenger windows.
+        return components.Values
+            .OrderByDescending(component =>
+            {
+                var bounds = CalculateBounds(vertices, component);
+                return bounds.size.z * component.Count;
+            })
+            .FirstOrDefault() ?? new List<int>();
+    }
+
+    private static int FindRoot(int[] parents, int index)
+    {
+        while (parents[index] != index)
+        {
+            parents[index] = parents[parents[index]];
+            index = parents[index];
+        }
+
+        return index;
+    }
+
+    private static void Union(int[] parents, int first, int second)
+    {
+        var firstRoot = FindRoot(parents, first);
+        var secondRoot = FindRoot(parents, second);
+        if (firstRoot != secondRoot)
+        {
+            parents[secondRoot] = firstRoot;
+        }
     }
 
     private static Mesh NormalizePropeller(Mesh source)

@@ -66,14 +66,73 @@ public sealed class AircraftPreviewModuleFactoryTests
     [TestCase(4)]
     [TestCase(5)]
     [TestCase(6)]
-    public void Build_CreatesRequestedNumberOfVisibleEngines(int engineCount)
+    public void Build_CreatesRequestedNumberOfVisiblePropellerEngines(int engineCount)
     {
         var parameters = CreateParameters();
         parameters.EngineCount = engineCount;
 
         _factory.Build(parameters, EngineType.Radial, 0d);
 
-        Assert.That(CountParts("RadialCowling"), Is.EqualTo(engineCount));
+        var wingEngineCount = engineCount == 1 ? 0 : engineCount - (engineCount % 2);
+        Assert.That(CountParts("RadialCowling"), Is.EqualTo(wingEngineCount));
+        Assert.That(CountParts("NoseCowling"), Is.EqualTo(engineCount % 2));
+        Assert.That(CountParts("PackPropeller"), Is.EqualTo(engineCount));
+    }
+
+    [TestCase(1, 0)]
+    [TestCase(3, 2)]
+    [TestCase(5, 4)]
+    public void Build_OddPropellerEngineUsesFuselageColoredNoseCowling(
+        int engineCount,
+        int expectedWingEngines)
+    {
+        var parameters = CreateParameters();
+        parameters.EngineCount = engineCount;
+
+        _factory.Build(parameters, EngineType.Inline, 0d);
+
+        var noseCowling = FindPart($"NoseCowling_{engineCount - 1}");
+        Assert.That(noseCowling, Is.Not.Null);
+        Assert.That(noseCowling!.GetComponent<Renderer>().sharedMaterial, Is.SameAs(_materials[0]));
+        Assert.That(CountParts("InlineCowling"), Is.EqualTo(expectedWingEngines));
+    }
+
+    [Test]
+    public void Build_NosePropellerScalesWithAircraftSize()
+    {
+        var parameters = CreateParameters();
+        parameters.EngineCount = 1;
+        parameters.WingAreaSquareMeters = 12d;
+        _factory.Build(parameters, EngineType.Inline, 0d);
+        var smallBladeLength = FindPart("PropBlade_0_0")!.GetComponent<Renderer>().bounds.size.magnitude;
+
+        parameters.WingAreaSquareMeters = 300d;
+        _factory.Build(parameters, EngineType.Inline, 0d);
+        var largeBladeLength = FindPart("PropBlade_0_0")!.GetComponent<Renderer>().bounds.size.magnitude;
+
+        Assert.That(largeBladeLength, Is.GreaterThan(smallBladeLength * 1.25f));
+    }
+
+    [TestCase(1, 0)]
+    [TestCase(3, 2)]
+    [TestCase(5, 4)]
+    public void Build_OddJetUsesNoseIntakeAndTailExhaust(
+        int engineCount,
+        int expectedWingEngines)
+    {
+        var parameters = CreateParameters();
+        parameters.EngineCount = engineCount;
+
+        _factory.Build(parameters, EngineType.Turbojet, 0d);
+
+        var centerIndex = engineCount - 1;
+        var intake = FindPart($"CenterJetIntake_{centerIndex}");
+        var exhaust = FindPart($"CenterJetExhaust_{centerIndex}");
+        Assert.That(intake, Is.Not.Null);
+        Assert.That(exhaust, Is.Not.Null);
+        Assert.That(intake!.localPosition.x, Is.GreaterThan(0f));
+        Assert.That(exhaust!.localPosition.x, Is.LessThan(0f));
+        Assert.That(CountParts("JetNacelle"), Is.EqualTo(expectedWingEngines));
     }
 
     [TestCase(TailType.Classic, "ClassicFin")]
@@ -233,6 +292,26 @@ public sealed class AircraftPreviewModuleFactoryTests
         }
 
         Assert.That(renderedArea, Is.EqualTo(layout.WingArea).Within(0.002f));
+    }
+
+    [Test]
+    public void PreviewRotation_IsUnrestrictedAndCanBeReset()
+    {
+        using var renderer = new AircraftPreview3DRenderer();
+        var defaultRotation = renderer.ModelRotation;
+
+        renderer.RotateBy(new Vector2(480f, 500f));
+
+        Assert.That(Quaternion.Angle(defaultRotation, renderer.ModelRotation), Is.GreaterThan(80f));
+        Assert.That(renderer.ModelRotation.x * renderer.ModelRotation.x
+                    + renderer.ModelRotation.y * renderer.ModelRotation.y
+                    + renderer.ModelRotation.z * renderer.ModelRotation.z
+                    + renderer.ModelRotation.w * renderer.ModelRotation.w,
+            Is.EqualTo(1f).Within(0.001f));
+
+        renderer.ResetView();
+
+        Assert.That(Quaternion.Angle(defaultRotation, renderer.ModelRotation), Is.LessThan(0.001f));
     }
 
     private int CountParts(string prefix)

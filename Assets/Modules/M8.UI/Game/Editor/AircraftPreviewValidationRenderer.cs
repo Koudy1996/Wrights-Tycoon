@@ -47,6 +47,7 @@ public static class AircraftPreviewValidationRenderer
             new PreviewCase("engine-inline-1", EngineType.Inline, 0d, 1, TailType.Classic, WingPosition.Low, WingShape.Straight),
             new PreviewCase("engine-v-2", EngineType.V, 0d, 2, TailType.Classic, WingPosition.Low, WingShape.Straight),
             new PreviewCase("engine-radial-3", EngineType.Radial, 0d, 3, TailType.Classic, WingPosition.Low, WingShape.Straight),
+            new PreviewCase("engine-center-jet-1", EngineType.Turbojet, 0d, 1, TailType.Classic, WingPosition.Low, WingShape.Swept),
             new PreviewCase("engine-turbojet-4", EngineType.Turbojet, 0d, 4, TailType.Classic, WingPosition.Low, WingShape.Swept),
             new PreviewCase("engine-turbofan-low-5", EngineType.Turbofan, 6d, 5, TailType.Classic, WingPosition.Low, WingShape.Swept),
             new PreviewCase("engine-turbofan-high-6", EngineType.Turbofan, 16d, 6, TailType.Classic, WingPosition.Low, WingShape.Swept),

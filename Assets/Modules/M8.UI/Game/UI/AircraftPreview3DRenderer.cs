@@ -10,8 +10,7 @@ public sealed class AircraftPreview3DRenderer : IDisposable
 {
     private const int PreviewLayer = 31;
     private const float RotationSensitivity = 0.48f;
-    private const float MinimumPitch = -34f;
-    private const float MaximumPitch = 48f;
+    private static readonly Quaternion DefaultModelRotation = Quaternion.Euler(6f, -12f, 0f);
 
     private GameObject? _root;
     private Transform? _modelRoot;
@@ -30,8 +29,9 @@ public sealed class AircraftPreview3DRenderer : IDisposable
 
     private AircraftPreviewLayout _layout;
     private string _lastSignature = string.Empty;
-    private float _yaw = -12f;
-    private float _pitch = 6f;
+    private Quaternion _modelRotation = DefaultModelRotation;
+
+    internal Quaternion ModelRotation => _modelRotation;
 
     public bool Draw(Rect rect, AirframeParameters parameters, EngineType engineType, double bypassRatio)
     {
@@ -46,7 +46,8 @@ public sealed class AircraftPreview3DRenderer : IDisposable
             return false;
         }
 
-        HandleRotationInput(rect);
+        var resetRect = GetResetButtonRect(rect);
+        HandleRotationInput(rect, resetRect);
 
         var signature = BuildSignature(parameters, engineType, bypassRatio);
         if (!string.Equals(signature, _lastSignature, StringComparison.Ordinal))
@@ -56,7 +57,7 @@ public sealed class AircraftPreview3DRenderer : IDisposable
             _lastSignature = signature;
         }
 
-        _modelRoot.localRotation = Quaternion.Euler(_pitch, _yaw, 0f);
+        _modelRoot.localRotation = _modelRotation;
         ConfigureCamera();
 
         if (Event.current.type == EventType.Repaint)
@@ -65,6 +66,11 @@ public sealed class AircraftPreview3DRenderer : IDisposable
             _camera.Render();
             GUI.DrawTexture(rect, _renderTexture, ScaleMode.StretchToFill, false);
             DrawRotationHint(rect);
+        }
+
+        if (GUI.Button(resetRect, "Reset view"))
+        {
+            ResetView();
         }
 
         return true;
@@ -99,6 +105,7 @@ public sealed class AircraftPreview3DRenderer : IDisposable
         }
 
         _lastSignature = string.Empty;
+        _modelRotation = DefaultModelRotation;
     }
 
     private void EnsureInitialized(int width, int height)
@@ -255,20 +262,21 @@ public sealed class AircraftPreview3DRenderer : IDisposable
         _camera.transform.LookAt(new Vector3(0f, 0.05f, 0f));
     }
 
-    private void HandleRotationInput(Rect rect)
+    private void HandleRotationInput(Rect rect, Rect resetRect)
     {
         var currentEvent = Event.current;
         var controlId = GUIUtility.GetControlID("WT03AircraftPreviewRotation".GetHashCode(), FocusType.Passive, rect);
         switch (currentEvent.GetTypeForControl(controlId))
         {
-            case EventType.MouseDown when currentEvent.button == 0 && rect.Contains(currentEvent.mousePosition):
+            case EventType.MouseDown when currentEvent.button == 0
+                && rect.Contains(currentEvent.mousePosition)
+                && !resetRect.Contains(currentEvent.mousePosition):
                 GUIUtility.hotControl = controlId;
                 currentEvent.Use();
                 break;
 
             case EventType.MouseDrag when GUIUtility.hotControl == controlId:
-                _yaw = Mathf.Repeat(_yaw - (currentEvent.delta.x * RotationSensitivity), 360f);
-                _pitch = Mathf.Clamp(_pitch + (currentEvent.delta.y * RotationSensitivity), MinimumPitch, MaximumPitch);
+                RotateBy(currentEvent.delta);
                 currentEvent.Use();
                 break;
 
@@ -278,6 +286,21 @@ public sealed class AircraftPreview3DRenderer : IDisposable
                 break;
         }
     }
+
+    internal void RotateBy(Vector2 mouseDelta)
+    {
+        var yaw = Quaternion.AngleAxis(-mouseDelta.x * RotationSensitivity, Vector3.up);
+        var pitch = Quaternion.AngleAxis(mouseDelta.y * RotationSensitivity, Vector3.right);
+        _modelRotation = (yaw * pitch * _modelRotation).normalized;
+    }
+
+    internal void ResetView()
+    {
+        _modelRotation = DefaultModelRotation;
+    }
+
+    private static Rect GetResetButtonRect(Rect rect) =>
+        new(rect.x + 8f, rect.yMax - 30f, 96f, 22f);
 
     private static void DrawRotationHint(Rect rect)
     {
