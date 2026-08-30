@@ -4581,7 +4581,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 _aircraftPreview.Engine.Parameters.BypassRatio);
         }
 
-        GUILayout.Label("3D visual reacts to wing shape/position, tail, landing gear, engine count, material and engine type.");
+        GUILayout.Label("Drag the aircraft to rotate it. The modular visual reacts to wing shape/position, tail, landing gear, engine count, material and engine type.");
         GUILayout.EndVertical();
 
         GUILayout.Space(8f);
