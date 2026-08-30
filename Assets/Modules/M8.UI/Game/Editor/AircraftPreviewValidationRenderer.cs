@@ -57,6 +57,9 @@ public static class AircraftPreviewValidationRenderer
             new PreviewCase("tail-t", EngineType.Turbofan, 12d, 2, TailType.TTail, WingPosition.Low, WingShape.Swept),
             new PreviewCase("tail-v", EngineType.Inline, 0d, 1, TailType.VTail, WingPosition.Low, WingShape.Straight),
             new PreviewCase("tail-twin-biplane", EngineType.Radial, 0d, 2, TailType.Twin, WingPosition.Biplane, WingShape.Straight),
+            new PreviewCase("wing-aspect-4", EngineType.Turbojet, 0d, 2, TailType.Classic, WingPosition.Low, WingShape.Straight, 4d),
+            new PreviewCase("wing-aspect-20", EngineType.Turbojet, 0d, 2, TailType.Classic, WingPosition.Low, WingShape.Straight, 20d),
+            new PreviewCase("wing-delta", EngineType.Turbojet, 0d, 2, TailType.Classic, WingPosition.Low, WingShape.Delta, 8d),
         };
 
         foreach (var previewCase in Combine(engineCases, tailCases))
@@ -97,7 +100,8 @@ public static class AircraftPreviewValidationRenderer
         {
             EngineCount = previewCase.EngineCount,
             CrewCount = 4,
-            WingAreaSquareMeters = 48d,
+            WingAspectRatio = previewCase.WingAspectRatio,
+            WingAreaSquareMeters = previewCase.WingAreaSquareMeters,
             FuelAmountLiters = 1_400d,
             WingPosition = previewCase.WingPosition,
             WingShape = previewCase.WingShape,
@@ -118,7 +122,8 @@ public static class AircraftPreviewValidationRenderer
         camera.cullingMask = 1 << PreviewLayer;
         camera.enabled = false;
 
-        var distance = Mathf.Clamp(Mathf.Max(layout.FuselageLength * 1.45f, layout.Span * 1.12f), 6.8f, 16f);
+        var distance = Mathf.Max(6.8f, Mathf.Max(layout.FuselageLength * 1.45f, layout.Span * 1.12f));
+        camera.farClipPlane = Mathf.Max(100f, distance * 3f);
         camera.transform.position = new Vector3(distance * 0.50f, distance * 0.28f, -distance);
         camera.transform.LookAt(new Vector3(0f, 0.05f, 0f));
 
@@ -219,7 +224,9 @@ public static class AircraftPreviewValidationRenderer
             int engineCount,
             TailType tailType,
             WingPosition wingPosition,
-            WingShape wingShape)
+            WingShape wingShape,
+            double wingAspectRatio = 8d,
+            double wingAreaSquareMeters = 48d)
         {
             FileName = fileName;
             EngineType = engineType;
@@ -228,6 +235,8 @@ public static class AircraftPreviewValidationRenderer
             TailType = tailType;
             WingPosition = wingPosition;
             WingShape = wingShape;
+            WingAspectRatio = wingAspectRatio;
+            WingAreaSquareMeters = wingAreaSquareMeters;
         }
 
         public string FileName { get; }
@@ -243,5 +252,9 @@ public static class AircraftPreviewValidationRenderer
         public WingPosition WingPosition { get; }
 
         public WingShape WingShape { get; }
+
+        public double WingAspectRatio { get; }
+
+        public double WingAreaSquareMeters { get; }
     }
 }

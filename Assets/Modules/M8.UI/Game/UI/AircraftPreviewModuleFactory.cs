@@ -8,12 +8,20 @@ namespace WrightTycoon.Game.UI;
 
 internal readonly struct AircraftPreviewLayout
 {
-    public AircraftPreviewLayout(float span, float fuselageLength, float fuselageRadius, float wingChord)
+    private const float PreviewMetersScale = 0.28f;
+
+    public AircraftPreviewLayout(
+        float span,
+        float fuselageLength,
+        float fuselageRadius,
+        float wingChord,
+        float wingArea)
     {
         Span = span;
         FuselageLength = fuselageLength;
         FuselageRadius = fuselageRadius;
         WingChord = wingChord;
+        WingArea = wingArea;
     }
 
     public float Span { get; }
@@ -24,17 +32,34 @@ internal readonly struct AircraftPreviewLayout
 
     public float WingChord { get; }
 
+    public float WingArea { get; }
+
     public static AircraftPreviewLayout From(AirframeParameters parameters)
     {
-        var span = Mathf.Clamp((float)(parameters.WingAreaSquareMeters * 0.18d), 2.8f, 9.5f);
+        var physicalWingArea = Mathf.Clamp((float)parameters.WingAreaSquareMeters, 1f, 1_000f);
+        var aspectRatio = Mathf.Clamp((float)parameters.WingAspectRatio, 1f, 50f);
+        var wingArea = physicalWingArea * PreviewMetersScale * PreviewMetersScale;
+        var span = Mathf.Sqrt(physicalWingArea * aspectRatio) * PreviewMetersScale;
         var fuselageLength = Mathf.Clamp(
             2.9f + (float)(parameters.FuelAmountLiters * 0.0011d) + (parameters.CrewCount * 0.2f),
             3.2f,
             8.6f);
         var fuselageRadius = Mathf.Clamp(0.3f + (parameters.CrewCount * 0.035f), 0.32f, 0.78f);
-        var wingChord = Mathf.Clamp((float)(parameters.WingAreaSquareMeters / (span * 3d)), 0.65f, 1.8f);
-        return new AircraftPreviewLayout(span, fuselageLength, fuselageRadius, wingChord);
+        var tipChordRatio = ResolveTipChordRatio(parameters.WingShape);
+        var rootOffset = Mathf.Min(fuselageRadius * 0.45f, span * 0.21f);
+        var exposedSpan = Mathf.Max(0.05f, span - (rootOffset * 2f));
+        var wingChord = (wingArea * 2f) / (exposedSpan * (1f + tipChordRatio));
+        return new AircraftPreviewLayout(span, fuselageLength, fuselageRadius, wingChord, wingArea);
     }
+
+    internal static float ResolveTipChordRatio(WingShape wingShape) =>
+        wingShape switch
+        {
+            WingShape.Straight => 0.72f,
+            WingShape.Swept => 0.48f,
+            WingShape.Delta => 0f,
+            _ => 0.72f,
+        };
 }
 
 /// <summary>
@@ -249,14 +274,7 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             _ => 0f,
         };
 
-        var rootX = -layout.WingChord * 0.05f;
-        var tipChordRatio = parameters.WingShape switch
-        {
-            WingShape.Straight => 0.72f,
-            WingShape.Swept => 0.48f,
-            WingShape.Delta => 0.08f,
-            _ => 0.7f,
-        };
+        var tipChordRatio = AircraftPreviewLayout.ResolveTipChordRatio(parameters.WingShape);
         var sweepRatio = parameters.WingShape switch
         {
             WingShape.Straight => 0.04f,
@@ -264,16 +282,19 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             WingShape.Delta => 0.42f,
             _ => 0.04f,
         };
-        var thickness = Mathf.Clamp(0.07f + (layout.WingChord * 0.045f), 0.09f, 0.18f);
+        var mainWingChord = ResolveMainWingChord(parameters, layout);
+        var rootX = -mainWingChord * 0.05f;
+        var thickness = ResolveWingThickness(mainWingChord);
         var dihedral = parameters.WingPosition == WingPosition.High ? -0.07f : 0.12f;
+        var rootOffset = ResolveWingRootOffset(layout);
 
         BuildWingPair(
             "MainWing",
             rootX,
             wingY,
-            layout.FuselageRadius * 0.45f,
+            rootOffset,
             layout.Span * 0.5f,
-            layout.WingChord,
+            mainWingChord,
             tipChordRatio,
             sweepRatio,
             thickness,
@@ -284,12 +305,12 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         {
             BuildWingPair(
                 "UpperWing",
-                rootX - (layout.WingChord * 0.04f),
+                rootX - (mainWingChord * 0.04f),
                 wingY + (layout.FuselageRadius * 1.55f),
-                layout.FuselageRadius * 0.38f,
+                ResolveUpperWingRootOffset(layout),
                 layout.Span * 0.47f,
-                layout.WingChord * 0.9f,
-                Mathf.Max(0.46f, tipChordRatio),
+                mainWingChord * 0.9f,
+                ResolveUpperWingTipChordRatio(parameters.WingShape),
                 sweepRatio * 0.65f,
                 thickness * 0.88f,
                 0.06f,
@@ -303,12 +324,43 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             var flapSpan = layout.Span * 0.68f;
             CreateBoxPart(
                 "LeadingEdgeAccent",
-                new Vector3(rootX + (layout.WingChord * 0.43f), wingY + (thickness * 0.55f), 0f),
+                new Vector3(rootX + (mainWingChord * 0.43f), wingY + (thickness * 0.55f), 0f),
                 new Vector3(0.07f, 0.035f, flapSpan),
                 Quaternion.identity,
                 _accentMaterial);
         }
     }
+
+    private static float ResolveMainWingChord(AirframeParameters parameters, AircraftPreviewLayout layout)
+    {
+        if (parameters.WingPosition != WingPosition.Biplane)
+        {
+            return layout.WingChord;
+        }
+
+        var lowerTipRatio = AircraftPreviewLayout.ResolveTipChordRatio(parameters.WingShape);
+        var upperTipRatio = ResolveUpperWingTipChordRatio(parameters.WingShape);
+        var lowerSemiSpan = Mathf.Max(0.025f, (layout.Span * 0.5f) - ResolveWingRootOffset(layout));
+        var upperSemiSpan = Mathf.Max(0.025f, (layout.Span * 0.47f) - ResolveUpperWingRootOffset(layout));
+        var upperToLowerAreaFactor =
+            (0.9f * (1f + upperTipRatio) * upperSemiSpan)
+            / ((1f + lowerTipRatio) * lowerSemiSpan);
+        return layout.WingChord / (1f + upperToLowerAreaFactor);
+    }
+
+    private static float ResolveUpperWingTipChordRatio(WingShape wingShape) =>
+        wingShape == WingShape.Delta
+            ? 0f
+            : Mathf.Max(0.46f, AircraftPreviewLayout.ResolveTipChordRatio(wingShape));
+
+    private static float ResolveWingThickness(float rootChord) =>
+        Mathf.Clamp(rootChord * 0.085f, 0.025f, 0.18f);
+
+    private static float ResolveWingRootOffset(AircraftPreviewLayout layout) =>
+        Mathf.Min(layout.FuselageRadius * 0.45f, layout.Span * 0.21f);
+
+    private static float ResolveUpperWingRootOffset(AircraftPreviewLayout layout) =>
+        Mathf.Min(layout.FuselageRadius * 0.38f, layout.Span * 0.19f);
 
     private void BuildBiplaneStruts(AircraftPreviewLayout layout, float lowerWingY)
     {
@@ -354,13 +406,27 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         var rootZ = side * rootOffset;
         var tipZ = side * halfSpan;
         var tipY = rootY + (halfSpan * dihedralRatio * 0.12f);
-        var polygon = new[]
+        IReadOnlyList<Vector3> polygon;
+        if (tipChordRatio <= 0.001f)
         {
-            new Vector3(rootX + (rootChord * 0.5f), rootY, rootZ),
-            new Vector3(tipX + (tipChord * 0.5f), tipY, tipZ),
-            new Vector3(tipX - (tipChord * 0.5f), tipY, tipZ),
-            new Vector3(rootX - (rootChord * 0.5f), rootY, rootZ),
-        };
+            polygon = new[]
+            {
+                new Vector3(rootX + (rootChord * 0.5f), rootY, rootZ),
+                new Vector3(tipX, tipY, tipZ),
+                new Vector3(rootX - (rootChord * 0.5f), rootY, rootZ),
+            };
+        }
+        else
+        {
+            polygon = new[]
+            {
+                new Vector3(rootX + (rootChord * 0.5f), rootY, rootZ),
+                new Vector3(tipX + (tipChord * 0.5f), tipY, tipZ),
+                new Vector3(tipX - (tipChord * 0.5f), tipY, tipZ),
+                new Vector3(rootX - (rootChord * 0.5f), rootY, rootZ),
+            };
+        }
+
         CreateExtrudedPolygonPart(name, polygon, Vector3.up * thickness, material);
     }
 
@@ -455,11 +521,12 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         }
 
         var stations = CalculateWingEngineStations(engineCount);
+        var mainWingChord = ResolveMainWingChord(parameters, layout);
         for (var index = 0; index < stations.Length; index++)
         {
             var normalizedStation = stations[index];
             var z = normalizedStation * layout.Span * 0.5f;
-            var x = (layout.WingChord * 0.38f) - (Mathf.Abs(normalizedStation) * layout.Span * 0.035f);
+            var x = (mainWingChord * 0.38f) - (Mathf.Abs(normalizedStation) * layout.Span * 0.035f);
             var scale = isJet ? 0.9f : 0.98f;
             var engineRadius = ResolveEngineRadius(moduleName, bypassRatio) * scale;
             var wingBottomY = CalculateWingBottomY(parameters, layout, normalizedStation);
@@ -503,13 +570,13 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             WingPosition.Biplane => -layout.FuselageRadius * 0.18f,
             _ => 0f,
         };
-        var rootOffset = layout.FuselageRadius * 0.45f;
+        var rootOffset = ResolveWingRootOffset(layout);
         var halfSpan = layout.Span * 0.5f;
         var station = Mathf.Abs(normalizedStation) * halfSpan;
         var dihedral = parameters.WingPosition == WingPosition.High ? -0.07f : 0.12f;
         var stationProgress = Mathf.InverseLerp(rootOffset, halfSpan, station);
         var centerY = wingY + (halfSpan * dihedral * 0.12f * stationProgress);
-        var thickness = Mathf.Clamp(0.07f + (layout.WingChord * 0.045f), 0.09f, 0.18f);
+        var thickness = ResolveWingThickness(ResolveMainWingChord(parameters, layout));
         return centerY - (thickness * 0.5f);
     }
 

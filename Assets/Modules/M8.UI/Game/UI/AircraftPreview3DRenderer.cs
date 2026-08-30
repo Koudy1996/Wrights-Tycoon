@@ -57,7 +57,7 @@ public sealed class AircraftPreview3DRenderer : IDisposable
         }
 
         _modelRoot.localRotation = Quaternion.Euler(_pitch, _yaw, 0f);
-        ConfigureCamera(rect);
+        ConfigureCamera();
 
         if (Event.current.type == EventType.Repaint)
         {
@@ -240,17 +240,17 @@ public sealed class AircraftPreview3DRenderer : IDisposable
         _renderTexture.Create();
     }
 
-    private void ConfigureCamera(Rect rect)
+    private void ConfigureCamera()
     {
         if (_camera == null)
         {
             return;
         }
 
-        var distance = Mathf.Clamp(
-            Mathf.Max(_layout.FuselageLength * 1.45f, _layout.Span * 1.12f),
+        var distance = Mathf.Max(
             6.8f,
-            16f);
+            Mathf.Max(_layout.FuselageLength * 1.45f, _layout.Span * 1.12f));
+        _camera.farClipPlane = Mathf.Max(100f, distance * 3f);
         _camera.transform.position = new Vector3(distance * 0.50f, distance * 0.28f, -distance);
         _camera.transform.LookAt(new Vector3(0f, 0.05f, 0f));
     }
@@ -300,6 +300,7 @@ public sealed class AircraftPreview3DRenderer : IDisposable
             parameters.TailType,
             parameters.LandingGearType,
             parameters.CrewCount,
+            parameters.WingAspectRatio.ToString("0.00", CultureInfo.InvariantCulture),
             parameters.WingAreaSquareMeters.ToString("0.00", CultureInfo.InvariantCulture),
             parameters.FuelAmountLiters.ToString("0.0", CultureInfo.InvariantCulture),
             parameters.EngineCowling.ToString("0.00", CultureInfo.InvariantCulture),

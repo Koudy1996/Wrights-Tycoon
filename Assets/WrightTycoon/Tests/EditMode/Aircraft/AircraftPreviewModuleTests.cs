@@ -82,6 +82,24 @@ public sealed class AircraftPreviewModuleTests
         Assert.That(radius, Is.InRange(0.32f, 0.78f));
     }
 
+    [Test]
+    public void PreviewSignature_ChangesWithWingAspectRatio()
+    {
+        var rendererType = Type.GetType(
+            "WrightTycoon.Game.UI.AircraftPreview3DRenderer, WrightTycoon.Game",
+            throwOnError: true)!;
+        var method = rendererType.GetMethod("BuildSignature", BindingFlags.NonPublic | BindingFlags.Static);
+        var lowAspect = new AirframeParameters { WingAspectRatio = 4d };
+        var highAspect = lowAspect.Clone();
+        highAspect.WingAspectRatio = 16d;
+
+        Assert.That(method, Is.Not.Null);
+        var lowSignature = method!.Invoke(null, new object[] { lowAspect, EngineType.Inline, 0d });
+        var highSignature = method.Invoke(null, new object[] { highAspect, EngineType.Inline, 0d });
+
+        Assert.That(highSignature, Is.Not.EqualTo(lowSignature));
+    }
+
     private static float ReadFloat(object value, string propertyName)
     {
         var property = value.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);

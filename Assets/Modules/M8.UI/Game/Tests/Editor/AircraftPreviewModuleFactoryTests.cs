@@ -163,6 +163,78 @@ public sealed class AircraftPreviewModuleFactoryTests
         Assert.That(pylon.min.y, Is.LessThanOrEqualTo(nacelle.max.y + 0.01f));
     }
 
+    [Test]
+    public void Layout_HigherAspectRatioCreatesLongerNarrowerWingAtEqualArea()
+    {
+        var lowAspectParameters = CreateParameters();
+        lowAspectParameters.WingAreaSquareMeters = 48d;
+        lowAspectParameters.WingAspectRatio = 4d;
+        var highAspectParameters = lowAspectParameters.Clone();
+        highAspectParameters.WingAspectRatio = 16d;
+
+        var lowAspect = AircraftPreviewLayout.From(lowAspectParameters);
+        var highAspect = AircraftPreviewLayout.From(highAspectParameters);
+
+        Assert.That(highAspect.Span, Is.EqualTo(lowAspect.Span * 2f).Within(0.001f));
+        Assert.That(highAspect.WingChord, Is.LessThan(lowAspect.WingChord));
+        Assert.That(highAspect.WingArea, Is.EqualTo(lowAspect.WingArea).Within(0.001f));
+        Assert.That(highAspect.Span * highAspect.Span / highAspect.WingArea, Is.EqualTo(16f).Within(0.001f));
+    }
+
+    [Test]
+    public void Layout_LargerWingAreaScalesBothDimensionsAtEqualAspectRatio()
+    {
+        var smallParameters = CreateParameters();
+        smallParameters.WingAreaSquareMeters = 40d;
+        smallParameters.WingAspectRatio = 8d;
+        var largeParameters = smallParameters.Clone();
+        largeParameters.WingAreaSquareMeters = 160d;
+
+        var small = AircraftPreviewLayout.From(smallParameters);
+        var large = AircraftPreviewLayout.From(largeParameters);
+
+        Assert.That(large.Span, Is.EqualTo(small.Span * 2f).Within(0.001f));
+        Assert.That(large.WingChord, Is.GreaterThan(small.WingChord));
+        Assert.That(large.WingArea, Is.EqualTo(small.WingArea * 4f).Within(0.001f));
+    }
+
+    [Test]
+    public void Build_DeltaWingUsesTriangularHalfMeshes()
+    {
+        var parameters = CreateParameters();
+        parameters.WingShape = WingShape.Delta;
+        _factory.Build(parameters, EngineType.Turbojet, 0d);
+
+        var leftWingMesh = FindPart("MainWingLeft")!.GetComponent<MeshFilter>().sharedMesh;
+        var rightWingMesh = FindPart("MainWingRight")!.GetComponent<MeshFilter>().sharedMesh;
+
+        Assert.That(leftWingMesh.vertexCount, Is.EqualTo(6));
+        Assert.That(rightWingMesh.vertexCount, Is.EqualTo(6));
+    }
+
+    [TestCase(WingShape.Straight, WingPosition.Low)]
+    [TestCase(WingShape.Swept, WingPosition.High)]
+    [TestCase(WingShape.Delta, WingPosition.Low)]
+    [TestCase(WingShape.Straight, WingPosition.Biplane)]
+    [TestCase(WingShape.Delta, WingPosition.Biplane)]
+    public void Build_WingMeshesPreserveSelectedTotalArea(WingShape wingShape, WingPosition wingPosition)
+    {
+        var parameters = CreateParameters();
+        parameters.WingShape = wingShape;
+        parameters.WingPosition = wingPosition;
+        parameters.WingAreaSquareMeters = 48d;
+        parameters.WingAspectRatio = 8d;
+        var layout = _factory.Build(parameters, EngineType.Turbojet, 0d);
+
+        var renderedArea = CalculatePlanformArea("MainWingLeft") + CalculatePlanformArea("MainWingRight");
+        if (wingPosition == WingPosition.Biplane)
+        {
+            renderedArea += CalculatePlanformArea("UpperWingLeft") + CalculatePlanformArea("UpperWingRight");
+        }
+
+        Assert.That(renderedArea, Is.EqualTo(layout.WingArea).Within(0.002f));
+    }
+
     private int CountParts(string prefix)
     {
         return _root.GetComponentsInChildren<Transform>(true)
@@ -173,6 +245,22 @@ public sealed class AircraftPreviewModuleFactoryTests
     {
         return _root.GetComponentsInChildren<Transform>(true)
             .FirstOrDefault(transform => string.Equals(transform.name, name, StringComparison.Ordinal));
+    }
+
+    private float CalculatePlanformArea(string partName)
+    {
+        var mesh = FindPart(partName)!.GetComponent<MeshFilter>().sharedMesh;
+        var vertices = mesh.vertices;
+        var polygonVertexCount = vertices.Length / 2;
+        var twiceArea = 0f;
+        for (var index = 0; index < polygonVertexCount; index++)
+        {
+            var current = vertices[index];
+            var next = vertices[(index + 1) % polygonVertexCount];
+            twiceArea += (current.x * next.z) - (next.x * current.z);
+        }
+
+        return Mathf.Abs(twiceArea) * 0.5f;
     }
 
     private static AirframeParameters CreateParameters()
