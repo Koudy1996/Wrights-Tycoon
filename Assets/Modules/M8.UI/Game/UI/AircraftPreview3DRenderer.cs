@@ -198,9 +198,9 @@ public sealed class AircraftPreview3DRenderer : IDisposable
     private void InitializeMaterials()
     {
         _fuselageMaterial = CreateMaterial(new Color(0.74f, 0.81f, 0.9f, 1f), 0.38f, 0.54f);
-        _wingMaterial = CreateMaterial(new Color(0.13f, 0.38f, 0.64f, 1f), 0.24f, 0.48f);
-        _engineMaterial = CreateMaterial(new Color(0.31f, 0.37f, 0.45f, 1f), 0.58f, 0.52f);
-        _accentMaterial = CreateMaterial(new Color(0.09f, 0.49f, 0.91f, 1f), 0.22f, 0.55f);
+        _wingMaterial = CreateMaterial(new Color(0.62f, 0.72f, 0.84f, 1f), 0.30f, 0.52f);
+        _engineMaterial = CreateMaterial(new Color(0.46f, 0.52f, 0.60f, 1f), 0.62f, 0.56f);
+        _accentMaterial = CreateMaterial(new Color(0.08f, 0.42f, 0.78f, 1f), 0.24f, 0.55f);
         _darkMaterial = CreateMaterial(new Color(0.035f, 0.052f, 0.069f, 1f), 0.16f, 0.28f);
         _glassMaterial = CreateMaterial(new Color(0.055f, 0.18f, 0.28f, 1f), 0.34f, 0.82f);
     }
@@ -220,8 +220,8 @@ public sealed class AircraftPreview3DRenderer : IDisposable
             _ => new Color(0.74f, 0.81f, 0.9f, 1f),
         };
         var wingColor = materialType == MaterialType.WoodFabric
-            ? new Color(0.50f, 0.31f, 0.19f, 1f)
-            : new Color(0.13f, 0.38f, 0.64f, 1f);
+            ? new Color(0.58f, 0.39f, 0.23f, 1f)
+            : new Color(0.62f, 0.72f, 0.84f, 1f);
 
         SetMaterialColor(_fuselageMaterial, fuselageColor);
         SetMaterialColor(_wingMaterial, wingColor);

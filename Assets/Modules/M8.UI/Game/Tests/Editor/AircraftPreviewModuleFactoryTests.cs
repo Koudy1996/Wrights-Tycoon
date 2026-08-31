@@ -49,7 +49,7 @@ public sealed class AircraftPreviewModuleFactoryTests
     [TestCase(EngineType.V, "VBankLeft")]
     [TestCase(EngineType.Radial, "RadialCowling")]
     [TestCase(EngineType.Turbojet, "JetNacelle")]
-    [TestCase(EngineType.Turbofan, "FanBlade")]
+    [TestCase(EngineType.Turbofan, "PackFan")]
     public void Build_CreatesDistinctEngineModules(EngineType engineType, string expectedPartPrefix)
     {
         var parameters = CreateParameters();
@@ -146,7 +146,7 @@ public sealed class AircraftPreviewModuleFactoryTests
         Assert.That(intake!.localPosition.x, Is.GreaterThan(0f));
         Assert.That(exhaust!.localPosition.x, Is.LessThan(0f));
         Assert.That(CountParts("JetNacelle"), Is.EqualTo(expectedWingEngines));
-        Assert.That(CountParts("CenterJetExhaustFairing"), Is.EqualTo(engineCount == 1 ? 1 : 0));
+        Assert.That(CountParts("CenterJetExhaustFairing"), Is.EqualTo(1));
     }
 
     [Test]
@@ -162,17 +162,19 @@ public sealed class AircraftPreviewModuleFactoryTests
             .GetComponent<Renderer>().bounds.size.y;
 
         parameters.EngineCount = 3;
-        _factory.Build(parameters, EngineType.Turbojet, 0d);
+        var multiLayout = _factory.Build(parameters, EngineType.Turbojet, 0d);
         var multiLength = FindPart("CenterJetIntakeFairing_2")!
             .GetComponent<Renderer>().bounds.size.x;
         var multiOpening = FindPart("CenterJetIntakeLip_2")!
             .GetComponent<Renderer>().bounds.size.y;
 
         var protrusion = singleIntakeX - (singleLayout.FuselageLength * 0.5f);
-        Assert.That(singleLength, Is.EqualTo(multiLength).Within(0.002f));
+        Assert.That(singleLength, Is.LessThan(multiLength));
         Assert.That(protrusion, Is.GreaterThan(0f));
         Assert.That(protrusion, Is.LessThanOrEqualTo(singleLength * 0.11f));
-        Assert.That(singleOpening, Is.EqualTo(multiOpening * 0.7f).Within(0.002f));
+        Assert.That(
+            singleOpening / singleLayout.FuselageRadius,
+            Is.EqualTo((multiOpening / multiLayout.FuselageRadius) * 0.7f).Within(0.002f));
     }
 
     [Test]
@@ -184,7 +186,7 @@ public sealed class AircraftPreviewModuleFactoryTests
 
         var fairingMesh = FindPart("CenterJetExhaustFairing_0")!
             .GetComponent<MeshFilter>().sharedMesh;
-        const int ringSegments = 12;
+        const int ringSegments = 18;
         var ringRadii = Enumerable.Range(0, 4)
             .Select(ring => fairingMesh.vertices
                 .Skip(ring * ringSegments)
@@ -215,48 +217,55 @@ public sealed class AircraftPreviewModuleFactoryTests
     }
 
     [Test]
-    public void Build_MultiEngineAircraftRecentersOriginalFuselageNoseWithoutChangingStructure()
+    public void Build_SelectsPackFuselageFamilyAndDeformsOnlyRuntimeClone()
     {
-        var packFuselage = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackFuselage");
-        Assert.That(packFuselage, Is.Not.Null);
+        var commuter = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackFuselageV3");
+        var transport = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackFuselageV1");
+        Assert.That(commuter, Is.Not.Null);
+        Assert.That(transport, Is.Not.Null);
         var parameters = CreateParameters();
-        parameters.EngineCount = 2;
+        parameters.EngineCount = 4;
         _factory.Build(parameters, EngineType.Turbojet, 0d);
 
-        var centeredMesh = FindPart("Fuselage")!.GetComponent<MeshFilter>().sharedMesh;
-        Assert.That(centeredMesh, Is.Not.SameAs(packFuselage));
-        Assert.That(centeredMesh.vertexCount, Is.EqualTo(packFuselage!.vertexCount));
-        Assert.That(centeredMesh.triangles.Length, Is.EqualTo(packFuselage.triangles.Length));
-        Assert.That(centeredMesh.bounds.size.y, Is.EqualTo(packFuselage.bounds.size.y).Within(0.001f));
-        Assert.That(centeredMesh.bounds.size.z, Is.EqualTo(packFuselage.bounds.size.z).Within(0.001f));
-
-        var frontBandStartX = Mathf.Lerp(centeredMesh.bounds.min.x, centeredMesh.bounds.max.x, 0.9f);
-        var frontY = centeredMesh.vertices
-            .Where(vertex => vertex.x >= frontBandStartX)
-            .Average(vertex => vertex.y);
-        var originalFrontBandStartX = Mathf.Lerp(packFuselage.bounds.min.x, packFuselage.bounds.max.x, 0.9f);
-        var originalFrontY = packFuselage.vertices
-            .Where(vertex => vertex.x >= originalFrontBandStartX)
-            .Average(vertex => vertex.y);
-        Assert.That(Mathf.Abs(frontY), Is.LessThan(Mathf.Abs(originalFrontY)));
+        var transportClone = FindPart("Fuselage")!.GetComponent<MeshFilter>().sharedMesh;
+        Assert.That(transportClone, Is.Not.SameAs(transport));
+        Assert.That(transportClone.vertexCount, Is.EqualTo(transport!.vertexCount));
+        var transportLength = transportClone.bounds.size.x;
 
         parameters.EngineCount = 1;
         _factory.Build(parameters, EngineType.Turbojet, 0d);
-        Assert.That(FindPart("Fuselage")!.GetComponent<MeshFilter>().sharedMesh, Is.SameAs(packFuselage));
+        var commuterClone = FindPart("Fuselage")!.GetComponent<MeshFilter>().sharedMesh;
+        Assert.That(commuterClone, Is.Not.SameAs(commuter));
+        Assert.That(commuterClone.vertexCount, Is.EqualTo(commuter!.vertexCount));
+        Assert.That(commuterClone.bounds.size.x, Is.LessThan(transportLength));
     }
 
     [Test]
     public void Build_CargoConfigurationHasNoPassengerWindows()
     {
         var parameters = CreateParameters();
+        parameters.EngineCount = 2;
 
         _factory.Build(parameters, EngineType.Inline, 0d, showPassengerWindows: false);
         Assert.That(CountParts("CabinWindow"), Is.Zero);
         Assert.That(CountParts("CargoWindowBlank"), Is.EqualTo(2));
 
         _factory.Build(parameters, EngineType.Inline, 0d, showPassengerWindows: true);
-        Assert.That(CountParts("CabinWindow"), Is.GreaterThan(0));
         Assert.That(CountParts("CargoWindowBlank"), Is.Zero);
+        Assert.That(FindPart("Fuselage")!.GetComponent<Renderer>().sharedMaterial.mainTexture, Is.Not.Null);
+    }
+
+    [Test]
+    public void Build_SingleSeatConfigurationSuppressesPackPassengerWindows()
+    {
+        var parameters = CreateParameters();
+        parameters.EngineCount = 1;
+
+        _factory.Build(parameters, EngineType.Inline, 0d, showPassengerWindows: true);
+
+        Assert.That(CountParts("CabinWindow"), Is.Zero);
+        Assert.That(CountParts("SingleSeatWindowBlank"), Is.EqualTo(2));
+        Assert.That(FindPart("CockpitCanopy"), Is.Not.Null);
     }
 
     [TestCase(TailType.Classic, "ClassicFin")]
@@ -290,10 +299,14 @@ public sealed class AircraftPreviewModuleFactoryTests
     [Test]
     public void Build_UsesExtractedSimpleAircraftPackModules()
     {
-        var fuselageMesh = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackFuselage");
+        var fuselageMesh = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackFuselageV3");
         var propellerMesh = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackPropeller");
+        var fanMesh = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackFan");
+        var wheelMesh = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackWheelSmall");
         Assert.That(fuselageMesh, Is.Not.Null);
         Assert.That(propellerMesh, Is.Not.Null);
+        Assert.That(fanMesh, Is.Not.Null);
+        Assert.That(wheelMesh, Is.Not.Null);
 
         var parameters = CreateParameters();
         parameters.EngineCount = 1;
@@ -301,14 +314,18 @@ public sealed class AircraftPreviewModuleFactoryTests
 
         var fuselage = FindPart("Fuselage");
         Assert.That(fuselage, Is.Not.Null);
-        Assert.That(fuselage!.GetComponent<MeshFilter>().sharedMesh, Is.SameAs(fuselageMesh));
+        Assert.That(fuselage!.GetComponent<MeshFilter>().sharedMesh.vertexCount, Is.EqualTo(fuselageMesh!.vertexCount));
         Assert.That(CountParts("PackPropeller"), Is.EqualTo(1));
+        Assert.That(FindPart("NoseGearWheel")!.GetComponent<MeshFilter>().sharedMesh, Is.SameAs(wheelMesh));
     }
 
     [Test]
-    public void PackFuselage_HasOutwardFacingCabinNormals()
+    [TestCase("WT03/Previews/AircraftModules/PackFuselageV1")]
+    [TestCase("WT03/Previews/AircraftModules/PackFuselageV2")]
+    [TestCase("WT03/Previews/AircraftModules/PackFuselageV3")]
+    public void PackFuselage_HasOutwardFacingCabinNormals(string resourcePath)
     {
-        var mesh = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackFuselage");
+        var mesh = Resources.Load<Mesh>(resourcePath);
         Assert.That(mesh, Is.Not.Null);
 
         var vertices = mesh!.vertices;
@@ -342,8 +359,7 @@ public sealed class AircraftPreviewModuleFactoryTests
 
         Assert.That(canopyBounds.size.x, Is.GreaterThan(fuselageBounds.size.x * 0.3f));
         Assert.That(canopyBounds.max.y, Is.GreaterThan(fuselageBounds.max.y));
-        Assert.That(fuselageBounds.max.x - canopyBounds.max.x,
-            Is.LessThan(fuselageBounds.size.x * 0.06f));
+        Assert.That(canopyBounds.max.x, Is.GreaterThan(fuselageBounds.center.x + (fuselageBounds.size.x * 0.25f)));
     }
 
     [Test]
@@ -397,7 +413,7 @@ public sealed class AircraftPreviewModuleFactoryTests
     }
 
     [Test]
-    public void Build_DeltaWingUsesTriangularHalfMeshes()
+    public void Build_DeltaWingTapersToNearPointWithThreeDimensionalAirfoil()
     {
         var parameters = CreateParameters();
         parameters.WingShape = WingShape.Delta;
@@ -406,8 +422,10 @@ public sealed class AircraftPreviewModuleFactoryTests
         var leftWingMesh = FindPart("MainWingLeft")!.GetComponent<MeshFilter>().sharedMesh;
         var rightWingMesh = FindPart("MainWingRight")!.GetComponent<MeshFilter>().sharedMesh;
 
-        Assert.That(leftWingMesh.vertexCount, Is.EqualTo(6));
-        Assert.That(rightWingMesh.vertexCount, Is.EqualTo(6));
+        Assert.That(leftWingMesh.vertexCount, Is.EqualTo(48));
+        Assert.That(rightWingMesh.vertexCount, Is.EqualTo(48));
+        Assert.That(CalculateRingChord(leftWingMesh, 3), Is.LessThan(CalculateRingChord(leftWingMesh, 0) * 0.05f));
+        Assert.That(leftWingMesh.bounds.size.y, Is.GreaterThan(0.02f));
     }
 
     [TestCase(WingShape.Straight, WingPosition.Low)]
@@ -480,17 +498,18 @@ public sealed class AircraftPreviewModuleFactoryTests
     private float CalculatePlanformArea(string partName)
     {
         var mesh = FindPart(partName)!.GetComponent<MeshFilter>().sharedMesh;
+        var rootChord = CalculateRingChord(mesh, 0);
+        var tipChord = CalculateRingChord(mesh, 3);
         var vertices = mesh.vertices;
-        var polygonVertexCount = vertices.Length / 2;
-        var twiceArea = 0f;
-        for (var index = 0; index < polygonVertexCount; index++)
-        {
-            var current = vertices[index];
-            var next = vertices[(index + 1) % polygonVertexCount];
-            twiceArea += (current.x * next.z) - (next.x * current.z);
-        }
+        var rootZ = vertices.Take(12).Average(vertex => vertex.z);
+        var tipZ = vertices.Skip(36).Take(12).Average(vertex => vertex.z);
+        return (rootChord + tipChord) * 0.5f * Mathf.Abs(tipZ - rootZ);
+    }
 
-        return Mathf.Abs(twiceArea) * 0.5f;
+    private static float CalculateRingChord(Mesh mesh, int ring)
+    {
+        var vertices = mesh.vertices.Skip(ring * 12).Take(12).ToArray();
+        return vertices.Max(vertex => vertex.x) - vertices.Min(vertex => vertex.x);
     }
 
     private static AirframeParameters CreateParameters()

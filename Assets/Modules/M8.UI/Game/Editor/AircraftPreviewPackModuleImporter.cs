@@ -8,75 +8,147 @@ using UnityEngine;
 namespace WrightTycoon.Game.Editor;
 
 /// <summary>
-/// Converts the monolithic Simple Aircraft Pack model into small runtime resources used by the
-/// data-driven preview. The generated meshes intentionally contain no source materials: the
-/// preview owns its palette so all aircraft eras and configurations remain visually consistent.
+/// Builds a reusable visual kit from the three Simple Aircraft Pack aircraft. The source Body
+/// meshes are monolithic, so the importer keeps only long central shell components and removes
+/// fixed wings, engines, seats and tail surfaces. Runtime code deforms the resulting shells by
+/// longitudinal stations and attaches socket-based wings, engines, tails and landing gear.
 /// </summary>
 public static class AircraftPreviewPackModuleImporter
 {
-    private const string SourcePrefabPath = "Assets/Polyeler/Simple Aircraft Pack/Prefabs/Passenger Aircraft V3.prefab";
+    private const string SourceFolder = "Assets/Polyeler/Simple Aircraft Pack/Prefabs";
     private const string OutputFolder = "Assets/Resources/WT03/Previews/AircraftModules";
-    private const string FuselageOutputPath = OutputFolder + "/PackFuselage.asset";
-    private const string PropellerOutputPath = OutputFolder + "/PackPropeller.asset";
+
+    private static readonly SourceDefinition[] Sources =
+    {
+        new(1, 2.05f, 7.05f),
+        new(2, 1.95f, 6.65f),
+        new(3, 1.25f, 3.42f),
+    };
 
     [MenuItem("WrightTycoon/Aircraft Preview/Rebuild Simple Aircraft Pack Modules")]
     public static void RebuildPackModules()
     {
-        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(SourcePrefabPath);
-        if (prefab == null)
-        {
-            throw new InvalidOperationException($"Simple Aircraft Pack prefab was not found at '{SourcePrefabPath}'.");
-        }
-
-        var filters = prefab.GetComponentsInChildren<MeshFilter>(true);
-        var body = filters.FirstOrDefault(filter => string.Equals(filter.name, "Body", StringComparison.Ordinal));
-        var propeller = filters.FirstOrDefault(filter => filter.name.StartsWith("Propeller", StringComparison.Ordinal));
-        if (body?.sharedMesh == null || propeller?.sharedMesh == null)
-        {
-            throw new InvalidOperationException("The imported aircraft does not contain the expected Body and Propeller modules.");
-        }
-
         Directory.CreateDirectory(OutputFolder);
-        SaveOrUpdateMesh(FuselageOutputPath, ExtractNormalizedFuselage(body.sharedMesh));
-        SaveOrUpdateMesh(PropellerOutputPath, NormalizePropeller(propeller.sharedMesh));
+        foreach (var source in Sources)
+        {
+            var prefab = LoadPrefab(source.Version);
+            SaveOrUpdateMesh(
+                $"{OutputFolder}/PackFuselageV{source.Version}.asset",
+                ExtractNormalizedFuselage(FindMesh(prefab, "Body"), source));
+            SaveOrUpdateMaterial(
+                $"{OutputFolder}/PackSurfaceV{source.Version}.mat",
+                FindRenderer(prefab, "Body").sharedMaterial);
+        }
+
+        var transport = LoadPrefab(1);
+        var commuter = LoadPrefab(3);
+        SaveOrUpdateMesh($"{OutputFolder}/PackFan.asset", NormalizeRotor(FindFirstRotor(transport), "PackFan"));
+        SaveOrUpdateMesh($"{OutputFolder}/PackPropeller.asset", NormalizeRotor(FindFirstRotor(commuter), "PackPropeller"));
+        SaveOrUpdateMesh($"{OutputFolder}/PackWheelLarge.asset", NormalizeWheel(FindMesh(transport, "Front Wheel"), "PackWheelLarge"));
+        SaveOrUpdateMesh($"{OutputFolder}/PackWheelSmall.asset", NormalizeWheel(FindMesh(commuter, "Front Wheel"), "PackWheelSmall"));
+
+        // Keep the original resource name as a compatibility alias for older tests and builds.
+        SaveOrUpdateMesh(
+            $"{OutputFolder}/PackFuselage.asset",
+            ExtractNormalizedFuselage(FindMesh(commuter, "Body"), Sources[2], "PackFuselage"));
+
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
-        Debug.Log($"Aircraft preview pack modules rebuilt in {OutputFolder}.");
+        Debug.Log($"Modular Simple Aircraft Pack visual kit rebuilt in {OutputFolder}.");
     }
 
-    private static Mesh ExtractNormalizedFuselage(Mesh source)
+    public static void RebuildPackModulesAndExit()
     {
-        var sourceVertices = source.vertices;
-        var sourceTriangles = source.triangles;
-        var selectedTriangles = new List<int>();
-
-        // V3 is authored along Z, with X as its span. This central envelope removes the fixed
-        // wings, engines and vertical tail while retaining the low-poly cabin and nose profile.
-        for (var index = 0; index < sourceTriangles.Length; index += 3)
+        try
         {
-            var a = sourceVertices[sourceTriangles[index]];
-            var b = sourceVertices[sourceTriangles[index + 1]];
-            var c = sourceVertices[sourceTriangles[index + 2]];
-            if (IsInsideFuselageEnvelope(a) && IsInsideFuselageEnvelope(b) && IsInsideFuselageEnvelope(c))
+            RebuildPackModules();
+            EditorApplication.Exit(0);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogException(exception);
+            EditorApplication.Exit(1);
+        }
+    }
+
+    private static GameObject LoadPrefab(int version)
+    {
+        var path = $"{SourceFolder}/Passenger Aircraft V{version}.prefab";
+        return AssetDatabase.LoadAssetAtPath<GameObject>(path)
+            ?? throw new InvalidOperationException($"Simple Aircraft Pack prefab was not found at '{path}'.");
+    }
+
+    private static Mesh FindMesh(GameObject prefab, string name)
+    {
+        var filter = prefab.GetComponentsInChildren<MeshFilter>(true)
+            .FirstOrDefault(value => string.Equals(value.name, name, StringComparison.Ordinal));
+        return filter?.sharedMesh
+            ?? throw new InvalidOperationException($"'{prefab.name}' does not contain mesh '{name}'.");
+    }
+
+    private static MeshRenderer FindRenderer(GameObject prefab, string name)
+    {
+        var renderer = prefab.GetComponentsInChildren<MeshRenderer>(true)
+            .FirstOrDefault(value => string.Equals(value.name, name, StringComparison.Ordinal));
+        return renderer
+            ?? throw new InvalidOperationException($"'{prefab.name}' does not contain renderer '{name}'.");
+    }
+
+    private static Mesh FindFirstRotor(GameObject prefab)
+    {
+        var filter = prefab.GetComponentsInChildren<MeshFilter>(true)
+            .FirstOrDefault(value => value.name.StartsWith("Propeller", StringComparison.Ordinal));
+        return filter?.sharedMesh
+            ?? throw new InvalidOperationException($"'{prefab.name}' does not contain a rotor mesh.");
+    }
+
+    private static Mesh ExtractNormalizedFuselage(
+        Mesh source,
+        SourceDefinition definition,
+        string? outputName = null)
+    {
+        var vertices = source.vertices;
+        var candidateTriangles = new List<int>();
+        for (var index = 0; index < source.triangles.Length; index += 3)
+        {
+            var a = vertices[source.triangles[index]];
+            var b = vertices[source.triangles[index + 1]];
+            var c = vertices[source.triangles[index + 2]];
+            if (IsInsideCentralEnvelope(a, definition)
+                && IsInsideCentralEnvelope(b, definition)
+                && IsInsideCentralEnvelope(c, definition))
             {
-                selectedTriangles.Add(sourceTriangles[index]);
-                selectedTriangles.Add(sourceTriangles[index + 1]);
-                selectedTriangles.Add(sourceTriangles[index + 2]);
+                candidateTriangles.Add(source.triangles[index]);
+                candidateTriangles.Add(source.triangles[index + 1]);
+                candidateTriangles.Add(source.triangles[index + 2]);
             }
         }
 
-        selectedTriangles = SelectFuselageShell(sourceVertices, selectedTriangles);
-        if (selectedTriangles.Count == 0)
+        if (candidateTriangles.Count == 0)
         {
-            throw new InvalidOperationException("The Simple Aircraft Pack fuselage extraction produced no triangles.");
+            throw new InvalidOperationException($"Fuselage V{definition.Version} envelope produced no triangles.");
         }
 
-        var selectedBounds = CalculateBounds(sourceVertices, selectedTriangles);
+        var candidateBounds = CalculateBounds(vertices, candidateTriangles);
+        var components = BuildConnectedComponents(vertices, candidateTriangles);
+        var minimumLongitudinalSpan = candidateBounds.size.z * 0.27f;
+        var selectedTriangles = components
+            .Where(component => CalculateBounds(vertices, component).size.z >= minimumLongitudinalSpan)
+            .SelectMany(component => component)
+            .ToList();
+        if (selectedTriangles.Count == 0)
+        {
+            selectedTriangles = components
+                .OrderByDescending(component => CalculateBounds(vertices, component).size.z * component.Count)
+                .First();
+        }
+
+        var selectedBounds = CalculateBounds(vertices, selectedTriangles);
         var length = Mathf.Max(0.001f, selectedBounds.size.z);
         var halfHeight = Mathf.Max(0.001f, selectedBounds.extents.y);
         var halfWidth = Mathf.Max(0.001f, selectedBounds.extents.x);
         return RemapMesh(
-            "PackFuselage",
+            outputName ?? $"PackFuselageV{definition.Version}",
             source,
             selectedTriangles,
             vertex => new Vector3(
@@ -85,35 +157,32 @@ public static class AircraftPreviewPackModuleImporter
                 (vertex.x - selectedBounds.center.x) / halfWidth));
     }
 
-    private static bool IsInsideFuselageEnvelope(Vector3 vertex)
-    {
-        return Mathf.Abs(vertex.x) <= 1.45f && vertex.y <= 3.35f;
-    }
+    private static bool IsInsideCentralEnvelope(Vector3 vertex, SourceDefinition definition) =>
+        Mathf.Abs(vertex.x) <= definition.HalfWidth && vertex.y <= definition.MaximumY;
 
-    private static List<int> SelectFuselageShell(
+    private static List<List<int>> BuildConnectedComponents(
         IReadOnlyList<Vector3> vertices,
-        IReadOnlyList<int> selectedTriangles)
+        IReadOnlyList<int> triangles)
     {
-        var triangleCount = selectedTriangles.Count / 3;
+        var triangleCount = triangles.Count / 3;
         var parents = Enumerable.Range(0, triangleCount).ToArray();
         var triangleByPosition = new Dictionary<Vector3Int, int>();
-
         for (var triangle = 0; triangle < triangleCount; triangle++)
         {
             for (var corner = 0; corner < 3; corner++)
             {
-                var vertex = vertices[selectedTriangles[(triangle * 3) + corner]];
-                var positionKey = new Vector3Int(
+                var vertex = vertices[triangles[(triangle * 3) + corner]];
+                var key = new Vector3Int(
                     Mathf.RoundToInt(vertex.x * 10_000f),
                     Mathf.RoundToInt(vertex.y * 10_000f),
                     Mathf.RoundToInt(vertex.z * 10_000f));
-                if (triangleByPosition.TryGetValue(positionKey, out var neighbour))
+                if (triangleByPosition.TryGetValue(key, out var neighbour))
                 {
                     Union(parents, triangle, neighbour);
                 }
                 else
                 {
-                    triangleByPosition.Add(positionKey, triangle);
+                    triangleByPosition.Add(key, triangle);
                 }
             }
         }
@@ -128,21 +197,12 @@ public static class AircraftPreviewPackModuleImporter
                 components.Add(root, component);
             }
 
-            component.Add(selectedTriangles[triangle * 3]);
-            component.Add(selectedTriangles[(triangle * 3) + 1]);
-            component.Add(selectedTriangles[(triangle * 3) + 2]);
+            component.Add(triangles[triangle * 3]);
+            component.Add(triangles[(triangle * 3) + 1]);
+            component.Add(triangles[(triangle * 3) + 2]);
         }
 
-        // The passenger shell is the only connected component spanning almost the full aircraft.
-        // Seats and other cabin props are separate, shorter components; excluding them removes the
-        // small protrusions that previously appeared above the generated passenger windows.
-        return components.Values
-            .OrderByDescending(component =>
-            {
-                var bounds = CalculateBounds(vertices, component);
-                return bounds.size.z * component.Count;
-            })
-            .FirstOrDefault() ?? new List<int>();
+        return components.Values.ToList();
     }
 
     private static int FindRoot(int[] parents, int index)
@@ -166,12 +226,26 @@ public static class AircraftPreviewPackModuleImporter
         }
     }
 
-    private static Mesh NormalizePropeller(Mesh source)
+    private static Mesh NormalizeRotor(Mesh source, string name)
     {
         var bounds = source.bounds;
         var radius = Mathf.Max(0.001f, Mathf.Max(bounds.extents.x, bounds.extents.y));
         return RemapMesh(
-            "PackPropeller",
+            name,
+            source,
+            source.triangles,
+            vertex => new Vector3(
+                (vertex.z - bounds.center.z) / radius,
+                (vertex.y - bounds.center.y) / radius,
+                (vertex.x - bounds.center.x) / radius));
+    }
+
+    private static Mesh NormalizeWheel(Mesh source, string name)
+    {
+        var bounds = source.bounds;
+        var radius = Mathf.Max(0.001f, Mathf.Max(bounds.extents.y, bounds.extents.z));
+        return RemapMesh(
+            name,
             source,
             source.triangles,
             vertex => new Vector3(
@@ -203,7 +277,6 @@ public static class AircraftPreviewPackModuleImporter
         var vertices = new List<Vector3>();
         var uvs = new List<Vector2>();
         var triangles = new int[sourceTriangles.Count];
-
         for (var index = 0; index < sourceTriangles.Count; index++)
         {
             var sourceIndex = sourceTriangles[index];
@@ -218,8 +291,7 @@ public static class AircraftPreviewPackModuleImporter
             triangles[index] = targetIndex;
         }
 
-        // Swapping the pack's X/Z axes is a reflection. Reverse every triangle so the generated
-        // hull keeps outward-facing normals instead of rendering only its far side like glass.
+        // Z-to-X remapping reflects the coordinate system, therefore triangle winding changes.
         for (var index = 0; index < triangles.Length; index += 3)
         {
             (triangles[index + 1], triangles[index + 2]) = (triangles[index + 2], triangles[index + 1]);
@@ -230,6 +302,7 @@ public static class AircraftPreviewPackModuleImporter
         mesh.SetUVs(0, uvs);
         mesh.SetTriangles(triangles, 0);
         mesh.RecalculateNormals();
+        mesh.RecalculateTangents();
         mesh.RecalculateBounds();
         return mesh;
     }
@@ -246,5 +319,32 @@ public static class AircraftPreviewPackModuleImporter
         EditorUtility.CopySerialized(generated, existing);
         UnityEngine.Object.DestroyImmediate(generated);
         EditorUtility.SetDirty(existing);
+    }
+
+    private static void SaveOrUpdateMaterial(string path, Material source)
+    {
+        var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (existing == null)
+        {
+            AssetDatabase.CreateAsset(new Material(source), path);
+            return;
+        }
+
+        EditorUtility.CopySerialized(source, existing);
+        EditorUtility.SetDirty(existing);
+    }
+
+    private readonly struct SourceDefinition
+    {
+        public SourceDefinition(int version, float halfWidth, float maximumY)
+        {
+            Version = version;
+            HalfWidth = halfWidth;
+            MaximumY = maximumY;
+        }
+
+        public int Version { get; }
+        public float HalfWidth { get; }
+        public float MaximumY { get; }
     }
 }

@@ -64,12 +64,31 @@ public static class AircraftPreviewValidationRenderer
             new PreviewCase("wing-aspect-20", EngineType.Turbojet, 0d, 2, TailType.Classic, WingPosition.Low, WingShape.Straight, 20d),
             new PreviewCase("wing-delta", EngineType.Turbojet, 0d, 2, TailType.Classic, WingPosition.Low, WingShape.Delta, 8d),
         };
+        var comparisonCases = new[]
+        {
+            new PreviewCase("comparison-single-piston", EngineType.Inline, 0d, 1, TailType.Classic, WingPosition.Low, WingShape.Straight, 6d, 22d, crewCount: 2, fuelAmountLiters: 620d),
+            new PreviewCase("comparison-single-piston-side", EngineType.Radial, 0d, 1, TailType.Classic, WingPosition.Low, WingShape.Straight, 6d, 26d, crewCount: 2, fuelAmountLiters: 700d, sideView: true),
+            new PreviewCase("comparison-single-jet", EngineType.Turbojet, 0d, 1, TailType.Classic, WingPosition.Low, WingShape.Swept, 4.8d, 25d, crewCount: 2, fuelAmountLiters: 820d),
+            new PreviewCase("comparison-single-jet-side", EngineType.Turbojet, 0d, 1, TailType.Classic, WingPosition.Low, WingShape.Swept, 4.8d, 25d, crewCount: 2, fuelAmountLiters: 820d, sideView: true),
+            new PreviewCase("comparison-commuter-turboprop-2", EngineType.Inline, 0d, 2, TailType.TTail, WingPosition.High, WingShape.Straight, 10d, 48d, crewCount: 5, fuelAmountLiters: 1_400d),
+            new PreviewCase("comparison-regional-jet-2", EngineType.Turbofan, 8d, 2, TailType.TTail, WingPosition.Low, WingShape.Swept, 9d, 72d, crewCount: 8, fuelAmountLiters: 2_800d),
+            new PreviewCase("comparison-transport-jet-4", EngineType.Turbofan, 14d, 4, TailType.Classic, WingPosition.Low, WingShape.Swept, 9d, 145d, crewCount: 14, fuelAmountLiters: 7_200d),
+            new PreviewCase("comparison-transport-cargo-4", EngineType.Turbofan, 14d, 4, TailType.Classic, WingPosition.Low, WingShape.Swept, 9d, 145d, showPassengerWindows: false, crewCount: 14, fuelAmountLiters: 7_200d),
+        };
 
         foreach (var previewCase in Combine(engineCases, tailCases))
         {
             var png = Render(previewCase);
             File.WriteAllBytes(Path.Combine(outputDirectory, previewCase.FileName + ".png"), png);
         }
+
+        foreach (var previewCase in comparisonCases)
+        {
+            var png = Render(previewCase);
+            File.WriteAllBytes(Path.Combine(outputDirectory, previewCase.FileName + ".png"), png);
+        }
+
+        RenderSourcePackReferences(outputDirectory);
 
         Debug.Log($"Aircraft preview validation renders written to: {outputDirectory}");
         return outputDirectory;
@@ -104,10 +123,10 @@ public static class AircraftPreviewValidationRenderer
         var parameters = new AirframeParameters
         {
             EngineCount = previewCase.EngineCount,
-            CrewCount = 4,
+            CrewCount = previewCase.CrewCount,
             WingAspectRatio = previewCase.WingAspectRatio,
             WingAreaSquareMeters = previewCase.WingAreaSquareMeters,
-            FuelAmountLiters = 1_400d,
+            FuelAmountLiters = previewCase.FuelAmountLiters,
             WingPosition = previewCase.WingPosition,
             WingShape = previewCase.WingShape,
             TailType = previewCase.TailType,
@@ -181,12 +200,106 @@ public static class AircraftPreviewValidationRenderer
         return new[]
         {
             CreateMaterial(shader, new Color(0.74f, 0.81f, 0.9f)),
-            CreateMaterial(shader, new Color(0.13f, 0.38f, 0.64f)),
-            CreateMaterial(shader, new Color(0.31f, 0.37f, 0.45f)),
-            CreateMaterial(shader, new Color(0.09f, 0.49f, 0.91f)),
+            CreateMaterial(shader, new Color(0.62f, 0.72f, 0.84f)),
+            CreateMaterial(shader, new Color(0.46f, 0.52f, 0.60f)),
+            CreateMaterial(shader, new Color(0.08f, 0.42f, 0.78f)),
             CreateMaterial(shader, new Color(0.035f, 0.052f, 0.069f)),
             CreateMaterial(shader, new Color(0.055f, 0.18f, 0.28f)),
         };
+    }
+
+    private static void RenderSourcePackReferences(string outputDirectory)
+    {
+        for (var version = 1; version <= 3; version++)
+        {
+            var path = $"Assets/Polyeler/Simple Aircraft Pack/Prefabs/Passenger Aircraft V{version}.prefab";
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (prefab == null)
+            {
+                throw new InvalidOperationException($"Source pack comparison prefab is missing: {path}");
+            }
+
+            File.WriteAllBytes(Path.Combine(outputDirectory, $"source-pack-v{version}.png"), RenderSourcePrefab(prefab, false));
+            File.WriteAllBytes(Path.Combine(outputDirectory, $"source-pack-v{version}-side.png"), RenderSourcePrefab(prefab, true));
+        }
+    }
+
+    private static byte[] RenderSourcePrefab(GameObject prefab, bool sideView)
+    {
+        var root = new GameObject("SourcePackReferenceRoot") { hideFlags = HideFlags.HideAndDontSave };
+        var instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject
+            ?? throw new InvalidOperationException($"Could not instantiate source prefab '{prefab.name}'.");
+        instance.hideFlags = HideFlags.HideAndDontSave;
+        instance.transform.SetParent(root.transform, false);
+        SetLayerRecursively(instance, PreviewLayer);
+        var bounds = CalculateRendererBounds(instance);
+        instance.transform.position -= bounds.center;
+        bounds = CalculateRendererBounds(instance);
+        var extent = Mathf.Max(bounds.extents.x, Mathf.Max(bounds.extents.y, bounds.extents.z));
+        var distance = extent * (sideView ? 3.0f : 2.7f);
+
+        var cameraObject = new GameObject("SourceCamera") { hideFlags = HideFlags.HideAndDontSave };
+        cameraObject.transform.SetParent(root.transform, false);
+        var camera = cameraObject.AddComponent<Camera>();
+        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.backgroundColor = new Color(0.025f, 0.063f, 0.09f, 1f);
+        camera.fieldOfView = 31f;
+        camera.nearClipPlane = 0.05f;
+        camera.farClipPlane = distance * 4f;
+        camera.cullingMask = 1 << PreviewLayer;
+        camera.enabled = false;
+        camera.transform.position = sideView
+            ? new Vector3(distance, extent * 0.08f, 0f)
+            : new Vector3(distance * 0.74f, extent * 0.38f, distance * 0.72f);
+        camera.transform.LookAt(Vector3.zero);
+        CreateLight(root.transform, "SourceKey", new Color(0.95f, 0.98f, 1f), 1.35f, Quaternion.Euler(32f, 145f, 0f));
+        CreateLight(root.transform, "SourceFill", new Color(0.35f, 0.55f, 0.9f), 0.55f, Quaternion.Euler(320f, 310f, 0f));
+
+        var renderTexture = new RenderTexture(Width, Height, 24, RenderTextureFormat.ARGB32)
+        {
+            antiAliasing = 4,
+            hideFlags = HideFlags.HideAndDontSave,
+        };
+        renderTexture.Create();
+        camera.targetTexture = renderTexture;
+        camera.Render();
+        var previousActive = RenderTexture.active;
+        RenderTexture.active = renderTexture;
+        var texture = new Texture2D(Width, Height, TextureFormat.RGBA32, false);
+        texture.ReadPixels(new Rect(0f, 0f, Width, Height), 0, 0);
+        texture.Apply();
+        var png = texture.EncodeToPNG();
+        RenderTexture.active = previousActive;
+        UnityEngine.Object.DestroyImmediate(texture);
+        UnityEngine.Object.DestroyImmediate(renderTexture);
+        UnityEngine.Object.DestroyImmediate(root);
+        return png;
+    }
+
+    private static Bounds CalculateRendererBounds(GameObject root)
+    {
+        var renderers = root.GetComponentsInChildren<Renderer>(true);
+        if (renderers.Length == 0)
+        {
+            return new Bounds(Vector3.zero, Vector3.one);
+        }
+
+        var bounds = renderers[0].bounds;
+        for (var index = 1; index < renderers.Length; index++)
+        {
+            bounds.Encapsulate(renderers[index].bounds);
+        }
+
+        return bounds;
+    }
+
+    private static void SetLayerRecursively(GameObject root, int layer)
+    {
+        root.layer = layer;
+        foreach (Transform child in root.transform)
+        {
+            SetLayerRecursively(child.gameObject, layer);
+        }
     }
 
     private static Material CreateMaterial(Shader shader, Color color)
@@ -239,7 +352,9 @@ public static class AircraftPreviewValidationRenderer
             double wingAspectRatio = 8d,
             double wingAreaSquareMeters = 48d,
             bool showPassengerWindows = true,
-            bool sideView = false)
+            bool sideView = false,
+            int crewCount = 4,
+            double fuelAmountLiters = 1_400d)
         {
             FileName = fileName;
             EngineType = engineType;
@@ -252,6 +367,8 @@ public static class AircraftPreviewValidationRenderer
             WingAreaSquareMeters = wingAreaSquareMeters;
             ShowPassengerWindows = showPassengerWindows;
             SideView = sideView;
+            CrewCount = crewCount;
+            FuelAmountLiters = fuelAmountLiters;
         }
 
         public string FileName { get; }
@@ -275,5 +392,9 @@ public static class AircraftPreviewValidationRenderer
         public bool ShowPassengerWindows { get; }
 
         public bool SideView { get; }
+
+        public int CrewCount { get; }
+
+        public double FuelAmountLiters { get; }
     }
 }
