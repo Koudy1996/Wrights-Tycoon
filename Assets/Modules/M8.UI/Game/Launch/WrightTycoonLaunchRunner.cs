@@ -99,7 +99,11 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly FactoryAccountingCalculator _factoryAccountingCalculator = new();
     private readonly ContractPricingCalculator _contractPricingCalculator = new();
     private readonly ResearchCalculator _researchCalculator = new();
+    // The complete 3D preview implementation and assets remain in the repository for possible
+    // future rework, but the production launcher intentionally excludes its runtime integration.
+#if WRIGHT_TYCOON_ENABLE_AIRCRAFT_PREVIEW_3D
     private readonly AircraftPreview3DRenderer _aircraftPreview3DRenderer = new();
+#endif
     private readonly HistoricalCampaignImageLoader _historicalCampaignImageLoader = new();
     private readonly HistoricalCampaignPopupWindow _historicalCampaignPopupWindow = new();
 
@@ -528,7 +532,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void OnDestroy()
     {
+#if WRIGHT_TYCOON_ENABLE_AIRCRAFT_PREVIEW_3D
         _aircraftPreview3DRenderer.Dispose();
+#endif
         _historicalCampaignImageLoader.Dispose();
         if (_modifierTooltipCircleTexture is not null)
         {
@@ -4559,11 +4565,12 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 BuildAircraftEngineOutputTooltip(_aircraftPreview, engineOutputAtSeaLevel, totalEngineOutputAtSeaLevel));
         }
 
-        DrawModernSectionHeader("Aircraft Visual", "The 3D preview and saved catalogue picture remain separate choices.");
+        DrawModernSectionHeader("Aircraft Picture", "Choose the catalogue picture saved with this aircraft.");
         EnsureAircraftPictureOptionsLoaded();
         _selectedAircraftPictureId = ResolveValidAircraftPictureId(_selectedAircraftPictureId);
 
         GUILayout.BeginHorizontal();
+#if WRIGHT_TYCOON_ENABLE_AIRCRAFT_PREVIEW_3D
         GUILayout.BeginVertical(GUILayout.ExpandWidth(true));
         var aircraftVisualRect = GUILayoutUtility.GetRect(140f, 290f, GUILayout.ExpandWidth(true));
         var rendered3d = _aircraftPreview3DRenderer.Draw(
@@ -4587,7 +4594,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.EndVertical();
 
         GUILayout.Space(8f);
-        GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(280f));
+#else
+        GUILayout.FlexibleSpace();
+#endif
+        GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(320f));
         GUILayout.Label("Picture For This Aircraft");
         if (_aircraftPictureOptions.Count == 0)
         {
@@ -4627,6 +4637,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         GUILayout.EndVertical();
+#if !WRIGHT_TYCOON_ENABLE_AIRCRAFT_PREVIEW_3D
+        GUILayout.FlexibleSpace();
+#endif
         GUILayout.EndHorizontal();
 
         DrawParameterValueRow(
