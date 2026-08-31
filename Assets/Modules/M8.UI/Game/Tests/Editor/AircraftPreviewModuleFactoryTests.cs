@@ -158,16 +158,43 @@ public sealed class AircraftPreviewModuleFactoryTests
         var singleLength = FindPart("CenterJetIntakeFairing_0")!
             .GetComponent<Renderer>().bounds.size.x;
         var singleIntakeX = FindPart("CenterJetIntakeLip_0")!.localPosition.x;
+        var singleOpening = FindPart("CenterJetIntakeLip_0")!
+            .GetComponent<Renderer>().bounds.size.y;
 
         parameters.EngineCount = 3;
         _factory.Build(parameters, EngineType.Turbojet, 0d);
         var multiLength = FindPart("CenterJetIntakeFairing_2")!
             .GetComponent<Renderer>().bounds.size.x;
+        var multiOpening = FindPart("CenterJetIntakeLip_2")!
+            .GetComponent<Renderer>().bounds.size.y;
 
         var protrusion = singleIntakeX - (singleLayout.FuselageLength * 0.5f);
         Assert.That(singleLength, Is.EqualTo(multiLength).Within(0.002f));
         Assert.That(protrusion, Is.GreaterThan(0f));
         Assert.That(protrusion, Is.LessThanOrEqualTo(singleLength * 0.11f));
+        Assert.That(singleOpening, Is.EqualTo(multiOpening * 0.7f).Within(0.002f));
+    }
+
+    [Test]
+    public void Build_SingleJetExhaustFairingTapersContinuouslyIntoFuselage()
+    {
+        var parameters = CreateParameters();
+        parameters.EngineCount = 1;
+        _factory.Build(parameters, EngineType.Turbojet, 0d);
+
+        var fairingMesh = FindPart("CenterJetExhaustFairing_0")!
+            .GetComponent<MeshFilter>().sharedMesh;
+        const int ringSegments = 12;
+        var ringRadii = Enumerable.Range(0, 4)
+            .Select(ring => fairingMesh.vertices
+                .Skip(ring * ringSegments)
+                .Take(ringSegments)
+                .Max(vertex => Mathf.Sqrt((vertex.y * vertex.y) + (vertex.z * vertex.z))))
+            .ToArray();
+
+        Assert.That(ringRadii[1], Is.GreaterThan(ringRadii[0]));
+        Assert.That(ringRadii[2], Is.GreaterThan(ringRadii[1]));
+        Assert.That(ringRadii[3], Is.GreaterThan(ringRadii[2]));
     }
 
     [TestCase(EngineType.Inline, "InlineCowling_0")]
@@ -313,8 +340,10 @@ public sealed class AircraftPreviewModuleFactoryTests
         var fuselageBounds = FindPart("Fuselage")!.GetComponent<Renderer>().bounds;
         var canopyBounds = FindPart("CockpitCanopy")!.GetComponent<Renderer>().bounds;
 
-        Assert.That(canopyBounds.size.x, Is.GreaterThan(fuselageBounds.size.x * 0.2f));
+        Assert.That(canopyBounds.size.x, Is.GreaterThan(fuselageBounds.size.x * 0.3f));
         Assert.That(canopyBounds.max.y, Is.GreaterThan(fuselageBounds.max.y));
+        Assert.That(fuselageBounds.max.x - canopyBounds.max.x,
+            Is.LessThan(fuselageBounds.size.x * 0.06f));
     }
 
     [Test]

@@ -229,21 +229,22 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             CreateLoftPart("Fuselage", x, radiusScale, radiusScale, Vector3.zero, _fuselageMaterial, radius);
         }
 
-        var canopyLength = Mathf.Clamp(length * 0.26f, 0.92f, 1.9f);
-        var canopyX = length * 0.27f;
+        var canopyLength = Mathf.Clamp(length * 0.34f, 1.08f, 2.35f);
+        var canopyX = length * 0.29f;
         CreateLoftPart(
             "CockpitCanopy",
             new[]
             {
                 -canopyLength * 0.5f,
-                -canopyLength * 0.34f,
-                -canopyLength * 0.02f,
-                canopyLength * 0.31f,
+                -canopyLength * 0.31f,
+                -canopyLength * 0.05f,
+                canopyLength * 0.2f,
+                canopyLength * 0.41f,
                 canopyLength * 0.5f,
             },
-            new[] { 0.04f, 0.43f, 0.62f, 0.5f, 0.04f },
-            new[] { 0.04f, 0.68f, 0.78f, 0.62f, 0.04f },
-            new Vector3(canopyX, radius * 0.67f, 0f),
+            new[] { 0.04f, 0.48f, 0.72f, 0.68f, 0.38f, 0.03f },
+            new[] { 0.04f, 0.7f, 0.82f, 0.78f, 0.45f, 0.03f },
+            new Vector3(canopyX, radius * 0.65f, 0f),
             _glassMaterial,
             radius);
 
@@ -699,11 +700,12 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         bool isSingleEngine)
     {
         var bypassScale = Mathf.InverseLerp(0f, 20f, (float)bypassRatio);
-        var intakeRadius = Mathf.Clamp(
+        var standardIntakeRadius = Mathf.Clamp(
             layout.FuselageRadius * Mathf.Lerp(0.7f, 0.82f, bypassScale),
             0.22f,
             0.58f);
-        var exhaustRadius = intakeRadius * 0.68f;
+        var intakeRadius = standardIntakeRadius * (isSingleEngine ? 0.7f : 1f);
+        var exhaustRadius = standardIntakeRadius * 0.68f;
         var standardIntakeFairingLength = Mathf.Clamp(layout.FuselageRadius * 1.55f, 0.58f, 1.24f);
         var intakeFairingLength = standardIntakeFairingLength;
         var noseX = layout.FuselageLength * 0.5f;
@@ -732,24 +734,25 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         CreateCylinderPart($"CenterJetIntake_{index}", new Vector3(intakeX + 0.032f, 0f, 0f), intakeRadius * 0.82f, 0.06f, alongX, _darkMaterial, 12);
         if (isSingleEngine)
         {
-            var exhaustFairingLength = standardIntakeFairingLength * 0.78f;
-            var exhaustFairingCenterX = tailX + (exhaustFairingLength * 0.24f);
-            var exhaustX = exhaustFairingCenterX - (exhaustFairingLength * 0.5f);
+            var exhaustFairingLength = Mathf.Clamp(layout.FuselageRadius * 2.2f, 0.8f, 1.6f);
+            var exhaustX = tailX - (exhaustFairingLength * 0.08f);
+            var exhaustFairingCenterX = exhaustX + (exhaustFairingLength * 0.5f);
+            var exhaustScale = exhaustRadius / layout.FuselageRadius;
             CreateLoftPart(
                 $"CenterJetExhaustFairing_{index}",
                 new[]
                 {
                     -exhaustFairingLength * 0.5f,
-                    -exhaustFairingLength * 0.08f,
-                    exhaustFairingLength * 0.28f,
-                    exhaustFairingLength * 0.52f,
+                    -exhaustFairingLength * 0.18f,
+                    exhaustFairingLength * 0.18f,
+                    exhaustFairingLength * 0.5f,
                 },
-                new[] { 1f, 1f, 0.88f, 0.42f },
-                new[] { 1f, 1f, 0.88f, 0.42f },
+                new[] { exhaustScale, Mathf.Lerp(exhaustScale, 0.92f, 0.34f), Mathf.Lerp(exhaustScale, 0.92f, 0.68f), 0.92f },
+                new[] { exhaustScale, Mathf.Lerp(exhaustScale, 0.92f, 0.34f), Mathf.Lerp(exhaustScale, 0.92f, 0.68f), 0.92f },
                 new Vector3(exhaustFairingCenterX, 0f, 0f),
                 _fuselageMaterial,
-                exhaustRadius,
-                exhaustRadius,
+                layout.FuselageRadius,
+                layout.FuselageRadius,
                 12);
             CreateCylinderPart($"CenterJetExhaustLip_{index}", new Vector3(exhaustX, 0f, 0f), exhaustRadius, 0.045f, alongX, _engineMaterial, 12);
             CreateCylinderPart($"CenterJetExhaust_{index}", new Vector3(exhaustX - 0.028f, 0f, 0f), exhaustRadius * 0.72f, 0.05f, alongX, _darkMaterial, 12);

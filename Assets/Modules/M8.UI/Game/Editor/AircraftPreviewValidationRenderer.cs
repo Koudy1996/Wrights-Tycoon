@@ -48,6 +48,7 @@ public static class AircraftPreviewValidationRenderer
             new PreviewCase("engine-v-2", EngineType.V, 0d, 2, TailType.Classic, WingPosition.Low, WingShape.Straight),
             new PreviewCase("engine-radial-3", EngineType.Radial, 0d, 3, TailType.Classic, WingPosition.Low, WingShape.Straight),
             new PreviewCase("engine-center-jet-1", EngineType.Turbojet, 0d, 1, TailType.Classic, WingPosition.Low, WingShape.Swept),
+            new PreviewCase("engine-center-jet-1-side", EngineType.Turbojet, 0d, 1, TailType.Classic, WingPosition.Low, WingShape.Swept, sideView: true),
             new PreviewCase("engine-turbojet-4", EngineType.Turbojet, 0d, 4, TailType.Classic, WingPosition.Low, WingShape.Swept),
             new PreviewCase("engine-turbofan-low-5", EngineType.Turbofan, 6d, 5, TailType.Classic, WingPosition.Low, WingShape.Swept),
             new PreviewCase("engine-turbofan-high-6", EngineType.Turbofan, 16d, 6, TailType.Classic, WingPosition.Low, WingShape.Swept),
@@ -85,7 +86,9 @@ public static class AircraftPreviewValidationRenderer
             hideFlags = HideFlags.HideAndDontSave,
         };
         model.transform.SetParent(root.transform, false);
-        model.transform.rotation = Quaternion.Euler(7f, -14f, 0f);
+        model.transform.rotation = previewCase.SideView
+            ? Quaternion.identity
+            : Quaternion.Euler(7f, -14f, 0f);
 
         var materials = CreateMaterials();
         var factory = new AircraftPreviewModuleFactory(
@@ -130,7 +133,9 @@ public static class AircraftPreviewValidationRenderer
 
         var distance = Mathf.Max(6.8f, Mathf.Max(layout.FuselageLength * 1.45f, layout.Span * 1.12f));
         camera.farClipPlane = Mathf.Max(100f, distance * 3f);
-        camera.transform.position = new Vector3(distance * 0.50f, distance * 0.28f, -distance);
+        camera.transform.position = previewCase.SideView
+            ? new Vector3(0f, distance * 0.04f, -distance)
+            : new Vector3(distance * 0.50f, distance * 0.28f, -distance);
         camera.transform.LookAt(new Vector3(0f, 0.05f, 0f));
 
         CreateLight(root.transform, "Key", new Color(0.92f, 0.97f, 1f), 1.25f, Quaternion.Euler(34f, 136f, 0f));
@@ -233,7 +238,8 @@ public static class AircraftPreviewValidationRenderer
             WingShape wingShape,
             double wingAspectRatio = 8d,
             double wingAreaSquareMeters = 48d,
-            bool showPassengerWindows = true)
+            bool showPassengerWindows = true,
+            bool sideView = false)
         {
             FileName = fileName;
             EngineType = engineType;
@@ -245,6 +251,7 @@ public static class AircraftPreviewValidationRenderer
             WingAspectRatio = wingAspectRatio;
             WingAreaSquareMeters = wingAreaSquareMeters;
             ShowPassengerWindows = showPassengerWindows;
+            SideView = sideView;
         }
 
         public string FileName { get; }
@@ -266,5 +273,7 @@ public static class AircraftPreviewValidationRenderer
         public double WingAreaSquareMeters { get; }
 
         public bool ShowPassengerWindows { get; }
+
+        public bool SideView { get; }
     }
 }
