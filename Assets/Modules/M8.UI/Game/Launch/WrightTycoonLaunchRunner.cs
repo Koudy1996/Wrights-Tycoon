@@ -8949,7 +8949,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void DrawMyMachinesSelectedEngineReport()
     {
-        DrawModernSectionHeader("Selected Engine", "Performance, approval state and the original design parameters in one place.");
+        DrawModernSectionHeader("Selected Engine", "Key performance and approval information for the selected engine.");
         if (_savedEngines.Count == 0)
         {
             GUILayout.Label("No engines saved.");
@@ -8971,13 +8971,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             DrawParameterValueRow("Engineering Time (months)", FormatUiInteger(engineResearchTimeMonths));
         }
 
-        DrawParameterValueRow("Definition", $"{selected.Definition.DisplayName} ({selected.Definition.EngineType})");
         DrawParameterValueRow("Engine Type", HumanizeUiToken(selected.Definition.EngineType.ToString()));
         if (IsJetFamily(selected.Definition.EngineType))
         {
             DrawParameterValueRow("Turbine Diameter (cm)", FormatUiNumber(selected.Parameters.TurbineDiameterMeters * 100d, "0"));
-            DrawParameterValueRow("Bypass Ratio", FormatUiNumber(selected.Parameters.BypassRatio, "0.00"));
-            DrawParameterValueRow("Afterburner", selected.Parameters.HasAfterburner ? "Enabled" : "Disabled");
         }
         else
         {
@@ -8988,11 +8985,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             DrawParameterValueRow("Optimization Height (m)", FormatUiNumber(selected.Parameters.OptimizationAltitudeMeters, "0"));
             DrawParameterValueRow("Efficiency Optimizations (%)", FormatUiNumber(selected.Parameters.EfficiencyOptimizationsPercent, "0.0"));
         }
-
-        DrawParameterValueRow("Compression Ratio", FormatUiNumber(selected.Parameters.CompressionRatio, "0.00"));
-        DrawParameterValueRow("Maximum Speed (RPM)", FormatUiNumber(selected.Parameters.MaximumSpeed, "0"));
-        DrawParameterValueRow("Cooling Efficiency", FormatUiNumber(selected.Parameters.CoolingEfficiency, "0.00"));
-        DrawParameterValueRow("Precision Engineering", FormatUiInteger(selected.Parameters.PrecisionEngineeringLevel));
 
         try
         {
@@ -9009,8 +9001,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
             DrawParameterValueRow("Reliability", FormatUiNumber(built.Performance.Reliability, "0.000"));
             DrawParameterValueRow("Weight (kg)", FormatUiNumber(built.Performance.Weight.Kilograms, "0.0"));
-            DrawParameterValueRow("Engine Length (m)", FormatUiNumber(built.Performance.EngineLengthMeters, "0.00"));
-            DrawParameterValueRow("Engine Frontal Area (m2)", FormatUiNumber(built.Performance.EngineFrontalAreaSquareMeters, "0.000"));
             DrawParameterValueRow("Parts Cost", FormatUiNumber(built.Performance.Cost, "0"));
             DrawParameterValueRow("Complete Production Cost", FormatUiNumber(built.Performance.CompleteProductionCost, "0"));
             DrawParameterValueRow("Production MD", FormatUiNumber(built.Performance.ProductionManDays, "0.0"));
@@ -9133,24 +9123,13 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         DrawModernSectionHeader("Selected Aircraft", "A readable catalogue card replaces internal IDs and raw enum tokens.");
         TryDrawAircraftPictureById(selected.AircraftPictureId, 320f, 200f);
         DrawParameterValueRow("Name", selected.Name);
-        DrawParameterValueRow("Service Status", selected.IsDecommissioned ? "Decommissioned" : "Active");
         DrawParameterValueRow("Development Start Year", FormatUiInteger(selected.DevelopmentStartedYear));
         DrawParameterValueRow("Qualified Categories", categories);
         DrawParameterValueRow(
             "Engine",
             ResolveSavedEngineDisplayNameForAircraftDesign(selected));
         DrawParameterValueRow("Crew Members", FormatUiInteger(aircraft.Airframe.Parameters.CrewCount));
-        DrawParameterValueRow("Wing Area (m2)", FormatUiNumber(aircraft.Airframe.Parameters.WingAreaSquareMeters, "0.0"));
-        DrawParameterValueRow("Wing Aspect Ratio", FormatUiNumber(aircraft.Airframe.Parameters.WingAspectRatio, "0.0"));
-        DrawParameterValueRow("Wing Shape", HumanizeUiToken(aircraft.Airframe.Parameters.WingShape.ToString()));
-        DrawParameterValueRow("Wing Profile", HumanizeUiToken(aircraft.Airframe.Parameters.WingProfile.ToString()));
-        DrawParameterValueRow("Tail Type", HumanizeUiToken(aircraft.Airframe.Parameters.TailType.ToString()));
-        DrawParameterValueRow("Flaps", HumanizeUiToken(aircraft.Airframe.Parameters.FlapType.ToString()));
-        DrawParameterValueRow("Leading Edge Flaps", aircraft.Airframe.Parameters.HasLeadingEdgeFlaps ? "Enabled" : "Disabled");
-        DrawParameterValueRow("Backup Systems", aircraft.Airframe.Parameters.HasBackupSystems ? "Enabled" : "Disabled");
-        DrawParameterValueRow("Landing Gear", HumanizeUiToken(aircraft.Airframe.Parameters.LandingGearType.ToString()));
         DrawParameterValueRow("Runway Type", HumanizeUiToken(aircraft.Airframe.Parameters.RunwayType.ToString()));
-        DrawParameterValueRow("Fuel (L)", FormatUiNumber(aircraft.Airframe.Parameters.FuelAmountLiters, "0"));
         var maximumSpeedKilometersPerHour = aircraft.Performance.MaxSpeedByAltitude.Count == 0
             ? 0d
             : aircraft.Performance.MaxSpeedByAltitude.Max(point => point.MaxSpeedMetersPerSecond) * 3.6d;
