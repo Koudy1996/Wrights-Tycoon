@@ -251,6 +251,14 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         AircraftPreviewArchetype archetype,
         bool showPassengerWindows)
     {
+        if (archetype == AircraftPreviewArchetype.SingleSeat)
+        {
+            BuildSingleSeatFuselage(layout, engineType);
+            BuildSingleSeatCanopy(layout, engineType);
+            BuildLivery(layout, archetype);
+            return;
+        }
+
         var source = archetype switch
         {
             AircraftPreviewArchetype.Transport => _packFuselageV1,
@@ -281,23 +289,11 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             BuildFallbackFuselage(layout);
         }
 
-        if (archetype == AircraftPreviewArchetype.SingleSeat)
-        {
-            BuildSingleSeatCanopy(layout, engineType);
-        }
-        else
-        {
-            BuildTransportCockpit(layout, archetype);
-        }
+        BuildTransportCockpit(layout, archetype);
 
         if (!showPassengerWindows)
         {
             BuildCargoWindowBlankingPanels(layout.FuselageLength, layout.FuselageRadius);
-        }
-        else if (archetype == AircraftPreviewArchetype.SingleSeat)
-        {
-            BuildSingleSeatCabinShell(layout);
-            BuildWindowSkinPanels("SingleSeatWindowBlank", layout.FuselageLength, layout.FuselageRadius);
         }
         else if (showPassengerWindows && !usesPackSurface)
         {
@@ -333,19 +329,126 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         return material;
     }
 
-    private void BuildSingleSeatCabinShell(AircraftPreviewLayout layout)
+    private void BuildSingleSeatFuselage(AircraftPreviewLayout layout, EngineType engineType)
+    {
+        var isJet = engineType is EngineType.Turbojet or EngineType.Turbofan;
+        if (isJet)
+        {
+            BuildSingleSeatJetFuselage(layout);
+            return;
+        }
+
+        BuildSingleSeatPistonFuselage(layout);
+    }
+
+    private void BuildSingleSeatPistonFuselage(AircraftPreviewLayout layout)
     {
         var length = layout.FuselageLength;
-        CreateLoftPart(
-            "SingleSeatCabinShell",
-            new[] { -length * 0.31f, -length * 0.24f, length * 0.20f, length * 0.27f },
-            new[] { 0.74f, 1f, 1f, 0.72f },
-            new[] { 0.82f, 1f, 1f, 0.78f },
-            Vector3.zero,
+        var radius = layout.FuselageRadius;
+        CreateProfiledLoftPart(
+            "Fuselage",
+            new[]
+            {
+                -length * 0.50f,
+                -length * 0.44f,
+                -length * 0.34f,
+                -length * 0.18f,
+                length * 0.02f,
+                length * 0.18f,
+                length * 0.27f,
+            },
+            new[]
+            {
+                -radius * 0.02f,
+                -radius * 0.04f,
+                -radius * 0.07f,
+                -radius * 0.07f,
+                -radius * 0.02f,
+                radius * 0.01f,
+                0f,
+            },
+            new[]
+            {
+                radius * 0.12f,
+                radius * 0.34f,
+                radius * 0.56f,
+                radius * 0.74f,
+                radius * 0.84f,
+                radius * 0.90f,
+                radius * 0.82f,
+            },
+            new[]
+            {
+                radius * 0.11f,
+                radius * 0.32f,
+                radius * 0.54f,
+                radius * 0.76f,
+                radius * 0.94f,
+                radius,
+                radius * 0.92f,
+            },
+            0f,
             _fuselageMaterial,
-            layout.FuselageRadius * 0.80f,
-            layout.FuselageRadius * 1.018f,
-            24);
+            RadialSegments);
+    }
+
+    private void BuildSingleSeatJetFuselage(AircraftPreviewLayout layout)
+    {
+        var length = layout.FuselageLength;
+        var radius = layout.FuselageRadius;
+        CreateProfiledLoftPart(
+            "Fuselage",
+            new[]
+            {
+                -length * 0.50f,
+                -length * 0.46f,
+                -length * 0.38f,
+                -length * 0.24f,
+                length * 0.02f,
+                length * 0.24f,
+                length * 0.39f,
+                length * 0.47f,
+                length * 0.50f,
+            },
+            new[]
+            {
+                0f,
+                -radius * 0.01f,
+                -radius * 0.02f,
+                -radius * 0.03f,
+                0f,
+                radius * 0.02f,
+                -radius * 0.01f,
+                -radius * 0.02f,
+                -radius * 0.02f,
+            },
+            new[]
+            {
+                radius * 0.36f,
+                radius * 0.47f,
+                radius * 0.64f,
+                radius * 0.82f,
+                radius,
+                radius * 0.96f,
+                radius * 0.84f,
+                radius * 0.67f,
+                radius * 0.58f,
+            },
+            new[]
+            {
+                radius * 0.34f,
+                radius * 0.45f,
+                radius * 0.63f,
+                radius * 0.84f,
+                radius,
+                radius * 0.98f,
+                radius * 0.88f,
+                radius * 0.70f,
+                radius * 0.60f,
+            },
+            0f,
+            _fuselageMaterial,
+            RadialSegments);
     }
 
     private static Color ReadMaterialColor(Material material)
@@ -434,29 +537,34 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
     private void BuildSingleSeatCanopy(AircraftPreviewLayout layout, EngineType engineType)
     {
         var isJet = engineType is EngineType.Turbojet or EngineType.Turbofan;
-        var length = Mathf.Clamp(layout.FuselageLength * (isJet ? 0.35f : 0.32f), 1.18f, 2.20f);
-        var centerX = layout.FuselageLength * (isJet ? 0.20f : 0.16f);
-        var baseY = layout.FuselageRadius * 0.43f;
-        CreateCanopyPart(
-            "CockpitCanopy",
-            centerX,
-            baseY,
-            length,
-            layout.FuselageRadius * 0.76f,
-            layout.FuselageRadius * (isJet ? 1.02f : 0.88f),
-            _glassMaterial);
+        var length = layout.FuselageLength;
+        var radius = layout.FuselageRadius;
+        var x = isJet
+            ? new[] { length * 0.00f, length * 0.035f, length * 0.11f, length * 0.20f, length * 0.27f, length * 0.30f }
+            : new[] { -length * 0.12f, -length * 0.08f, length * 0.01f, length * 0.09f, length * 0.15f, length * 0.17f };
+        var halfWidths = isJet
+            ? new[] { radius * 0.10f, radius * 0.50f, radius * 0.68f, radius * 0.66f, radius * 0.48f, radius * 0.08f }
+            : new[] { radius * 0.08f, radius * 0.45f, radius * 0.60f, radius * 0.58f, radius * 0.42f, radius * 0.06f };
+        var heights = isJet
+            ? new[] { radius * 0.05f, radius * 0.50f, radius * 0.92f, radius * 0.88f, radius * 0.58f, radius * 0.04f }
+            : new[] { radius * 0.04f, radius * 0.48f, radius * 0.78f, radius * 0.80f, radius * 0.55f, radius * 0.04f };
+        var baseY = isJet ? radius * 0.54f : radius * 0.49f;
+        CreateProfiledCanopyPart("CockpitCanopy", x, halfWidths, heights, baseY, _glassMaterial, 10);
 
-        // A narrow fuselage-coloured sill integrates the bubble with the source-pack shell.
-        CreateLoftPart(
-            "CockpitSill",
-            new[] { -length * 0.52f, -length * 0.40f, length * 0.38f, length * 0.52f },
-            new[] { 0.04f, 0.34f, 0.34f, 0.04f },
-            new[] { 0.04f, 0.74f, 0.70f, 0.04f },
-            new Vector3(centerX, baseY - (layout.FuselageRadius * 0.03f), 0f),
-            _fuselageMaterial,
-            layout.FuselageRadius * 0.24f,
-            layout.FuselageRadius,
-            14);
+        var sillCenterX = (x[0] + x[^1]) * 0.5f;
+        var sillLength = x[^1] - x[0];
+        for (var sideIndex = 0; sideIndex < 2; sideIndex++)
+        {
+            var side = sideIndex == 0 ? -1f : 1f;
+            CreateRoundedPanel(
+                side < 0f ? "CockpitSillLeft" : "CockpitSillRight",
+                new Vector3(sillCenterX, baseY, side * radius * 0.58f),
+                sillLength * 0.94f,
+                radius * 0.13f,
+                side * 0.025f,
+                _fuselageMaterial,
+                12);
+        }
     }
 
     private void BuildTransportCockpit(AircraftPreviewLayout layout, AircraftPreviewArchetype archetype)
@@ -890,7 +998,7 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             }
             else
             {
-                BuildNosePropellerEngine(moduleName, layout, 0);
+                BuildNosePropellerEngine(moduleName, layout, 0, true);
             }
 
             return;
@@ -919,13 +1027,23 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             }
             else
             {
-                BuildNosePropellerEngine(moduleName, layout, engineCount - 1);
+                BuildNosePropellerEngine(moduleName, layout, engineCount - 1, false);
             }
         }
     }
 
-    private void BuildNosePropellerEngine(string moduleName, AircraftPreviewLayout layout, int index)
+    private void BuildNosePropellerEngine(
+        string moduleName,
+        AircraftPreviewLayout layout,
+        int index,
+        bool isSingleEngine)
     {
+        if (isSingleEngine)
+        {
+            BuildSingleSeatPistonNose(moduleName, layout, index);
+            return;
+        }
+
         var isRadial = moduleName == "Radial";
         var cowlingLength = isRadial
             ? Mathf.Clamp(layout.FuselageRadius * 2.0f, 0.70f, 1.32f)
@@ -973,6 +1091,94 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         BuildPropeller(center.x + (cowlingLength * 0.57f), center.y, 0f, propellerRadius, isRadial || moduleName == "V" ? 3 : 2, index);
     }
 
+    private void BuildSingleSeatPistonNose(
+        string moduleName,
+        AircraftPreviewLayout layout,
+        int index)
+    {
+        var isRadial = moduleName == "Radial";
+        var length = layout.FuselageLength;
+        var radius = layout.FuselageRadius;
+        var rearJoinX = length * (isRadial ? 0.20f : 0.16f);
+        var noseX = length * 0.50f;
+        var centerY = -radius * 0.015f;
+        CreateProfiledLoftPart(
+            $"NoseCowling_{index}",
+            new[]
+            {
+                rearJoinX,
+                length * 0.26f,
+                length * 0.37f,
+                length * 0.46f,
+                noseX,
+            },
+            new[]
+            {
+                radius * 0.01f,
+                radius * 0.02f,
+                0f,
+                -radius * 0.01f,
+                centerY,
+            },
+            isRadial
+                ? new[] { radius * 0.86f, radius * 0.92f, radius * 0.91f, radius * 0.78f, radius * 0.62f }
+                : new[] { radius * 0.84f, radius * 0.86f, radius * 0.80f, radius * 0.69f, radius * 0.56f },
+            isRadial
+                ? new[] { radius * 0.91f, radius * 0.96f, radius * 0.95f, radius * 0.82f, radius * 0.65f }
+                : new[] { radius * 0.96f, radius * 0.98f, radius * 0.90f, radius * 0.76f, radius * 0.58f },
+            0f,
+            _fuselageMaterial,
+            RadialSegments);
+
+        if (!isRadial)
+        {
+            CreateRoundedPanel(
+                $"NoseCowlingTop_{index}",
+                new Vector3(length * 0.34f, radius * 0.80f, 0f),
+                length * 0.31f,
+                radius * 1.22f,
+                0.022f,
+                _darkMaterial,
+                14,
+                panelInHorizontalPlane: true);
+            CreateProfiledLoftPart(
+                $"SinglePistonChinIntake_{index}",
+                new[] { length * 0.25f, length * 0.31f, length * 0.38f },
+                new[] { -radius * 0.67f, -radius * 0.74f, -radius * 0.69f },
+                new[] { radius * 0.06f, radius * 0.14f, radius * 0.08f },
+                new[] { radius * 0.20f, radius * 0.31f, radius * 0.22f },
+                0f,
+                _darkMaterial,
+                10);
+        }
+
+        for (var sideIndex = 0; sideIndex < 2; sideIndex++)
+        {
+            var side = sideIndex == 0 ? -1f : 1f;
+            CreateRoundedPanel(
+                side < 0f ? $"PistonExhaustStackLeft_{index}" : $"PistonExhaustStackRight_{index}",
+                new Vector3(length * 0.31f, radius * 0.22f, side * radius * 0.88f),
+                length * 0.15f,
+                radius * 0.10f,
+                side * 0.026f,
+                _engineMaterial,
+                10);
+        }
+
+        var aircraftSize = Mathf.Sqrt(layout.WingArea);
+        var propellerRadius = Mathf.Clamp(
+            0.24f + (aircraftSize * 0.19f),
+            radius * 0.92f,
+            1.28f);
+        BuildPropeller(
+            noseX + 0.035f,
+            centerY,
+            0f,
+            propellerRadius,
+            isRadial || moduleName == "V" ? 3 : 2,
+            index);
+    }
+
     private void BuildCenterlineJet(double bypassRatio, AircraftPreviewLayout layout, int index, bool isSingleEngine)
     {
         var bypassScale = Mathf.InverseLerp(0f, 20f, (float)bypassRatio);
@@ -981,6 +1187,18 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         var exhaustRadius = standardIntakeRadius * 0.66f;
         var noseX = layout.FuselageLength * 0.5f;
         var tailX = -layout.FuselageLength * 0.5f;
+        if (isSingleEngine)
+        {
+            BuildSingleSeatJetFlowPath(
+                layout,
+                index,
+                intakeRadius,
+                exhaustRadius,
+                noseX,
+                tailX);
+            return;
+        }
+
         var fairingLength = Mathf.Clamp(layout.FuselageRadius * (isSingleEngine ? 1.10f : 1.40f), 0.42f, 0.88f);
         var alongX = Quaternion.Euler(0f, 0f, 90f);
 
@@ -1011,6 +1229,85 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
             RadialSegments);
         CreateCylinderPart($"CenterJetExhaustLip_{index}", new Vector3(tailX - 0.008f, 0f, 0f), exhaustRadius, 0.045f, alongX, _engineMaterial, RadialSegments);
         CreateCylinderPart($"CenterJetExhaust_{index}", new Vector3(tailX - 0.032f, 0f, 0f), exhaustRadius * 0.76f, 0.05f, alongX, _darkMaterial, RadialSegments);
+    }
+
+    private void BuildSingleSeatJetFlowPath(
+        AircraftPreviewLayout layout,
+        int index,
+        float intakeRadius,
+        float exhaustRadius,
+        float noseX,
+        float tailX)
+    {
+        var radius = layout.FuselageRadius;
+        var intakeCenterY = -radius * 0.02f;
+        var fairingLength = Mathf.Clamp(layout.FuselageLength * 0.12f, 0.38f, 0.62f);
+        CreateProfiledLoftPart(
+            $"CenterJetIntakeFairing_{index}",
+            new[]
+            {
+                noseX - fairingLength,
+                noseX - (fairingLength * 0.64f),
+                noseX - (fairingLength * 0.26f),
+                noseX,
+            },
+            new[] { -radius * 0.01f, -radius * 0.015f, intakeCenterY, intakeCenterY },
+            new[] { radius * 0.82f, radius * 0.72f, radius * 0.58f, intakeRadius * 1.04f },
+            new[] { radius * 0.86f, radius * 0.75f, radius * 0.60f, intakeRadius * 1.04f },
+            0f,
+            _fuselageMaterial,
+            RadialSegments);
+
+        var alongX = Quaternion.Euler(0f, 0f, 90f);
+        CreateCylinderPart(
+            $"CenterJetIntakeLip_{index}",
+            new Vector3(noseX + 0.012f, intakeCenterY, 0f),
+            intakeRadius,
+            0.050f,
+            alongX,
+            _engineMaterial,
+            RadialSegments);
+        CreateCylinderPart(
+            $"CenterJetIntake_{index}",
+            new Vector3(noseX + 0.038f, intakeCenterY, 0f),
+            intakeRadius * 0.80f,
+            0.055f,
+            alongX,
+            _darkMaterial,
+            RadialSegments);
+
+        var exhaustFairingLength = Mathf.Clamp(layout.FuselageLength * 0.14f, 0.45f, 0.72f);
+        CreateProfiledLoftPart(
+            $"CenterJetExhaustFairing_{index}",
+            new[]
+            {
+                tailX,
+                tailX + (exhaustFairingLength * 0.24f),
+                tailX + (exhaustFairingLength * 0.67f),
+                tailX + exhaustFairingLength,
+            },
+            new[] { 0f, 0f, -radius * 0.01f, -radius * 0.02f },
+            new[] { exhaustRadius, radius * 0.44f, radius * 0.58f, radius * 0.68f },
+            new[] { exhaustRadius, radius * 0.43f, radius * 0.57f, radius * 0.66f },
+            0f,
+            _fuselageMaterial,
+            RadialSegments);
+        CreateCylinderPart(
+            $"CenterJetExhaustLip_{index}",
+            new Vector3(tailX - 0.008f, 0f, 0f),
+            exhaustRadius,
+            0.045f,
+            alongX,
+            _engineMaterial,
+            RadialSegments);
+        CreateCylinderPart(
+            $"CenterJetExhaust_{index}",
+            new Vector3(tailX - 0.032f, 0f, 0f),
+            exhaustRadius * 0.76f,
+            0.050f,
+            alongX,
+            _darkMaterial,
+            RadialSegments);
     }
 
     private static float ResolveEngineRadius(string moduleName, double bypassRatio) =>
@@ -1333,6 +1630,50 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
         CreateMeshPart(name, vertices, triangles.ToArray(), material);
     }
 
+    private void CreateProfiledCanopyPart(
+        string name,
+        IReadOnlyList<float> x,
+        IReadOnlyList<float> halfWidths,
+        IReadOnlyList<float> heights,
+        float baseY,
+        Material material,
+        int arcSegments)
+    {
+        if (x.Count != halfWidths.Count || x.Count != heights.Count)
+        {
+            throw new ArgumentException("Canopy profile station arrays must have equal lengths.");
+        }
+
+        var vertices = new Vector3[x.Count * (arcSegments + 1)];
+        for (var station = 0; station < x.Count; station++)
+        {
+            for (var segment = 0; segment <= arcSegments; segment++)
+            {
+                var angle = Mathf.PI * segment / arcSegments;
+                vertices[(station * (arcSegments + 1)) + segment] = new Vector3(
+                    x[station],
+                    baseY + (Mathf.Sin(angle) * heights[station]),
+                    Mathf.Cos(angle) * halfWidths[station]);
+            }
+        }
+
+        var triangles = new List<int>((x.Count - 1) * arcSegments * 6);
+        for (var station = 0; station < x.Count - 1; station++)
+        {
+            for (var segment = 0; segment < arcSegments; segment++)
+            {
+                var a = (station * (arcSegments + 1)) + segment;
+                var b = a + 1;
+                var c = ((station + 1) * (arcSegments + 1)) + segment;
+                var d = c + 1;
+                triangles.Add(a); triangles.Add(b); triangles.Add(c);
+                triangles.Add(b); triangles.Add(d); triangles.Add(c);
+            }
+        }
+
+        CreateMeshPart(name, vertices, triangles.ToArray(), material);
+    }
+
     private void CreateRoundedPanel(
         string name,
         Vector3 center,
@@ -1380,6 +1721,57 @@ internal sealed class AircraftPreviewModuleFactory : IDisposable
                     x[ring],
                     Mathf.Cos(angle) * radius * radiusYScale[ring],
                     Mathf.Sin(angle) * radiusZ * radiusZScale[ring]);
+            }
+        }
+
+        var triangleIndex = 0;
+        for (var ring = 0; ring < x.Count - 1; ring++)
+        {
+            for (var segment = 0; segment < segments; segment++)
+            {
+                var next = (segment + 1) % segments;
+                var a = (ring * segments) + segment;
+                var b = (ring * segments) + next;
+                var c = ((ring + 1) * segments) + segment;
+                var d = ((ring + 1) * segments) + next;
+                triangles[triangleIndex++] = a;
+                triangles[triangleIndex++] = b;
+                triangles[triangleIndex++] = c;
+                triangles[triangleIndex++] = b;
+                triangles[triangleIndex++] = d;
+                triangles[triangleIndex++] = c;
+            }
+        }
+
+        CreateMeshPart(name, vertices, triangles, material);
+    }
+
+    private void CreateProfiledLoftPart(
+        string name,
+        IReadOnlyList<float> x,
+        IReadOnlyList<float> centerY,
+        IReadOnlyList<float> radiusY,
+        IReadOnlyList<float> radiusZ,
+        float centerZ,
+        Material material,
+        int segments)
+    {
+        if (x.Count != centerY.Count || x.Count != radiusY.Count || x.Count != radiusZ.Count)
+        {
+            throw new ArgumentException("Loft profile station arrays must have equal lengths.");
+        }
+
+        var vertices = new Vector3[x.Count * segments];
+        var triangles = new int[(x.Count - 1) * segments * 6];
+        for (var ring = 0; ring < x.Count; ring++)
+        {
+            for (var segment = 0; segment < segments; segment++)
+            {
+                var angle = (Mathf.PI * 2f * segment) / segments;
+                vertices[(ring * segments) + segment] = new Vector3(
+                    x[ring],
+                    centerY[ring] + (Mathf.Cos(angle) * radiusY[ring]),
+                    centerZ + (Mathf.Sin(angle) * radiusZ[ring]));
             }
         }
 

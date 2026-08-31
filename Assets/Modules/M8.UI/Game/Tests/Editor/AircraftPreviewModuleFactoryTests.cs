@@ -219,9 +219,9 @@ public sealed class AircraftPreviewModuleFactoryTests
     [Test]
     public void Build_SelectsPackFuselageFamilyAndDeformsOnlyRuntimeClone()
     {
-        var commuter = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackFuselageV3");
+        var regional = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackFuselageV2");
         var transport = Resources.Load<Mesh>("WT03/Previews/AircraftModules/PackFuselageV1");
-        Assert.That(commuter, Is.Not.Null);
+        Assert.That(regional, Is.Not.Null);
         Assert.That(transport, Is.Not.Null);
         var parameters = CreateParameters();
         parameters.EngineCount = 4;
@@ -232,12 +232,12 @@ public sealed class AircraftPreviewModuleFactoryTests
         Assert.That(transportClone.vertexCount, Is.EqualTo(transport!.vertexCount));
         var transportLength = transportClone.bounds.size.x;
 
-        parameters.EngineCount = 1;
+        parameters.EngineCount = 2;
         _factory.Build(parameters, EngineType.Turbojet, 0d);
-        var commuterClone = FindPart("Fuselage")!.GetComponent<MeshFilter>().sharedMesh;
-        Assert.That(commuterClone, Is.Not.SameAs(commuter));
-        Assert.That(commuterClone.vertexCount, Is.EqualTo(commuter!.vertexCount));
-        Assert.That(commuterClone.bounds.size.x, Is.LessThan(transportLength));
+        var regionalClone = FindPart("Fuselage")!.GetComponent<MeshFilter>().sharedMesh;
+        Assert.That(regionalClone, Is.Not.SameAs(regional));
+        Assert.That(regionalClone.vertexCount, Is.EqualTo(regional!.vertexCount));
+        Assert.That(regionalClone.bounds.size.x, Is.LessThanOrEqualTo(transportLength));
     }
 
     [Test]
@@ -264,8 +264,72 @@ public sealed class AircraftPreviewModuleFactoryTests
         _factory.Build(parameters, EngineType.Inline, 0d, showPassengerWindows: true);
 
         Assert.That(CountParts("CabinWindow"), Is.Zero);
-        Assert.That(CountParts("SingleSeatWindowBlank"), Is.EqualTo(2));
+        Assert.That(CountParts("SingleSeatWindowBlank"), Is.Zero);
         Assert.That(FindPart("CockpitCanopy"), Is.Not.Null);
+        Assert.That(FindPart("CockpitSillLeft"), Is.Not.Null);
+        Assert.That(FindPart("CockpitSillRight"), Is.Not.Null);
+        Assert.That(
+            FindPart("Fuselage")!.GetComponent<MeshFilter>().sharedMesh.vertexCount,
+            Is.EqualTo(7 * 18));
+    }
+
+    [Test]
+    public void Build_SinglePistonUsesDedicatedSpitfireInspiredBody()
+    {
+        var parameters = CreateParameters();
+        parameters.EngineCount = 1;
+
+        var layout = _factory.Build(parameters, EngineType.Inline, 0d);
+
+        var fuselage = FindPart("Fuselage")!.GetComponent<Renderer>().bounds;
+        var cowling = FindPart("NoseCowling_0")!.GetComponent<Renderer>().bounds;
+        Assert.That(FindPart("NoseCowlingTop_0"), Is.Not.Null);
+        Assert.That(FindPart("SinglePistonChinIntake_0"), Is.Not.Null);
+        Assert.That(FindPart("PistonExhaustStackLeft_0"), Is.Not.Null);
+        Assert.That(FindPart("PistonExhaustStackRight_0"), Is.Not.Null);
+        Assert.That(cowling.Intersects(fuselage), Is.True);
+        Assert.That(cowling.max.x, Is.EqualTo(layout.FuselageLength * 0.5f).Within(0.01f));
+        Assert.That(cowling.size.x, Is.GreaterThan(cowling.size.y * 1.4f));
+    }
+
+    [Test]
+    public void Build_SingleJetUsesDedicatedSabreInspiredBody()
+    {
+        var parameters = CreateParameters();
+        parameters.EngineCount = 1;
+
+        _factory.Build(parameters, EngineType.Turbojet, 0d);
+
+        var fuselage = FindPart("Fuselage")!;
+        var fuselageBounds = fuselage.GetComponent<Renderer>().bounds;
+        var intakeLip = FindPart("CenterJetIntakeLip_0")!;
+        var exhaust = FindPart("CenterJetExhaust_0")!;
+        Assert.That(fuselage.GetComponent<MeshFilter>().sharedMesh.vertexCount, Is.EqualTo(9 * 18));
+        Assert.That(intakeLip.localPosition.x, Is.GreaterThan(fuselageBounds.max.x));
+        Assert.That(exhaust.localPosition.x, Is.LessThan(fuselageBounds.min.x));
+        Assert.That(FindPart("CenterJetIntakeFairing_0")!.GetComponent<Renderer>().bounds.Intersects(fuselageBounds), Is.True);
+        Assert.That(FindPart("CenterJetExhaustFairing_0")!.GetComponent<Renderer>().bounds.Intersects(fuselageBounds), Is.True);
+    }
+
+    [Test]
+    public void Build_SingleEngineBodyStyleDoesNotAlterWingTailOrLandingGearModules()
+    {
+        var parameters = CreateParameters();
+        parameters.EngineCount = 1;
+
+        _factory.Build(parameters, EngineType.Inline, 0d);
+        var pistonWing = FindPart("MainWingLeft")!.GetComponent<MeshFilter>().sharedMesh.vertices.ToArray();
+        var pistonTail = FindPart("ClassicFin")!.GetComponent<MeshFilter>().sharedMesh.vertices.ToArray();
+        var pistonGearPosition = FindPart("MainGearLeftWheel")!.localPosition;
+
+        _factory.Build(parameters, EngineType.Turbojet, 0d);
+        var jetWing = FindPart("MainWingLeft")!.GetComponent<MeshFilter>().sharedMesh.vertices;
+        var jetTail = FindPart("ClassicFin")!.GetComponent<MeshFilter>().sharedMesh.vertices;
+        var jetGearPosition = FindPart("MainGearLeftWheel")!.localPosition;
+
+        CollectionAssert.AreEqual(pistonWing, jetWing);
+        CollectionAssert.AreEqual(pistonTail, jetTail);
+        Assert.That(jetGearPosition, Is.EqualTo(pistonGearPosition));
     }
 
     [TestCase(TailType.Classic, "ClassicFin")]
@@ -309,13 +373,13 @@ public sealed class AircraftPreviewModuleFactoryTests
         Assert.That(wheelMesh, Is.Not.Null);
 
         var parameters = CreateParameters();
-        parameters.EngineCount = 1;
+        parameters.EngineCount = 2;
         _factory.Build(parameters, EngineType.Radial, 0d);
 
         var fuselage = FindPart("Fuselage");
         Assert.That(fuselage, Is.Not.Null);
         Assert.That(fuselage!.GetComponent<MeshFilter>().sharedMesh.vertexCount, Is.EqualTo(fuselageMesh!.vertexCount));
-        Assert.That(CountParts("PackPropeller"), Is.EqualTo(1));
+        Assert.That(CountParts("PackPropeller"), Is.EqualTo(2));
         Assert.That(FindPart("NoseGearWheel")!.GetComponent<MeshFilter>().sharedMesh, Is.SameAs(wheelMesh));
     }
 
