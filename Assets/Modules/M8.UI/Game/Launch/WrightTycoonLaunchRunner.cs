@@ -214,7 +214,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     private int _elapsedMonths;
     private int _lastLoggedTechnologyModifierYear = int.MinValue;
     private ContractDeliverabilityFilter _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
-    private ContractSpecificationFilter _contractSpecificationFilter = ContractSpecificationFilter.All;
     private ContractDeliveryStatusFilter _contractDeliveryStatusFilter = ContractDeliveryStatusFilter.All;
     private bool _contractRequestedCategoryFilterEnabled;
     private AircraftCategory _contractRequestedCategoryFilter = AircraftCategory.LightSportAndRecreational;
@@ -1213,7 +1212,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         _showHistoricalCampaignDebugPanel = false;
         _historicalCampaignDebugMessage = string.Empty;
         _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
-        _contractSpecificationFilter = ContractSpecificationFilter.All;
         _contractDeliveryStatusFilter = ContractDeliveryStatusFilter.All;
         _contractRequestedCategoryFilterEnabled = false;
         _contractRequestedCategoryFilter = AircraftCategory.LightSportAndRecreational;
@@ -1977,7 +1975,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             TypeHasSpecialEquipment = _typeHasSpecialEquipment,
             TypeHasCombatEquipment = _typeHasCombatEquipment,
             ContractDeliverabilityFilter = _contractDeliverabilityFilter,
-            ContractSpecificationFilter = _contractSpecificationFilter,
             ContractDeliveryStatusFilter = _contractDeliveryStatusFilter,
             ContractRequestedCategoryFilterEnabled = _contractRequestedCategoryFilterEnabled,
             ContractRequestedCategoryFilter = _contractRequestedCategoryFilter,
@@ -2277,7 +2274,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         _contractDeliverabilityFilter = Enum.IsDefined(typeof(ContractDeliverabilityFilter), data.ContractDeliverabilityFilter)
             ? data.ContractDeliverabilityFilter
             : ContractDeliverabilityFilter.All;
-        _contractSpecificationFilter = data.ContractSpecificationFilter;
         _contractDeliveryStatusFilter = Enum.IsDefined(typeof(ContractDeliveryStatusFilter), data.ContractDeliveryStatusFilter)
             ? data.ContractDeliveryStatusFilter
             : ContractDeliveryStatusFilter.All;
@@ -4770,14 +4766,13 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         DrawSection("Filters");
         _contractDeliverabilityFilter = DrawContractDeliverabilityFilter("1) Delivery Filter", _contractDeliverabilityFilter);
-        _contractSpecificationFilter = DrawContractSpecificationFilter("2) Matching Plane Filter", _contractSpecificationFilter);
-        _contractDeliveryStatusFilter = DrawContractDeliveryStatusFilter("3) Delivery Status", _contractDeliveryStatusFilter);
+        _contractDeliveryStatusFilter = DrawContractDeliveryStatusFilter("2) Delivery Status", _contractDeliveryStatusFilter);
         DrawContractRequestedCategoryFilter(
-            "4) Desired Aircraft Type",
+            "3) Desired Aircraft Type",
             ref _contractRequestedCategoryFilterEnabled,
             ref _contractRequestedCategoryFilter);
-        _contractQuantityFilterMin = DrawIntSlider("5) Required Aircraft Min", _contractQuantityFilterMin, 5, 500);
-        _contractQuantityFilterMax = DrawIntSlider("5) Required Aircraft Max", _contractQuantityFilterMax, 5, 500);
+        _contractQuantityFilterMin = DrawIntSlider("4) Required Aircraft Min", _contractQuantityFilterMin, 5, 500);
+        _contractQuantityFilterMax = DrawIntSlider("4) Required Aircraft Max", _contractQuantityFilterMax, 5, 500);
         if (_contractQuantityFilterMin > _contractQuantityFilterMax)
         {
             _contractQuantityFilterMax = _contractQuantityFilterMin;
@@ -4786,7 +4781,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         if (GUILayout.Button("Reset Contract Filters", GUILayout.Height(26f)))
         {
             _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
-            _contractSpecificationFilter = ContractSpecificationFilter.All;
             _contractDeliveryStatusFilter = ContractDeliveryStatusFilter.All;
             _contractRequestedCategoryFilterEnabled = false;
             _contractRequestedCategoryFilter = AircraftCategory.LightSportAndRecreational;
@@ -12210,13 +12204,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        return _contractSpecificationFilter switch
-        {
-            ContractSpecificationFilter.All => true,
-            ContractSpecificationFilter.HaveMatchingPlane => snapshot.HasMatchingPlaneBySpecification,
-            ContractSpecificationFilter.DoNotHaveMatchingPlane => !snapshot.HasMatchingPlaneBySpecification,
-            _ => true,
-        };
+        return true;
     }
 
     private static bool MatchesContractDeliveryStatusFilter(
@@ -16004,16 +15992,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         return (ContractDeliverabilityFilter)nextIndex;
     }
 
-    private static ContractSpecificationFilter DrawContractSpecificationFilter(string label, ContractSpecificationFilter currentFilter)
-    {
-        GUILayout.Label(label);
-        var labels = new[] { "All", "Have Matching Plane", "Don't Have Matching Plane" };
-        var index = Mathf.Clamp((int)currentFilter, 0, labels.Length - 1);
-        var nextIndex = GUILayout.SelectionGrid(index, labels, 1);
-        nextIndex = Mathf.Clamp(nextIndex, 0, labels.Length - 1);
-        return (ContractSpecificationFilter)nextIndex;
-    }
-
     private static ContractDeliveryStatusFilter DrawContractDeliveryStatusFilter(
         string label,
         ContractDeliveryStatusFilter currentFilter)
@@ -16947,13 +16925,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         CanProfitOnly = 2,
     }
 
-    private enum ContractSpecificationFilter
-    {
-        All = 0,
-        HaveMatchingPlane = 1,
-        DoNotHaveMatchingPlane = 2,
-    }
-
     private enum ContractDeliveryStatusFilter
     {
         All = 0,
@@ -17654,8 +17625,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         public bool TypeHasCombatEquipment { get; set; }
 
         public ContractDeliverabilityFilter ContractDeliverabilityFilter { get; set; }
-
-        public ContractSpecificationFilter ContractSpecificationFilter { get; set; }
 
         public ContractDeliveryStatusFilter ContractDeliveryStatusFilter { get; set; }
 
