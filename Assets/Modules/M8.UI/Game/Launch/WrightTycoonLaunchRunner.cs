@@ -26,6 +26,7 @@ using WrightTycoon.Core.Simulation;
 using WrightTycoon.Core.Research;
 using WrightTycoon.Game.Campaign;
 using WrightTycoon.Game.GovernmentContracts;
+using WrightTycoon.Game.Machines;
 using WrightTycoon.Game.RuntimeData;
 using WrightTycoon.Game.UI;
 using WrightTycoon.Game.Save;
@@ -84,7 +85,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly Dictionary<string, string> _selectedWarehouseDesignByContractId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _excludedWarehouseDesignByContractId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, double> _deliveredContractProfitById = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, int> _soldAircraftUnitsByDesignId = new(StringComparer.Ordinal);
+    private readonly MachineStatisticsLedger _machineStatistics = new();
     private readonly Dictionary<string, string> _governmentDeliveryQuantityInputById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _factoryScrapQuantityInputByDesignId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _factoryTotalTargetInputByLineId = new(StringComparer.Ordinal);
@@ -285,7 +286,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     private const string SaveFileName = "saves.json";
     private const int AutosaveIntervalMonths = 6;
     private const int AutosaveRetentionCount = 4;
-    private const int SavePayloadVersion = 10;
+    private const int SavePayloadVersion = 11;
+    private const int MachineStatisticsSavePayloadVersion = 11;
     private const int SlowerCompanyResearchSavePayloadVersion = 9;
     private const string DisplayModePreferenceKey = "WrightTycoon.Display.Mode";
     private const string DisplayWidthPreferenceKey = "WrightTycoon.Display.Width";
@@ -1158,7 +1160,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         _selectedWarehouseDesignByContractId.Clear();
         _excludedWarehouseDesignByContractId.Clear();
         _deliveredContractProfitById.Clear();
-        _soldAircraftUnitsByDesignId.Clear();
+        _machineStatistics.Clear();
         _governmentDeliveryQuantityInputById.Clear();
         _factoryScrapQuantityInputByDesignId.Clear();
         _selectedSavedEngineIndex = -1;
@@ -2119,7 +2121,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             });
         }
 
-        foreach (var entry in _soldAircraftUnitsByDesignId)
+        payload.MachineStatisticsSnapshot = _machineStatistics.CreateSnapshot();
+        foreach (var entry in _machineStatistics.SoldAircraftUnitsByDesignId)
         {
             payload.SoldAircraftUnitsByDesignId.Add(new StringIntStateEntry
             {
@@ -2502,7 +2505,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         _deliveredContractProfitById.Clear();
-        _soldAircraftUnitsByDesignId.Clear();
+        _machineStatistics.Clear();
         _governmentDeliveryQuantityInputById.Clear();
         _factoryScrapQuantityInputByDesignId.Clear();
         if (data.DeliveredContractProfitById is not null)
@@ -2519,18 +2522,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
-        if (data.SoldAircraftUnitsByDesignId is not null)
+        if (data.Version >= MachineStatisticsSavePayloadVersion)
         {
-            for (var index = 0; index < data.SoldAircraftUnitsByDesignId.Count; index++)
-            {
-                var entry = data.SoldAircraftUnitsByDesignId[index];
-                if (entry is null || string.IsNullOrWhiteSpace(entry.Key) || entry.Value <= 0)
-                {
-                    continue;
-                }
-
-                _soldAircraftUnitsByDesignId[entry.Key] = entry.Value;
-            }
+            _machineStatistics.RestoreSnapshot(data.MachineStatisticsSnapshot);
         }
 
         if (data.ContractBoardSnapshot is not null && _contractBoard is not null)
@@ -2557,6 +2551,11 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         if (data.AccountingSnapshot is not null && _accountingSystem is not null)
         {
             _accountingSystem.RestoreSnapshot(data.AccountingSnapshot);
+        }
+
+        if (data.Version < MachineStatisticsSavePayloadVersion)
+        {
+            MigrateLegacyMachineStatistics(data);
         }
 
         _loanPortfolio = new LoanPortfolio();
@@ -2586,7 +2585,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         }
         else
         {
-            var restoredSoldUnits = _soldAircraftUnitsByDesignId.Values.Sum();
+            var restoredSoldUnits = _machineStatistics.SoldAircraftUnitsByDesignId.Values.Sum();
             var restoredWarehouseUnits = _productionFactory?.WarehouseUnitsByDesign.Values.Sum() ?? 0;
             _companyRunStatistics.RegisterAircraftSold(restoredSoldUnits);
             _companyRunStatistics.RegisterAircraftProduced(checked(restoredSoldUnits + restoredWarehouseUnits));
@@ -5107,10 +5106,18 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                         _contractActionMessage =
                             $"{result.Message} Delivered from: {deliveryPlanSummaryToBook}. Revenue booked: {FormatCurrency(contractIncomeToBook)}.";
                         _deliveredContractProfitById[contractToDeliver.Id] = contractProfitLossToBook;
+                        var allocatedContractRevenue = 0d;
                         for (var allocationIndex = 0; allocationIndex < deliveryAllocationsToApply.Count; allocationIndex++)
                         {
                             var allocation = deliveryAllocationsToApply[allocationIndex];
-                            RegisterSoldAircraftUnits(allocation.Candidate.DesignId, allocation.UnitsToDeliver);
+                            var allocationRevenue = allocationIndex == deliveryAllocationsToApply.Count - 1
+                                ? System.Math.Max(0d, contractIncomeToBook - allocatedContractRevenue)
+                                : contractIncomeToBook * allocation.UnitsToDeliver / contractToDeliver.QuantityUnits;
+                            RegisterSoldAircraftUnits(
+                                allocation.Candidate.DesignId,
+                                allocation.UnitsToDeliver,
+                                allocationRevenue);
+                            allocatedContractRevenue += allocationRevenue;
                         }
 
                         if (_accountingSystem is not null && _productionFactory is not null)
@@ -6301,15 +6308,19 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         if (deliveryUpdate.DeliveredUnitsThisMonth > 0)
         {
             deliveryIncome = deliveryUpdate.DeliveredUnitsThisMonth * deliveryContractBefore.UnitPrice;
-            RegisterSoldAircraftUnits(
-                deliveryContractBefore.AircraftDesignId,
-                deliveryUpdate.DeliveredUnitsThisMonth);
         }
 
         var completionBonusIncome = deliveryUpdate.CompletionBonusGranted > 0d
             ? deliveryUpdate.CompletionBonusGranted
             : 0d;
         var bookedIncome = deliveryIncome + completionBonusIncome;
+        if (deliveryUpdate.DeliveredUnitsThisMonth > 0)
+        {
+            RegisterSoldAircraftUnits(
+                deliveryContractBefore.AircraftDesignId,
+                deliveryUpdate.DeliveredUnitsThisMonth,
+                bookedIncome);
+        }
 
         if (_accountingSystem is not null && bookedIncome > 0d)
         {
@@ -6485,6 +6496,24 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         return _researchBoard.TryGetResearchCost(subjectType, subjectId, out var price)
             ? System.Math.Max(0d, price)
             : 0d;
+    }
+
+    private double ResolveAllocatedAircraftResearchCost(SavedAircraftDesign savedDesign)
+    {
+        var directTypeCost = ResolveGovernmentResearchPrice(
+            ResearchSubjectType.AircraftType,
+            savedDesign.TypeResearchId);
+        var familyUsers = _savedAircraftDesigns.Count(design =>
+            string.Equals(design.FamilyResearchId, savedDesign.FamilyResearchId, StringComparison.Ordinal));
+        var engineUsers = _savedAircraftDesigns.Count(design =>
+            string.Equals(design.EngineResearchId, savedDesign.EngineResearchId, StringComparison.Ordinal));
+        var allocatedFamilyCost = MachineEconomicsCalculator.AllocateSharedResearchCost(
+            ResolveGovernmentResearchPrice(ResearchSubjectType.AircraftFamily, savedDesign.FamilyResearchId),
+            familyUsers);
+        var allocatedEngineCost = MachineEconomicsCalculator.AllocateSharedResearchCost(
+            ResolveGovernmentResearchPrice(ResearchSubjectType.Engine, savedDesign.EngineResearchId),
+            engineUsers);
+        return directTypeCost + allocatedFamilyCost + allocatedEngineCost;
     }
 
     private void DrawGovernmentRequirements(GovernmentContractRequirements requirements)
@@ -8709,16 +8738,239 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         return loan.ScheduledPayment;
     }
 
-    private void RegisterSoldAircraftUnits(string designId, int units)
+    private void RegisterSoldAircraftUnits(string designId, int units, double salesRevenue)
     {
         if (string.IsNullOrWhiteSpace(designId) || units <= 0)
         {
             return;
         }
 
-        _soldAircraftUnitsByDesignId.TryGetValue(designId, out var currentUnits);
-        _soldAircraftUnitsByDesignId[designId] = checked(currentUnits + units);
+        if (TryResolveMachineEngineContext(designId, out var engineResearchId, out var enginesPerAircraft))
+        {
+            _machineStatistics.RegisterSale(
+                designId,
+                engineResearchId,
+                enginesPerAircraft,
+                units,
+                System.Math.Max(0d, salesRevenue));
+        }
+
         _companyRunStatistics.RegisterAircraftSold(units);
+    }
+
+    private void RegisterProducedMachineUnits(FactoryMonthlyProductionReport report)
+    {
+        for (var index = 0; index < report.LineReports.Count; index++)
+        {
+            var line = report.LineReports[index];
+            if (line.ProducedUnits <= 0
+                || !TryResolveMachineEngineContext(
+                    line.AssignedDesignId ?? string.Empty,
+                    out var engineResearchId,
+                    out var enginesPerAircraft))
+            {
+                continue;
+            }
+
+            _machineStatistics.RegisterProduction(
+                line.AssignedDesignId!,
+                engineResearchId,
+                enginesPerAircraft,
+                line.ProducedUnits);
+        }
+    }
+
+    private bool TryResolveMachineEngineContext(
+        string designId,
+        out string engineResearchId,
+        out int enginesPerAircraft)
+    {
+        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
+        {
+            var savedDesign = _savedAircraftDesigns[index];
+            if (!string.Equals(savedDesign.CatalogItem.DesignId, designId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            engineResearchId = savedDesign.EngineResearchId;
+            enginesPerAircraft = System.Math.Max(
+                savedDesign.CatalogItem.Aircraft.Airframe.Parameters.EngineCount,
+                1);
+            return !string.IsNullOrWhiteSpace(engineResearchId);
+        }
+
+        engineResearchId = string.Empty;
+        enginesPerAircraft = 0;
+        return false;
+    }
+
+    private void MigrateLegacyMachineStatistics(RunnerGameSavePayload data)
+    {
+        var legacySoldUnits = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (data.SoldAircraftUnitsByDesignId is not null)
+        {
+            for (var index = 0; index < data.SoldAircraftUnitsByDesignId.Count; index++)
+            {
+                var entry = data.SoldAircraftUnitsByDesignId[index];
+                if (entry is not null && !string.IsNullOrWhiteSpace(entry.Key) && entry.Value > 0)
+                {
+                    legacySoldUnits[entry.Key.Trim()] = entry.Value;
+                }
+            }
+        }
+
+        foreach (var entry in legacySoldUnits)
+        {
+            if (TryResolveMachineEngineContext(entry.Key, out var engineResearchId, out var enginesPerAircraft))
+            {
+                _machineStatistics.RegisterSale(entry.Key, engineResearchId, enginesPerAircraft, entry.Value, 0d);
+            }
+        }
+
+        var governmentSoldUnits = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (data.GovernmentContractBoardSnapshot is not null)
+        {
+            BackfillLegacyGovernmentRevenue(
+                data.GovernmentContractBoardSnapshot.ActiveDeliveryContracts,
+                governmentSoldUnits);
+            BackfillLegacyGovernmentRevenue(
+                data.GovernmentContractBoardSnapshot.ClosedDeliveryContracts,
+                governmentSoldUnits);
+        }
+
+        var legacyCommercialRevenue = data.ContractBoardSnapshot?.DeliveredContracts?
+            .Where(contract => contract is not null && contract.UnitPrice > 0d && contract.QuantityUnits > 0)
+            .Sum(contract => contract.UnitPrice * contract.QuantityUnits) ?? 0d;
+        var commercialUnitsByDesign = new List<KeyValuePair<string, int>>();
+        foreach (var entry in legacySoldUnits.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            governmentSoldUnits.TryGetValue(entry.Key, out var governmentUnits);
+            var commercialUnits = System.Math.Max(0, entry.Value - governmentUnits);
+            if (commercialUnits > 0)
+            {
+                commercialUnitsByDesign.Add(new KeyValuePair<string, int>(entry.Key, commercialUnits));
+            }
+        }
+
+        var totalCommercialUnits = commercialUnitsByDesign.Sum(entry => entry.Value);
+        var allocatedRevenue = 0d;
+        for (var index = 0; index < commercialUnitsByDesign.Count && legacyCommercialRevenue > 0d; index++)
+        {
+            var entry = commercialUnitsByDesign[index];
+            var revenue = index == commercialUnitsByDesign.Count - 1
+                ? System.Math.Max(0d, legacyCommercialRevenue - allocatedRevenue)
+                : legacyCommercialRevenue * entry.Value / totalCommercialUnits;
+            _machineStatistics.AddSalesRevenue(entry.Key, revenue, isEstimate: true);
+            allocatedRevenue += revenue;
+        }
+
+        var equipmentProductionByDesign = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (data.FactoryStateSnapshot?.Equipment is not null)
+        {
+            foreach (var equipment in data.FactoryStateSnapshot.Equipment)
+            {
+                if (equipment is null || string.IsNullOrWhiteSpace(equipment.DesignId) || equipment.LifetimeProducedUnits <= 0)
+                {
+                    continue;
+                }
+
+                AddLegacyUnits(equipmentProductionByDesign, equipment.DesignId, equipment.LifetimeProducedUnits);
+            }
+        }
+
+        var lineProductionByDesign = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (data.FactoryStateSnapshot?.Factories is { Count: > 0 })
+        {
+            foreach (var factory in data.FactoryStateSnapshot.Factories)
+            {
+                var line = factory?.Line;
+                if (line is null || string.IsNullOrWhiteSpace(line.AssignedDesignId) || line.LifetimeProducedUnits <= 0)
+                {
+                    continue;
+                }
+
+                AddLegacyUnits(lineProductionByDesign, line.AssignedDesignId, line.LifetimeProducedUnits);
+            }
+        }
+        else if (data.FactoryStateSnapshot?.Lines is not null)
+        {
+            foreach (var line in data.FactoryStateSnapshot.Lines)
+            {
+                if (line is null || string.IsNullOrWhiteSpace(line.AssignedDesignId) || line.LifetimeProducedUnits <= 0)
+                {
+                    continue;
+                }
+
+                AddLegacyUnits(lineProductionByDesign, line.AssignedDesignId, line.LifetimeProducedUnits);
+            }
+        }
+
+        foreach (var savedDesign in _savedAircraftDesigns)
+        {
+            var designId = savedDesign.CatalogItem.DesignId;
+            legacySoldUnits.TryGetValue(designId, out var soldUnits);
+            var warehouseUnits = _productionFactory?.GetWarehouseUnits(designId) ?? 0;
+            equipmentProductionByDesign.TryGetValue(designId, out var equipmentUnits);
+            lineProductionByDesign.TryGetValue(designId, out var lineUnits);
+            var producedUnits = System.Math.Max(
+                checked(soldUnits + warehouseUnits),
+                System.Math.Max(equipmentUnits, lineUnits));
+            if (producedUnits <= 0
+                || !TryResolveMachineEngineContext(designId, out var engineResearchId, out var enginesPerAircraft))
+            {
+                continue;
+            }
+
+            _machineStatistics.RegisterProduction(designId, engineResearchId, enginesPerAircraft, producedUnits);
+        }
+    }
+
+    private void BackfillLegacyGovernmentRevenue(
+        IReadOnlyList<GovernmentDeliveryContractSnapshot>? deliveryContracts,
+        Dictionary<string, int> governmentSoldUnits)
+    {
+        if (deliveryContracts is null)
+        {
+            return;
+        }
+
+        for (var index = 0; index < deliveryContracts.Count; index++)
+        {
+            var delivery = deliveryContracts[index];
+            if (delivery is null || string.IsNullOrWhiteSpace(delivery.AircraftDesignId))
+            {
+                continue;
+            }
+
+            var deliveredUnits = System.Math.Max(delivery.DeliveredUnits, 0);
+            if (deliveredUnits > 0)
+            {
+                AddLegacyUnits(governmentSoldUnits, delivery.AircraftDesignId, deliveredUnits);
+            }
+
+            var revenue = deliveredUnits * System.Math.Max(delivery.UnitPrice, 0d);
+            if (delivery.CompletionBonusGranted)
+            {
+                revenue += System.Math.Round(
+                    System.Math.Max(delivery.TotalContractValue, 0d)
+                    * GovernmentContractBalance.DeliveryCompletionBonusShare,
+                    2,
+                    MidpointRounding.AwayFromZero);
+            }
+
+            if (revenue > 0d)
+            {
+                _machineStatistics.AddSalesRevenue(delivery.AircraftDesignId, revenue);
+            }
+        }
+    }
+
+    private static void AddLegacyUnits(Dictionary<string, int> unitsById, string id, int units)
+    {
+        var key = id.Trim();
+        unitsById.TryGetValue(key, out var currentUnits);
+        unitsById[key] = checked(currentUnits + units);
     }
 
     private void RefreshDevelopedAircraftTypeStatistics()
@@ -8963,8 +9215,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         var selected = _savedEngines[_selectedSavedEngineIndex];
         DrawParameterValueRow("Name", selected.Name);
-        DrawParameterValueRow("Development Start Year", FormatUiInteger(selected.DevelopmentStartedYear));
-        DrawParameterValueRow("Current Variant Start Year", FormatUiInteger(selected.VariantDevelopmentStartedYear));
+        DrawParameterValueRow(
+            "Developed",
+            $"{FormatUiInteger(selected.DevelopmentStartedYear)}/{FormatUiInteger(selected.VariantDevelopmentStartedYear)}");
         DrawParameterValueRow("Approved Year", FormatApprovedYear(selected.ApprovedYear));
         if (TryResolveResearchTimeMonthsFromResearchBoard(ResearchSubjectType.Engine, selected.ResearchId, out var engineResearchTimeMonths))
         {
@@ -8999,11 +9252,29 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 DrawParameterValueRow("Engine Thrust @0m (N)", FormatUiNumber(outputAtSeaLevel, "0.0"));
             }
 
+            var isJet = IsJetFamily(built.Definition.EngineType);
+            var specificFuelUnit = isJet ? "L/N" : "L/kWh";
+            DrawParameterValueRow(
+                $"Specific Fuel Consumption ({specificFuelUnit})",
+                FormatUiNumber(ResolveEngineSpecificFuelConsumption(built), "0.0000"));
             DrawParameterValueRow("Reliability", FormatUiNumber(built.Performance.Reliability, "0.000"));
             DrawParameterValueRow("Weight (kg)", FormatUiNumber(built.Performance.Weight.Kilograms, "0.0"));
             DrawParameterValueRow("Parts Cost", FormatUiNumber(built.Performance.Cost, "0"));
             DrawParameterValueRow("Complete Production Cost", FormatUiNumber(built.Performance.CompleteProductionCost, "0"));
             DrawParameterValueRow("Production MD", FormatUiNumber(built.Performance.ProductionManDays, "0.0"));
+            var producedEngineUnits = _machineStatistics.GetProducedEngineUnits(selected.ResearchId);
+            var soldEngineUnits = _machineStatistics.GetSoldEngineUnits(selected.ResearchId);
+            DrawParameterValueRow(
+                "Units Produced / Sold",
+                $"{FormatUiInteger(producedEngineUnits)}/{FormatUiInteger(soldEngineUnits)}");
+            var engineCosts = MachineEconomicsCalculator.Calculate(
+                ResolveGovernmentResearchPrice(ResearchSubjectType.Engine, selected.ResearchId),
+                producedEngineUnits,
+                built.Performance.CompleteProductionCost,
+                0d);
+            DrawParameterValueRow(
+                "Total Costs (fixed / complete)",
+                $"{FormatUiNumber(engineCosts.FixedCosts, "0")} / {FormatUiNumber(engineCosts.TotalCosts, "0")}");
         }
         catch
         {
@@ -9130,27 +9401,40 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             ResolveSavedEngineDisplayNameForAircraftDesign(selected));
         DrawParameterValueRow("Crew Members", FormatUiInteger(aircraft.Airframe.Parameters.CrewCount));
         DrawParameterValueRow("Runway Type", HumanizeUiToken(aircraft.Airframe.Parameters.RunwayType.ToString()));
-        var maximumSpeedKilometersPerHour = aircraft.Performance.MaxSpeedByAltitude.Count == 0
-            ? 0d
-            : aircraft.Performance.MaxSpeedByAltitude.Max(point => point.MaxSpeedMetersPerSecond) * 3.6d;
         var certifiedRangeKilometers = AircraftNavigationRangePolicy.GetCertifiedRangeKilometers(
             aircraft.TypeDefinition.NavigationEquipment,
             aircraft.Performance.RangeKilometers);
         var warehouseUnits = _productionFactory?.GetWarehouseUnits(selected.CatalogItem.DesignId) ?? 0;
-        var soldUnits = _soldAircraftUnitsByDesignId.TryGetValue(selected.CatalogItem.DesignId, out var recordedSoldUnits)
-            ? recordedSoldUnits
-            : 0;
-        DrawParameterValueRow("Maximum Speed (km/h)", FormatUiNumber(maximumSpeedKilometersPerHour, "0.0"));
+        var producedUnits = _machineStatistics.GetProducedAircraftUnits(selected.CatalogItem.DesignId);
+        var soldUnits = _machineStatistics.GetSoldAircraftUnits(selected.CatalogItem.DesignId);
+        DrawParameterValueRow(
+            "Maximum Speed (km/h)",
+            FormatSpeedByAltitudeSummary(aircraft.Performance.MaxSpeedByAltitude));
         DrawParameterValueRow("Certified Range (km)", FormatUiNumber(certifiedRangeKilometers, "0.0"));
         DrawParameterValueRow("Payload (kg)", FormatUiNumber(aircraft.Performance.PayloadCapacity.Kilograms, "0.0"));
         DrawParameterValueRow("Warehouse Units", FormatUiInteger(warehouseUnits));
-        DrawParameterValueRow("Units Sold", FormatUiInteger(soldUnits));
+        DrawParameterValueRow(
+            "Units Produced / Sold",
+            $"{FormatUiInteger(producedUnits)}/{FormatUiInteger(soldUnits)}");
         DrawParameterValueRow(
             "Overall Reliability",
             FormatUiNumber(ResolveEffectiveAircraftReliability(aircraft.Performance.OverallReliability), "0.000"));
         DrawParameterValueRow("Production Parts", FormatUiNumber(aircraft.Performance.TotalProductionCost, "0"));
         DrawParameterValueRow("Complete Production Cost", FormatUiNumber(aircraft.Performance.CompleteProductionCost, "0"));
         DrawParameterValueRow("Production MD", FormatUiNumber(aircraft.Performance.TotalProductionManDays, "0.0"));
+        var aircraftCosts = MachineEconomicsCalculator.Calculate(
+            ResolveAllocatedAircraftResearchCost(selected),
+            producedUnits,
+            aircraft.Performance.CompleteProductionCost,
+            _machineStatistics.GetSalesRevenue(selected.CatalogItem.DesignId));
+        DrawParameterValueRow(
+            "Total Costs (fixed / complete)",
+            $"{FormatUiNumber(aircraftCosts.FixedCosts, "0")} / {FormatUiNumber(aircraftCosts.TotalCosts, "0")}");
+        DrawParameterValueRow(
+            _machineStatistics.IsSalesRevenueEstimated(selected.CatalogItem.DesignId)
+                ? "Total Profit (legacy estimate)"
+                : "Total Profit",
+            FormatUiNumber(aircraftCosts.TotalProfit, "0"));
         GUILayout.Space(8f);
         if (selected.IsDecommissioned)
         {
@@ -12045,6 +12329,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             var productionCatalog = BuildProductionCatalog(includeOnlyResearched: true, includeDecommissioned: false);
             var fullCatalog = BuildProductionCatalog(includeOnlyResearched: false);
             _lastFactoryReport = _productionFactory.SimulateMonth(productionCatalog, _elapsedMonths, _currentDate);
+            RegisterProducedMachineUnits(_lastFactoryReport);
             _companyRunStatistics.RegisterAircraftProduced(_lastFactoryReport.TotalAircraftProduced);
             _factoryActionMessage =
                 $"Factory network processed month {FormatUiInteger(_elapsedMonths)}: produced {FormatUiInteger(_lastFactoryReport.TotalAircraftProduced)} aircraft.";
@@ -17413,6 +17698,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         public List<StringDoubleStateEntry> DeliveredContractProfitById { get; set; } = new();
 
         public List<StringIntStateEntry> SoldAircraftUnitsByDesignId { get; set; } = new();
+
+        public MachineStatisticsSnapshot? MachineStatisticsSnapshot { get; set; }
 
         public List<string> FiredHistoricalCampaignEventIds { get; set; } = new();
 
