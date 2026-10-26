@@ -6,9 +6,17 @@ namespace WrightTycoon.Core.GovernmentContracts;
 
 public sealed class GovernmentContractComplianceEvaluator
 {
+    private readonly IGovernmentContractPricingService _pricingService;
+    public GovernmentContractComplianceEvaluator(IGovernmentContractPricingService? pricingService = null)
+    {
+        _pricingService = pricingService ?? new GovernmentContractPricingService();
+    }
     public GovernmentContractComplianceReport Evaluate(
         GovernmentContractRequirements requirements,
-        GovernmentContractSubmissionCandidate candidate)
+        GovernmentContractSubmissionCandidate candidate,
+        double? lockedUnitPrice = null,
+        WrightTycoon.Core.Contracts.LifecycleCostQuote? lockedLifecycleCostQuote = null,
+        bool serviceIntervalAlreadyAccepted = false)
     {
         if (requirements is null)
         {
@@ -87,13 +95,24 @@ public sealed class GovernmentContractComplianceEvaluator
                 $"Required runway length {metrics.RequiredRunwayLengthMeters:0.0} m exceeds allowed {requirements.MaximumRequiredRunwayLengthMeters:0.0} m.");
         }
 
-        var bonuses = CalculateBonuses(requirements, metrics);
+        if (requirements.LifecycleModelVersion > 0)
+        {
+            if (metrics.ExpectedLifeHours + Numeric.Epsilon < requirements.MinimumExpectedLifeHours) unmetRequirements.Add("Expected life is below contractual minimum.");
+            if (!serviceIntervalAlreadyAccepted && metrics.ServiceIntervalHours < requirements.MinimumServiceIntervalHours)
+                unmetRequirements.Add("Service interval is below contractual minimum.");
+            if ((requirements.PricingModelVersion > 0 || requirements.ProcurementPreference == WrightTycoon.Core.Contracts.ProcurementPreference.WholeLifeCost)
+                && EconomicCost(requirements, lockedLifecycleCostQuote ?? Quote(requirements, metrics, lockedUnitPrice)) > EconomicLimit(requirements) + Numeric.Epsilon)
+                unmetRequirements.Add("Operational costs exceed customer budget.");
+        }
+        var bonuses = CalculateBonuses(requirements, metrics, lockedUnitPrice, lockedLifecycleCostQuote);
         return new GovernmentContractComplianceReport(stageAllowed, unmetRequirements, bonuses);
     }
 
     public IReadOnlyList<GovernmentContractParameterBonus> CalculateBonuses(
         GovernmentContractRequirements requirements,
-        GovernmentContractAircraftMetrics metrics)
+        GovernmentContractAircraftMetrics metrics,
+        double? lockedUnitPrice = null,
+        WrightTycoon.Core.Contracts.LifecycleCostQuote? lockedLifecycleCostQuote = null)
     {
         if (requirements is null)
         {
@@ -141,6 +160,15 @@ public sealed class GovernmentContractComplianceEvaluator
                 metrics.RequiredRunwayLengthMeters),
         };
 
+        if (requirements.LifecycleModelVersion > 0 && requirements.ProcurementPreference == WrightTycoon.Core.Contracts.ProcurementPreference.WholeLifeCost)
+            bonuses.Add(GovernmentContractProbabilityCalculator.CreateLowerIsBetterBonus(GovernmentContractParameter.WholeLifeCost,
+                EconomicLimit(requirements), EconomicCost(requirements, lockedLifecycleCostQuote ?? Quote(requirements, metrics, lockedUnitPrice))));
         return bonuses;
     }
+    private static double EconomicCost(GovernmentContractRequirements requirements, WrightTycoon.Core.Contracts.LifecycleCostQuote quote) =>
+        quote.OperationCostsPerHour;
+    private static double EconomicLimit(GovernmentContractRequirements requirements) =>
+        requirements.MaximumOperationCostPerHour;
+    private WrightTycoon.Core.Contracts.LifecycleCostQuote Quote(GovernmentContractRequirements requirements, GovernmentContractAircraftMetrics metrics, double? lockedUnitPrice) =>
+        metrics.QuoteForContract(requirements, lockedUnitPrice ?? _pricingService.CalculateQuote(requirements, 1).UnitPrice);
 }

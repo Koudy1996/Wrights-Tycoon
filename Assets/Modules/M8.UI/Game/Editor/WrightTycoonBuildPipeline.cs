@@ -7,6 +7,7 @@ using System.Text;
 using Process = System.Diagnostics.Process;
 using ProcessStartInfo = System.Diagnostics.ProcessStartInfo;
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
 using WrightTycoon.Core.Campaign;
@@ -139,7 +140,7 @@ public static class WrightTycoonBuildPipeline
 
     private static void BuildMac(BuildMode mode)
     {
-        var originalBackend = PlayerSettings.GetScriptingBackend(BuildTargetGroup.Standalone);
+        var originalBackend = PlayerSettings.GetScriptingBackend(NamedBuildTarget.Standalone);
         var switchedToMono = false;
 
         try
@@ -147,7 +148,7 @@ public static class WrightTycoonBuildPipeline
             if (originalBackend != ScriptingImplementation.Mono2x)
             {
                 Debug.Log("[Build] Switching Standalone scripting backend to Mono for macOS build.");
-                PlayerSettings.SetScriptingBackend(BuildTargetGroup.Standalone, ScriptingImplementation.Mono2x);
+                PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);
                 AssetDatabase.SaveAssets();
                 switchedToMono = true;
             }
@@ -164,7 +165,7 @@ public static class WrightTycoonBuildPipeline
         {
             if (switchedToMono)
             {
-                PlayerSettings.SetScriptingBackend(BuildTargetGroup.Standalone, originalBackend);
+                PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, originalBackend);
                 AssetDatabase.SaveAssets();
                 Debug.Log($"[Build] Restored Standalone scripting backend to {originalBackend}.");
             }

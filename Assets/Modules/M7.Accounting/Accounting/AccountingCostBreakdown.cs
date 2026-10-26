@@ -8,7 +8,8 @@ public sealed record AccountingCostBreakdown(
     double VariablePlaneStaffExpenses,
     double VariablePlaneBuildExpenses,
     double VariableResearchExpenses = 0d,
-    double HeadquartersExpenses = 0d)
+    double HeadquartersExpenses = 0d,
+    double FleetServiceExpenses = 0d)
 {
     public static AccountingCostBreakdown Zero { get; } = new(0d, 0d, 0d, 0d, 0d, 0d, 0d, 0d);
 
@@ -20,7 +21,8 @@ public sealed record AccountingCostBreakdown(
         + VariablePlaneStaffExpenses
         + VariablePlaneBuildExpenses
         + VariableResearchExpenses
-        + HeadquartersExpenses;
+        + HeadquartersExpenses
+        + FleetServiceExpenses;
 
     public double TotalCosts => FixedCosts + VariableCosts;
 }

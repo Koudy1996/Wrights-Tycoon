@@ -1,0 +1,17 @@
+# Independent contract pricing
+
+Newly generated civil and government offers carry an immutable `ContractEconomicSnapshot` (pricing model 1). Lifecycle-model versions are independent. Save payload 16 accepts payloads 14 and 15 without upgrading existing contracts.
+
+Purchase price is reference direct production cost multiplied by 1.15 overhead, 1.25 markup, reputation and historical demand. Civil quantity multipliers are 1.00 for 5-49, .97 for 50-149 and .94 for 150+. Government uses 1.00 because order volume is determined after acceptance; its accepted unit price does not change when final quantity becomes known. Existing R&D advances and delivery bonuses are unchanged.
+
+The reference estimator reuses structural-index material/work and engine functions, year-adjusted market requirements and technology. It is independent of the player's saved designs, equipment, inventory, financing and future service revenue. Airframe and installed-engine labor/materials are counted once. Reference service expenses use that same cost breakdown and engine count, not a fixed 70/30 split and two engines. This is a market estimate, not proof of physical feasibility or guaranteed profitability of any player design.
+
+Customer operation cost includes purchase amortization, fuel, scheduled airframe/engine parts and replacement engines. New offers freeze an hourly budget at 110% of reference cost for operation-focused customers, 120% for balanced, and 135% for purchase-focused. All new offers enforce their limit. The reference purchase price is never reduced to fit that budget. Reference fuel prices come from the generation month's existing historical fuel market. Candidate assessment continues to use the existing actual-aircraft lifecycle calculator and current fuel rules; accepted government quotes remain frozen as before.
+
+Balanced priority is configurable through generator options, defaults to zero share, and does not change the existing 25% purchase / 75% operational mix when disabled. Legacy procurement enums are not reinterpreted by integer casting.
+
+Snapshots survive civil board, government board/delivery and runner cloning/save paths. The UI reads stored prices and displays an enforced operational limit for every new priority. Existing legacy prices and budgets, including zero-price contracts, remain untouched. No warning, confirmation or prohibition on selling below the player's own production costs was added.
+
+Reference category rebalance (26 October 2026): Sport 20–40; Light Multi-role 30–80; Turboprop 85–180; Regional Jet 105–330; Narrow-body 170–600; Wide-body 650–1200; Special Civil 40–300; Business/VIP 80–250; Military Tactical 110–370; Strategic Support 375–950; Light Cargo 40–75; Medium Cargo 120–350; Heavy Cargo 375–900; Long-range Cargo 750–1200; Bomber 350–900. Shared references update both newly generated offer prices and their operational budgets. Existing economic snapshots remain frozen. The 25% reference markup, 15% overhead and existing quantity/reputation/historical multipliers remain unchanged; actual player profit is not capped or guaranteed.
+
+Verification on 25 October 2026: the full graphics-enabled audit passed 1,080/1,080. After moving legacy-only pricing checks and supplementary matrices to Extended, the Windows checkpoint gate passed 399/399. Routine validation runs headlessly; checkpoint graphics tests run on an isolated, non-active desktop, never on the user's active desktop.

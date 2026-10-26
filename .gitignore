@@ -17,6 +17,8 @@ Player Info/
 .vs/
 .vscode/
 .idea/
+.codex/
+.cursor/
 *.csproj
 *.sln
 *.suo

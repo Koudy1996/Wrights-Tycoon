@@ -5,6 +5,7 @@ using WrightTycoon.Core.Categories;
 namespace WrightTycoon.Core.Tests.Categories;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class AircraftCategoryCatalogTests
 {
     [Test]

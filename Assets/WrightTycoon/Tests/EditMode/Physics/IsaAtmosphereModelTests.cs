@@ -31,6 +31,7 @@ public sealed class IsaAtmosphereModelTests
     }
 
     [Test]
+    [Category("Extended")]
     public void GetEvaluationSamples_ContainsRequiredAltitudes()
     {
         var model = new IsaAtmosphereModel();

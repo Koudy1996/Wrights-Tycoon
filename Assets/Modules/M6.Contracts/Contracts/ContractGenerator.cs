@@ -67,13 +67,14 @@ public sealed class ContractGenerator : IContractGenerator
         int seed = 6003901,
         ContractGeneratorOptions? options = null,
         IHistoricalCampaignContractModifierSource? campaignModifierSource = null,
-        Func<SimulationDate>? currentDateProvider = null)
+        Func<SimulationDate>? currentDateProvider = null,
+        Func<double>? reputationPriceMultiplierProvider = null)
     {
         _random = new Random(seed);
         _options = options ?? new ContractGeneratorOptions();
         _campaignModifierSource = campaignModifierSource;
         _currentDateProvider = currentDateProvider;
-        _pricingCalculator = new ContractPricingCalculator(_campaignModifierSource);
+        _pricingCalculator = new ContractPricingCalculator(_campaignModifierSource, reputationPriceMultiplierProvider);
         _options.Validate();
         _lastGeneratedMonthIndex = 0;
         ResetCategoryRotation(_lastGeneratedMonthIndex);
@@ -96,6 +97,10 @@ public sealed class ContractGenerator : IContractGenerator
             var category = NextCategory();
             var quantityUnits = GenerateQuantityUnits(demandBand);
             var requirements = GenerateRequirements(category, demandBand);
+            var date = _currentDateProvider?.Invoke() ?? SimulationDate.WrightTycoonStart.AddMonths(monthIndex);
+            var priority = _options.BalancedPriorityShare > 0d && _random.NextDouble() < _options.BalancedPriorityShare
+                ? OperationalCostPriority.Balanced : ContractPricingBalance.Priority(requirements.ProcurementPreference);
+            requirements = requirements.WithEconomics(_pricingCalculator.CreateEconomicSnapshot(requirements, date, quantityUnits, priority));
             var pricing = _pricingCalculator.CalculateQuote(requirements, quantityUnits);
             var contract = new Contract(
                 $"ctr.{monthIndex:0000}.{_sequence:0000}",
@@ -212,6 +217,17 @@ public sealed class ContractGenerator : IContractGenerator
         return ApplyCategoryMinimumFallbacks(new ContractRequirements
         {
             RequiredCategory = category,
+            LifecycleModelVersion = LifecycleContractPolicy.CurrentLifecycleModelVersion,
+            MaintenanceModelVersion = 2,
+            MinimumExpectedLifeHours = LifecycleContractPolicy.RequiredLife(category),
+            MaximumServiceIntervalHours = WrightTycoon.Core.Fleet.LifecycleBalance.ServiceIntervalsHours[_random.Next(WrightTycoon.Core.Fleet.LifecycleBalance.ServiceIntervalsHours.Count)],
+            MinimumSupportMonths = LifecycleContractPolicy.SupportOptionsMonths[_random.Next(LifecycleContractPolicy.SupportOptionsMonths.Count)],
+            OperatingProfileId = LifecycleContractPolicy.Profile(category).Id,
+            UtilizationHoursPerMonth = LifecycleContractPolicy.Profile(category).UtilizationHoursPerMonth,
+            AverageFlightHours = LifecycleContractPolicy.Profile(category).AverageFlightHours,
+            ProcurementPreference = _random.NextDouble() < LifecycleContractPolicy.PurchasePriceShare
+                ? ProcurementPreference.PurchasePrice : ProcurementPreference.WholeLifeCost,
+            MaximumOperatingCostPerUnit = 1d, // Draft; finalized after technical fallback and purchase pricing.
             MinimumReliability = reliability,
             MaximumTotalWeightKilograms = maximumWeight,
             MinimumRangeKilometers = range,
@@ -230,7 +246,18 @@ public sealed class ContractGenerator : IContractGenerator
     {
         return new ContractRequirements
         {
+            EconomicSnapshot = requirements.EconomicSnapshot,
             RequiredCategory = requirements.RequiredCategory,
+            LifecycleModelVersion = requirements.LifecycleModelVersion,
+            MaintenanceModelVersion = requirements.MaintenanceModelVersion,
+            MinimumExpectedLifeHours = requirements.MinimumExpectedLifeHours,
+            MaximumServiceIntervalHours = requirements.MaximumServiceIntervalHours,
+            MinimumSupportMonths = requirements.MinimumSupportMonths,
+            UtilizationHoursPerMonth = requirements.UtilizationHoursPerMonth,
+            AverageFlightHours = requirements.AverageFlightHours,
+            OperatingProfileId = requirements.OperatingProfileId,
+            ProcurementPreference = requirements.ProcurementPreference,
+            MaximumOperatingCostPerUnit = requirements.MaximumOperatingCostPerUnit,
             MinimumReliability = requirements.MinimumReliability,
             MaximumTotalWeightKilograms = requirements.MaximumTotalWeightKilograms,
             MinimumRangeKilometers = requirements.MinimumRangeKilometers ?? categoryProfile.MinRequiredRangeKilometers,

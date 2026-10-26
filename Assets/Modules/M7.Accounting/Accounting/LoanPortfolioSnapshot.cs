@@ -20,6 +20,7 @@ public sealed class LoanStateSnapshot
     public int RemainingMonths { get; set; }
     public int MonthsSinceOrigination { get; set; }
     public int NextDueMonthIndex { get; set; }
+    public int OriginationMonthIndex { get; set; } = -1;
     public int LastProcessedMonthIndex { get; set; } = -1;
     public double ScheduledPayment { get; set; }
     public int RepaymentMode { get; set; }

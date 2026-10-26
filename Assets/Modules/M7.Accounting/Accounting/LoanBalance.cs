@@ -29,8 +29,9 @@ public static class LoanBalance
     public const double PrincipalIncrement = 1_000_000d;
     public const double BaseUnsecuredCredit = 150_000_000d;
     public const double MaximumCreditLimit = 2_000_000_000d;
-    public const int MaximumStandardActiveLoans = 3;
     public const double OriginationFeeShare = 0.005d;
+    public const int FactoryConstructionTermMonths = 120;
+    public const double FactoryConstructionRateDiscount = 0.02d;
     public const double EarlyPrepaymentFeeShare = 0.01d;
     public const int EarlyPrepaymentFeeMonths = 12;
     public const double MinimumPrepayment = 1_000_000d;

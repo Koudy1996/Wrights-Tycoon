@@ -6,6 +6,31 @@ namespace WrightTycoon.Core.Contracts;
 
 public sealed class ContractRequirements
 {
+    private ContractEconomicSnapshot? _economicSnapshot;
+    private double _maximumOperatingCostPerUnit;
+    public ContractEconomicSnapshot? EconomicSnapshot { get => _economicSnapshot; init => _economicSnapshot = value; }
+    public int PricingModelVersion => EconomicSnapshot?.ModelVersion ?? 0;
+    public ContractRequirements WithEconomics(ContractEconomicSnapshot economic)
+    {
+        var copy = (ContractRequirements)MemberwiseClone();
+        copy._economicSnapshot = economic;
+        copy._maximumOperatingCostPerUnit = economic.AllowedOperationCostPerHour * MinimumExpectedLifeHours;
+        copy.Validate();
+        return copy;
+    }
+    public double MaximumOperationCostPerHour => MinimumExpectedLifeHours > 0d ? MaximumOperatingCostPerUnit / MinimumExpectedLifeHours : 0d;
+    public int LifecycleModelVersion { get; init; }
+    public int MaintenanceModelVersion { get; init; } = 2;
+    public double MinimumExpectedLifeHours { get; init; }
+    // Persisted legacy name; this is the minimum acceptable time BETWEEN services.
+    public int MaximumServiceIntervalHours { get; init; } = 1000;
+    public int MinimumServiceIntervalHours => MaximumServiceIntervalHours;
+    public int MinimumSupportMonths { get; init; } = 120;
+    public double UtilizationHoursPerMonth { get; init; } = 100d;
+    public double AverageFlightHours { get; init; } = 2d;
+    public string OperatingProfileId { get; init; } = "civil";
+    public WrightTycoon.Core.Contracts.ProcurementPreference ProcurementPreference { get; init; }
+    public double MaximumOperatingCostPerUnit { get => _maximumOperatingCostPerUnit; init => _maximumOperatingCostPerUnit = value; }
     public AircraftCategory? RequiredCategory { get; init; }
 
     public double? MinimumReliability { get; init; }
@@ -28,6 +53,7 @@ public sealed class ContractRequirements
 
     public int DefinedRequirementCount =>
         CountIfDefined(MinimumReliability.HasValue)
+        + (LifecycleModelVersion > 0 ? 3 + (PricingModelVersion > 0 || ProcurementPreference == ProcurementPreference.WholeLifeCost ? 1 : 0) : 0)
         + CountIfDefined(MaximumTotalWeightKilograms.HasValue)
         + CountIfDefined(MinimumRangeKilometers.HasValue)
         + CountIfDefined(MinimumSpeed.HasValue)
@@ -39,6 +65,19 @@ public sealed class ContractRequirements
 
     public void Validate()
     {
+        if (EconomicSnapshot is { } economic)
+        {
+            economic.Validate();
+            if (LifecycleModelVersion <= 0 || System.Math.Abs(MaximumOperationCostPerHour - economic.AllowedOperationCostPerHour) > .000001d)
+                throw new InvalidOperationException("Contract operating limit differs from its economic snapshot.");
+        }
+        if (MaintenanceModelVersion != 2)
+            throw new ArgumentOutOfRangeException(nameof(MaintenanceModelVersion));
+        if (LifecycleModelVersion > 0)
+        {
+            WrightTycoon.Core.Contracts.LifecycleContractPolicy.Validate(MinimumExpectedLifeHours, MaximumServiceIntervalHours,
+                MinimumSupportMonths, UtilizationHoursPerMonth, AverageFlightHours, OperatingProfileId, MaximumOperatingCostPerUnit);
+        }
         if (DefinedRequirementCount == 0)
         {
             throw new InvalidOperationException("Contract must define at least one required parameter.");

@@ -17,6 +17,7 @@ using WrightTycoon.Core.Contracts;
 using WrightTycoon.Core.Data;
 using WrightTycoon.Core.Engines;
 using WrightTycoon.Core.Factories;
+using WrightTycoon.Core.Fleet;
 using WrightTycoon.Core.Presentation;
 using WrightTycoon.Core.GovernmentContracts;
 using WrightTycoon.Core.Headquarters;
@@ -68,12 +69,11 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     [SerializeField] private double _baseDevelopmentCost = 92000d;
     [SerializeField] private double _baseDevelopmentManDays = 240d;
 
-    private readonly int[] _engineCountOptions = { 1, 2, 3, 4, 5, 6 };
     private readonly string[] _tabs = { "Engine Designer", "Airframe + Type", "My Machines", "Engineering", "Demand", "Factory", "Contracts", "Government Contracts", "Company" };
     private readonly string[] _companySubTabs = { "Headquarters", "Finance" };
     private readonly string[] _financeSubTabs = { "Income / Expense", "Last Month Details", "Transactions", "Loans" };
     private readonly string[] _researchSubTabs = { "Current Engineering", "For Approval" };
-    private readonly string[] _myMachinesSubTabs = { "Engines", "Families + Types" };
+    private readonly string[] _myMachinesSubTabs = { "Engines", "Families + Types", "Operating Fleet" };
     private readonly IsaAtmosphereModel _atmosphereModel = new();
     private readonly AerodynamicsCalculator _aerodynamicsCalculator = new();
     private readonly CategoryComplianceEvaluator _categoryComplianceEvaluator = new();
@@ -88,7 +88,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     private readonly MachineStatisticsLedger _machineStatistics = new();
     private readonly Dictionary<string, string> _governmentDeliveryQuantityInputById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _factoryScrapQuantityInputByDesignId = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _factoryTotalTargetInputByLineId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TypeResearchModifierPoints> _researchModifiersByResearchId = new(StringComparer.Ordinal);
     private readonly HashSet<string> _collapsedMyMachinesFamilyIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _collapsedMyMachinesTypeIds = new(StringComparer.Ordinal);
@@ -231,8 +230,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     private bool _showGovernmentPastOrdersWindow;
     private Vector2 _leftScroll;
     private Vector2 _rightScroll;
-    private Vector2 _factoryLeftScroll;
-    private Vector2 _factoryRightScroll;
     private Vector2 _historicalCampaignArchiveScroll;
     private Vector2 _pastOrdersScroll;
     private Vector2 _governmentPastOrdersScroll;
@@ -251,7 +248,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     private Vector2 _governmentPastOrdersResizeStartSize;
     private Vector2 _pendingProposalResizeStartMouse;
     private Vector2 _pendingProposalResizeStartSize;
-    private bool _showHistoricalCampaignDebugPanel;
     private bool _showPendingProposalAdvanceDialog;
     private bool _showFirstDesignApprovalDialog;
     private bool _disablePendingProposalAdvancePrompt;
@@ -261,9 +257,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     private string _loanActionMessage = string.Empty;
     private readonly Dictionary<string, string> _loanPrepaymentInputs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _loanPrepaymentStrategies = new(StringComparer.Ordinal);
-    private string _historicalCampaignDebugYearInput = string.Empty;
-    private string _historicalCampaignDebugMonthInput = string.Empty;
-    private string _historicalCampaignDebugMessage = string.Empty;
     private readonly Dictionary<string, string> _doubleSliderInputBuffer = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _intSliderInputBuffer = new(StringComparer.Ordinal);
     private readonly Dictionary<string, bool> _doubleSliderHadFocus = new(StringComparer.Ordinal);
@@ -285,7 +278,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     private const string SaveFileName = "saves.json";
     private const int AutosaveIntervalMonths = 6;
     private const int AutosaveRetentionCount = 4;
-    private const int SavePayloadVersion = 11;
+    private const int SavePayloadVersion = 16;
     private const int MachineStatisticsSavePayloadVersion = 11;
     private const int SlowerCompanyResearchSavePayloadVersion = 9;
     private const string DisplayModePreferenceKey = "WrightTycoon.Display.Mode";
@@ -312,14 +305,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         new(3200, 1800),
         new(3840, 2160),
     };
-    private static readonly ModifierTooltipDefinition AllowedEngineFamilyPropellerTooltip = new(
-        "modifier.allowed.engine.family",
-        "Engine Family: Propeller",
-        neutralLines: new[] { "No +/- notes are listed for engine family in the source sheet." });
-    private static readonly ModifierTooltipDefinition AllowedEngineFamilyJetTooltip = new(
-        "modifier.allowed.engine.family",
-        "Engine Family: Jet",
-        neutralLines: new[] { "No +/- notes are listed for engine family in the source sheet." });
     private static readonly ModifierTooltipDefinition BoostNoneTooltip = new(
         "modifier.engine.boost",
         "Boost: None",
@@ -358,6 +343,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     private static readonly ModifierTooltipDefinition AfterburnerTooltip = new(
         "modifier.engine.afterburner",
         "Jet Afterburner",
+        neutralLines: new[] { "Available from 1950." },
         positiveLines: new[] { "Much higher thrust" },
         negativeLines: new[] { "More weight, cost, reliability penalty" });
     private static readonly ModifierTooltipDefinition StructureTrussTooltip = new(
@@ -414,21 +400,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         "Wing Shape: Delta",
         positiveLines: new[] { "Strong high-speed layout" },
         negativeLines: new[] { "Lower lift" });
-    private static readonly ModifierTooltipDefinition WingProfileLaminarTooltip = new(
-        "modifier.airframe.wing.profile",
-        "Wing Profile: Laminar 6-series",
-        positiveLines: new[] { "Good lift, low drag" },
-        negativeLines: new[] { "Best on big wings" });
-    private static readonly ModifierTooltipDefinition WingProfileNacaTooltip = new(
-        "modifier.airframe.wing.profile",
-        "Wing Profile: NACA 4-digit Light",
-        positiveLines: new[] { "Lighter, cheaper" },
-        negativeLines: new[] { "Drag rises at speed" });
-    private static readonly ModifierTooltipDefinition WingProfileSymmetricalTooltip = new(
-        "modifier.airframe.wing.profile",
-        "Wing Profile: Symmetrical Acrobatic",
-        positiveLines: new[] { "Better maneuverability" },
-        negativeLines: new[] { "Less lift, higher cost" });
     private static readonly ModifierTooltipDefinition FlapNoneTooltip = new(
         "modifier.airframe.flaps",
         "Flaps: None",
@@ -457,18 +428,18 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     private static readonly ModifierTooltipDefinition GearFixedTooltip = new(
         "modifier.airframe.gear",
         "Gear: Fixed",
-        positiveLines: new[] { "Cheap, reliable" },
+        positiveLines: new[] { "Lowest gear mass, cheap, reliable" },
         negativeLines: new[] { "High drag" });
     private static readonly ModifierTooltipDefinition GearSemiRetractableTooltip = new(
         "modifier.airframe.gear",
         "Gear: Semi Retractable",
         positiveLines: new[] { "Balanced drag, reliability" },
-        negativeLines: new[] { "More cost and complexity" });
+        negativeLines: new[] { "More gear mass, cost and complexity" });
     private static readonly ModifierTooltipDefinition GearRetractableTooltip = new(
         "modifier.airframe.gear",
         "Gear: Retractable",
         positiveLines: new[] { "Lowest drag, faster" },
-        negativeLines: new[] { "Costly, less reliable" });
+        negativeLines: new[] { "Highest gear mass, costly, less reliable" });
     private static readonly ModifierTooltipDefinition RunwayShortTooltip = new(
         "modifier.airframe.runway",
         "Runway: Short",
@@ -594,6 +565,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         BeginModifierTooltipFrame();
+        var previousGuiEnabled = GUI.enabled;
+        if (_monthlyCompletions.HasPending) GUI.enabled = false;
 
         var root = new Rect(10f, 10f, virtualScreenSize.x - 20f, virtualScreenSize.y - 20f);
         DrawRect(
@@ -632,12 +605,13 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             }
 
             GUILayout.EndArea();
+            GUI.enabled = previousGuiEnabled;
             return;
         }
 
-        var previousGuiEnabled = GUI.enabled;
         if (_showPendingProposalAdvanceDialog
             || _showFirstDesignApprovalDialog
+            || _monthlyCompletions.HasPending
             || _pendingEmergencyLoanOffer is not null)
         {
             GUI.enabled = false;
@@ -689,12 +663,26 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.Space(6f);
 
+        if (_lastFleetReport is not null && (_lastFleetReport.GuaranteedShortfall > 0 || _lastFleetReport.AccidentLosses > 0))
+        {
+            if (GUILayout.Button($"Fleet: {_lastFleetReport.GuaranteedShortfall} warranty maintenance missed • {_lastFleetReport.AccidentLosses} aircraft lost — review support"))
+            {
+                _tab = 2;
+                _myMachinesSubTab = 2;
+            }
+        }
+
+        if (!_showHistoricalArchive && _tab == 5)
+        {
+            DrawFactoryPlanner(root.width, virtualScreenSize.y);
+        }
+        else
+        {
         GUILayout.BeginHorizontal(GUILayout.ExpandHeight(true));
 
         var isEngineDesignerTab = !_showHistoricalArchive && _tab == 0;
         var isAirframeDesignerTab = !_showHistoricalArchive && _tab == 1;
         var isMyMachinesTab = !_showHistoricalArchive && _tab == 2;
-        var isFactoryTab = !_showHistoricalArchive && _tab == 5;
         var isGovernmentContractsTab = !_showHistoricalArchive && _tab == 7;
         var leftWidthRatio = isAirframeDesignerTab
             ? 0.58f
@@ -718,14 +706,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             Mathf.Max(leftMinimumWidth, root.width * leftWidthRatio),
             maximumLeftWidth);
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(leftWidth), GUILayout.ExpandHeight(true));
-        if (isFactoryTab)
-        {
-            _factoryLeftScroll = GUILayout.BeginScrollView(_factoryLeftScroll);
-        }
-        else
-        {
-            _leftScroll = GUILayout.BeginScrollView(_leftScroll);
-        }
+        _leftScroll = GUILayout.BeginScrollView(_leftScroll);
         if (_showHistoricalArchive)
         {
             DrawHistoricalArchiveTab();
@@ -750,10 +731,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         {
             DrawDemandTab();
         }
-        else if (_tab == 5)
-        {
-            DrawFactoryPane(leftWidth, DrawFactoryTab);
-        }
         else if (_tab == 6)
         {
             DrawContractsTab();
@@ -771,14 +748,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.EndVertical();
 
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.ExpandHeight(true), GUILayout.ExpandWidth(true));
-        if (isFactoryTab)
-        {
-            _factoryRightScroll = GUILayout.BeginScrollView(_factoryRightScroll);
-        }
-        else
-        {
-            _rightScroll = GUILayout.BeginScrollView(_rightScroll);
-        }
+        _rightScroll = GUILayout.BeginScrollView(_rightScroll);
         if (_showHistoricalArchive)
         {
             DrawHistoricalArchiveReport();
@@ -803,10 +773,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         {
             DrawDemandReport();
         }
-        else if (_tab == 5)
-        {
-            DrawFactoryPane(root.width - leftWidth, DrawFactoryReport);
-        }
         else if (_tab == 6)
         {
             DrawContractsReport();
@@ -824,6 +790,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.EndVertical();
 
         GUILayout.EndHorizontal();
+        }
         GUILayout.EndArea();
         GUI.enabled = previousGuiEnabled;
 
@@ -835,10 +802,12 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         DrawPendingProposalAdvanceDialog(virtualScreenSize);
         DrawFirstDesignApprovalDialog(virtualScreenSize);
         DrawEmergencyLoanDialog(virtualScreenSize);
+        DrawMonthlyCompletionsDialog(virtualScreenSize);
     }
 
     private void HandleNextMonthButtonPressed()
     {
+        if (_monthlyCompletions.HasPending) return;
         if (ShouldShowPendingProposalAdvanceDialog())
         {
             _showPendingProposalAdvanceDialog = true;
@@ -1105,6 +1074,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void ResetRuntimeStateForNewGame(SimulationDate? startDate = null)
     {
+        _monthlyCompletions.RestoreSnapshot(null);
+        _monthlyCompletionsRect = default;
+        _monthlyCompletionsScroll = default;
         _selectedAircraftCategory = AircraftCategory.LightSportAndRecreational;
         _selectedEngineDefinitionIndex = FindIndexById(_engineDefinitions.Select(d => d.Id).ToArray(), _engineDefinitionId);
         _selectedAirframeDefinitionIndex = FindIndexById(_airframeDefinitions.Select(d => d.Id).ToArray(), _airframeDefinitionId);
@@ -1126,22 +1098,44 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         _contractBoard = new ContractBoard(
             new ContractGenerator(
                 campaignModifierSource: _historicalCampaignContractModifierSource,
-                currentDateProvider: () => _currentDate),
+                currentDateProvider: () => _currentDate,
+                reputationPriceMultiplierProvider: () => _reputation.PriceMultiplier),
             new ContractEvaluator(
                 () => _currentDate.Year,
-                () => _headquarters.CompanyQualityLevel));
+                () => _headquarters.CompanyQualityLevel,
+                CreateCivilContractServiceOffer,
+                aircraft => _aviationFuelMarket.Get(_currentDate, !IsJetFamily(aircraft.Engine.Definition.EngineType)).DollarsPerKilogram));
         _productionFactory = new AircraftProductionFactory();
+        _engineManufacturing = new EngineManufacturingNetwork();
+        _enginePartsGroups = new SparePartsGroupRegistry();
+        _airframePartsGroups = new SparePartsGroupRegistry();
+        _separateEngineProduction = true;
+        _lastEngineManufacturingReport = null;
+        ConfigureAircraftEngineSupply();
         var governmentRandom = new SystemGovernmentContractRandomProvider();
         var governmentGenerator = new GovernmentContractGenerator(
             governmentRandom,
-            campaignModifierSource: _historicalCampaignContractModifierSource);
-        _governmentContractBoard = new GovernmentContractBoard(governmentGenerator, governmentRandom);
+            campaignModifierSource: _historicalCampaignContractModifierSource,
+            reputationPriceMultiplierProvider: () => _reputation.PriceMultiplier);
+        _governmentContractBoard = new GovernmentContractBoard(governmentGenerator, governmentRandom,
+            pricingService: new GovernmentContractPricingService(() => _reputation.PriceMultiplier));
         _governmentInventoryGateway = new FactoryGovernmentContractInventoryGateway(_productionFactory);
         _accountingSystem = new AccountingSystem(AccountingDefaults.StartingCash);
         _loanPortfolio = new LoanPortfolio();
         _researchBoard = new ResearchBoard();
         _headquarters = new HeadquartersState();
         _companyRunStatistics = new CompanyRunStatistics();
+        _reputation = new CompanyReputation();
+        _fleet = new FleetRegistry();
+        _maintenanceFinance = new MaintenanceFinancialLedger();
+        _airframeSparePartStockTargets.Clear();
+        _lastFleetReport = null;
+        _fleetRecordStartDate = startDate ?? SimulationDate.WrightTycoonStart;
+        _selectedFleetDesignId = string.Empty;
+        _fleetActionMessage = string.Empty;
+        _forecastCacheKey = string.Empty;
+        _typeConstructionDurabilityLevel = 0;
+        _typeServiceIntervalHours = 1000;
         _isBankrupt = false;
         _pendingEmergencyLoanOffer = null;
         _loanActionMessage = string.Empty;
@@ -1193,8 +1187,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         _showGovernmentPastOrdersWindow = false;
         _leftScroll = Vector2.zero;
         _rightScroll = Vector2.zero;
-        _factoryLeftScroll = Vector2.zero;
-        _factoryRightScroll = Vector2.zero;
+        ResetFactoryPlannerView();
         _pastOrdersScroll = Vector2.zero;
         _governmentPastOrdersScroll = Vector2.zero;
         if (_demandNotebookWindow is not null)
@@ -1209,8 +1202,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         _showPendingProposalAdvanceDialog = false;
         _showFirstDesignApprovalDialog = false;
         _disablePendingProposalAdvancePrompt = false;
-        _showHistoricalCampaignDebugPanel = false;
-        _historicalCampaignDebugMessage = string.Empty;
         _contractDeliverabilityFilter = ContractDeliverabilityFilter.All;
         _contractDeliveryStatusFilter = ContractDeliveryStatusFilter.All;
         _contractRequestedCategoryFilterEnabled = false;
@@ -1228,7 +1219,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         _historicalCampaignArchive.Clear();
         _historicalCampaignArchiveScroll = Vector2.zero;
         _historicalCampaignPopupWindow.Close();
-        SyncHistoricalCampaignDebugInputsToCurrentDate();
         LogHistoricalCampaignTechnologyModifiersIfYearChanged();
 
         if (_governmentContractBoard is not null)
@@ -1445,7 +1435,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         GUILayout.Label("Music Volume");
         var currentMusicVolume = _musicPlaylistPlayer?.Volume ?? MusicPlaylistPlayer.DefaultVolume;
-        var selectedMusicVolume = GUILayout.HorizontalSlider(currentMusicVolume, 0f, 1f, GUILayout.Height(28f));
+        var selectedMusicVolume = WrightTycoonSlider.Layout(currentMusicVolume, 0f, 1f, GUILayout.Height(28f));
         GUILayout.BeginHorizontal();
         GUILayout.Label("Muted", GUILayout.Width(100f));
         GUILayout.FlexibleSpace();
@@ -1893,14 +1883,15 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 return;
             }
 
-            ResetRuntimeStateForNewGame();
-
             var payload = JsonConvert.DeserializeObject<RunnerGameSavePayload>(entry.PayloadJson, _saveJsonSettings);
             if (payload is null)
             {
                 throw new InvalidDataException("Save payload is empty.");
             }
 
+            ValidateSavePayloadVersion(payload.Version);
+            ValidateTechnologySaveData(payload);
+            ResetRuntimeStateForNewGame();
             loadGameState(payload);
             _savePersistence?.MarkAsLastPlayed(entry.Id);
             _runtimeScreen = _isBankrupt ? RuntimeScreen.Bankruptcy : RuntimeScreen.Gameplay;
@@ -1968,6 +1959,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             TypeAerodynamicCleanlinessPercent = _typeAerodynamicCleanlinessPercent,
             TypeFuelLiters = _typeFuelLiters,
             TypePrecisionEngineeringLevel = _typePrecisionEngineeringLevel,
+            TypeConstructionDurabilityLevel = _typeConstructionDurabilityLevel,
+            TypeServiceIntervalHours = _typeServiceIntervalHours,
             TypeNavigationEquipment = _typeNavigationEquipment,
             TypeHasPassengerCabin = _typeHasPassengerCabin,
             TypeHasCargoSpace = _typeHasCargoSpace,
@@ -2039,8 +2032,15 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 WingPosition = saved.WingPosition,
                 WingShape = saved.WingShape,
                 WingProfile = saved.WingProfile,
+                UseModularWingProfile = saved.UseModularWingProfile,
+                WingDesignSpeedKph = saved.WingDesignSpeedKph,
+                WingPayloadAgility = saved.WingPayloadAgility,
+                WingProfileEfficiency = saved.WingProfileEfficiency,
                 AllowedEngineFamily = saved.AllowedEngineFamily,
                 ConstructionStandard = saved.ConstructionStandard,
+                TechnologySnapshot = saved.TechnologySnapshot,
+                ReferenceFamilyDefinition = saved.ReferenceFamilyDefinition,
+                ReferenceTypeDefinition = saved.ReferenceTypeDefinition,
             });
         }
 
@@ -2143,6 +2143,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             payload.ResearchBoardSnapshot = _researchBoard.CreateSnapshot();
         }
 
+        RefreshPartsGroups();
         if (_productionFactory is not null)
         {
             payload.FactoryStateSnapshot = _productionFactory.CreateSnapshot();
@@ -2157,6 +2158,17 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         payload.HeadquartersSnapshot = _headquarters.CreateSnapshot();
         payload.CompanyRunStatisticsSnapshot = _companyRunStatistics.CreateSnapshot();
+        payload.ReputationSnapshot = _reputation.CreateSnapshot();
+        payload.FleetSnapshot = _fleet.CreateSnapshot();
+        payload.MaintenanceFinancialSnapshot = _maintenanceFinance.CreateSnapshot();
+        payload.MonthlyCompletionSummary = _monthlyCompletions.CreateSnapshot();
+        payload.EngineManufacturingSnapshot = _engineManufacturing.CreateSnapshot();
+        payload.EnginePartsGroups = _enginePartsGroups.CreateSnapshot();
+        payload.AirframePartsGroups = _airframePartsGroups.CreateSnapshot();
+        payload.SeparateEngineProduction = _separateEngineProduction;
+        payload.AirframeSparePartStockTargets = _airframeSparePartStockTargets.ToDictionary(t => t.Key, t => t.Value, StringComparer.Ordinal);
+        payload.FleetRecordStartYear = _fleetRecordStartDate.Year;
+        payload.FleetRecordStartMonth = _fleetRecordStartDate.Month;
 
         return payload;
     }
@@ -2168,12 +2180,18 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             throw new ArgumentNullException(nameof(data));
         }
 
+        ValidateSavePayloadVersion(data.Version);
+        ValidateTechnologySaveData(data);
+
         _playerCompanyName = data.PlayerCompanyName?.Trim() ?? string.Empty;
 
         var year = data.CurrentYear <= 0 ? SimulationDate.WrightTycoonStart.Year : data.CurrentYear;
         var month = data.CurrentMonth < 1 ? 1 : data.CurrentMonth > 12 ? 12 : data.CurrentMonth;
         _currentDate = new SimulationDate(year, month);
         _elapsedMonths = System.Math.Max(data.ElapsedMonths, 0);
+        _monthlyCompletions.RestoreSnapshot(data.MonthlyCompletionSummary);
+        _monthlyCompletionsRect = default;
+        _monthlyCompletionsScroll = default;
 
         _tab = Mathf.Clamp(data.Tab, 0, _tabs.Length - 1);
         _showHistoricalArchive = false;
@@ -2239,6 +2257,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         _typeNavigationEquipment = Enum.IsDefined(typeof(AircraftNavigationEquipment), data.TypeNavigationEquipment)
             ? data.TypeNavigationEquipment
             : ResolveDefaultTypeRoleConfiguration(_selectedAircraftCategory).NavigationEquipment;
+        _typeConstructionDurabilityLevel = Mathf.Clamp(data.TypeConstructionDurabilityLevel, 0, 10);
+        _typeServiceIntervalHours = NormalizeServiceInterval(data.TypeServiceIntervalHours);
         _typeHasPassengerCabin = data.TypeHasPassengerCabin;
         _typeHasCargoSpace = data.TypeHasCargoSpace;
         _typeWeaponPayloadKilograms = Math.Clamp(data.TypeWeaponPayloadKilograms, 0d, TypePayloadLimitMaxKilograms);
@@ -2304,9 +2324,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         {
             _campaignActionMessage = string.Empty;
         }
-        _historicalCampaignDebugMessage = string.Empty;
         _historicalCampaignPopupWindow.Close();
-        SyncHistoricalCampaignDebugInputsToCurrentDate();
         ApplyGovernmentContractNotebookState();
         ApplyDemandNotebookStates();
 
@@ -2320,6 +2338,14 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             _baseAirframeParameters = data.BaseAirframeParameters.Clone();
             _baseAirframeParameters.WingProfile = NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile);
             _baseAirframeParameters.WingAspectRatio = ClampWingAspectRatio(_baseAirframeParameters.WingAspectRatio);
+        }
+
+        // Pending type technology depends on the saved family's research status.
+        // Restore the incoming board before rebuilding designs, not after them.
+        if (data.ResearchBoardSnapshot is not null)
+        {
+            _researchBoard ??= new ResearchBoard();
+            _researchBoard.RestoreSnapshot(data.ResearchBoardSnapshot);
         }
 
         _savedEngines.Clear();
@@ -2394,7 +2420,14 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                     state.AllowedEngineFamily == AircraftAllowedEngineFamily.Any ? AircraftAllowedEngineFamily.Propeller : state.AllowedEngineFamily,
                     Enum.IsDefined(typeof(AircraftConstructionStandard), state.ConstructionStandard)
                         ? state.ConstructionStandard
-                        : ResolveDefaultConstructionStandard(_selectedAircraftCategory)));
+                        : ResolveDefaultConstructionStandard(_selectedAircraftCategory),
+                    state.UseModularWingProfile,
+                    state.WingDesignSpeedKph,
+                    state.WingPayloadAgility,
+                    state.WingProfileEfficiency,
+                    state.TechnologySnapshot,
+                    state.ReferenceFamilyDefinition,
+                    state.ReferenceTypeDefinition));
             }
         }
 
@@ -2533,16 +2566,20 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             _governmentContractBoard.RestoreSnapshot(data.GovernmentContractBoardSnapshot);
         }
 
-        if (data.ResearchBoardSnapshot is not null && _researchBoard is not null)
-        {
-            _researchBoard.RestoreSnapshot(data.ResearchBoardSnapshot);
-        }
-
         if (data.FactoryStateSnapshot is not null && _productionFactory is not null)
         {
             _productionFactory.RestoreSnapshot(data.FactoryStateSnapshot);
             StopProductionForDecommissionedDesigns();
         }
+        _engineManufacturing = new EngineManufacturingNetwork();
+        if (data.EngineManufacturingSnapshot is not null) _engineManufacturing.RestoreSnapshot(data.EngineManufacturingSnapshot);
+        _enginePartsGroups = new SparePartsGroupRegistry();
+        _airframePartsGroups = new SparePartsGroupRegistry();
+        if (data.EnginePartsGroups is not null) _enginePartsGroups.RestoreSnapshot(data.EnginePartsGroups);
+        if (data.AirframePartsGroups is not null) _airframePartsGroups.RestoreSnapshot(data.AirframePartsGroups);
+        // The factory snapshot owns the paid WIP mode. Never reinterpret legacy combined work as airframe-only.
+        _separateEngineProduction = data.FactoryStateSnapshot?.UsesExternalEngineSupply ?? data.SeparateEngineProduction;
+        ConfigureAircraftEngineSupply();
 
         if (data.AccountingSnapshot is not null && _accountingSystem is not null)
         {
@@ -2586,6 +2623,22 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             _companyRunStatistics.RegisterAircraftSold(restoredSoldUnits);
             _companyRunStatistics.RegisterAircraftProduced(checked(restoredSoldUnits + restoredWarehouseUnits));
         }
+        if (data.ReputationSnapshot is not null) _reputation.RestoreSnapshot(data.ReputationSnapshot);
+        if (data.FleetSnapshot is not null)
+        {
+            RefreshPartsGroups();
+            _fleet.RestoreSnapshot(data.FleetSnapshot);
+            var fleetSnapshot = _fleet.CreateSnapshot();
+            _fleet.RestoreSnapshot(fleetSnapshot with { Cohorts = fleetSnapshot.Cohorts.Select(c => c with { Offer = RepriceMaintenanceOffer(c.Offer) }).ToArray() });
+        }
+        if (data.MaintenanceFinancialSnapshot is not null) _maintenanceFinance.RestoreSnapshot(data.MaintenanceFinancialSnapshot);
+        _airframeSparePartStockTargets.Clear();
+        foreach (var target in data.AirframeSparePartStockTargets ?? new Dictionary<string, int>())
+            if (_savedAircraftDesigns.Any(d => d.CatalogItem.DesignId == target.Key) && target.Value > 0)
+                _airframeSparePartStockTargets[target.Key] = target.Value;
+        _fleetRecordStartDate = data.FleetRecordStartYear > 0
+            ? new SimulationDate(data.FleetRecordStartYear, Mathf.Clamp(data.FleetRecordStartMonth, 1, 12))
+            : _currentDate;
 
         RefreshDevelopedAircraftTypeStatistics();
         _isBankrupt = data.IsBankrupt
@@ -2593,6 +2646,11 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         EnsureResearchModifierEntriesForSavedDesigns();
         BackfillApprovedYearsFromResearchBoard();
+        if (_researchBoard is not null)
+            foreach (var proposal in _researchBoard.GetProjectsByStatus(ResearchStatus.Proposed))
+                TryRefreshResearchProposalQuote(proposal);
+
+        RefreshPartsGroups();
 
         _selectedSavedEngineIndex = _savedEngines.Count == 0
             ? -1
@@ -2618,10 +2676,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         _researchActionMessage = string.Empty;
         _leftScroll = Vector2.zero;
         _rightScroll = Vector2.zero;
-        _factoryLeftScroll = Vector2.zero;
-        _factoryRightScroll = Vector2.zero;
 
         _lastGeneratedContracts.Clear();
+        ResetFactoryPlannerView();
         _lastFactoryReport = null;
 
         RebuildEnginePreview();
@@ -2828,10 +2885,15 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 EngineDesignerBalance.Engine.JetSpeedMinRpm,
                 EngineDesignerBalance.Engine.JetSpeedMaxRpm,
                 "0");
+            var afterburnerAvailable = EngineDesignerBalance.Engine.IsAfterburnerAvailable(_currentDate.Year);
+            if (!afterburnerAvailable) _engineParameters.HasAfterburner = false;
+            var previousAfterburnerGuiEnabled = GUI.enabled;
+            GUI.enabled = previousAfterburnerGuiEnabled && afterburnerAvailable;
             _engineParameters.HasAfterburner = DrawModifierToggleWithTooltip(
                 _engineParameters.HasAfterburner,
-                "Afterburner",
+                afterburnerAvailable ? "Afterburner" : "Afterburner (available from 1950)",
                 BuildAfterburnerTooltipDefinition());
+            GUI.enabled = previousAfterburnerGuiEnabled;
             _engineParameters.BoostType = BoostType.None;
             _engineParameters.EfficiencyOptimizationsPercent = EngineDesignerBalance.Engine.EfficiencyOptimizationMinPercent;
         }
@@ -2852,6 +2914,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             EnginePrecisionEngineeringTooltip,
             useLinearScale: true);
         DrawPrecisionEngineeringEffects(_engineParameters.PrecisionEngineeringLevel, isEngine: true);
+        DrawEngineMaintenanceDesignControls();
 
         RebuildEnginePreview();
 
@@ -2942,6 +3005,13 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (toDelete >= 0 && toDelete < _savedEngines.Count)
         {
+            if (IsPartsGroupAnchorInUse(_savedEngines[toDelete].ResearchId, true)
+                || _savedEngines.Any(e => e.SourceResearchId == _savedEngines[toDelete].ResearchId)
+                || _savedAircraftDesigns.Any(d => string.Equals(d.EngineResearchId, _savedEngines[toDelete].ResearchId, StringComparison.Ordinal)))
+            {
+                _factoryActionMessage = "Cannot delete an engine used by a saved aircraft type. Keep it to preserve design and fleet service records.";
+                return;
+            }
             if (string.Equals(_savedEngines[toDelete].ResearchId, _editingEngineResearchId, StringComparison.Ordinal))
             {
                 _editingEngineResearchId = string.Empty;
@@ -3009,6 +3079,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         DrawModernEngineKpis(_enginePreview, originalEngine, hasInlineComparison);
+        DrawEngineMaintenanceParameters(_enginePreview);
+        DrawEngineSimilarity(_enginePreview, string.IsNullOrWhiteSpace(_editingEngineResearchId)
+            ? _engineVersionDevelopment?.SourceResearchId : _editingEngineResearchId);
         DrawModernEnginePowerChart(
             report.AltitudePerformance,
             hasInlineComparison ? originalReport.AltitudePerformance : null,
@@ -3230,6 +3303,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         if (_modernAirframeDesignerStage == 0)
         {
         DrawModernSectionHeader("1 — Family Architecture", "Configure the structure shared by every aircraft type in this family.");
+        DrawTechnologyFreezeSummary();
         if (isFamilyLocked)
         {
             GUILayout.Label($"Family Name (locked): {lockedFamilyDefinition!.DisplayName}");
@@ -3286,9 +3360,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             _baseAirframeParameters.WingPosition = DrawWingPositionSelector("Wing Position", _baseAirframeParameters.WingPosition);
             _baseAirframeParameters.WingShape = DrawWingShapeSelector("Wing Shape", _baseAirframeParameters.WingShape);
             _typeWingShape = _baseAirframeParameters.WingShape;
-            _baseAirframeParameters.WingProfile = DrawWingProfileSelector("Wing Profile", NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile));
-            _typeWingProfile = _baseAirframeParameters.WingProfile;
-            DrawWingProfileHelp(_baseAirframeParameters.WingProfile);
+            DrawModularWingProfileControls();
             _familyAllowedEngineFamily = DrawFamilyAllowedEngineSelector("Engine Type", _familyAllowedEngineFamily);
 
             _baseAirframeParameters.EngineCount = _lockedEngineCount;
@@ -3452,6 +3524,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         _typeFlapType = DrawTrailingFlapSelector("Flaps", _typeFlapType);
+        DrawTechnologyFreezeSummary();
         _typeHasLeadingEdgeFlaps = DrawModifierToggleWithTooltip(
             _typeHasLeadingEdgeFlaps,
             "Leading Edge Flaps",
@@ -3484,6 +3557,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             AircraftPrecisionEngineeringTooltip,
             useLinearScale: true);
         DrawPrecisionEngineeringEffects(_typePrecisionEngineeringLevel, isEngine: false);
+        DrawLifecycleDesignerControls();
         if (isTypeVersionDevelopment)
         {
             DrawTypeVersionComparison(activeTypeVersionDevelopment!);
@@ -3567,12 +3641,23 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                     }
 
                     var warehouseUnits = _productionFactory?.GetWarehouseUnits(designToDelete.CatalogItem.DesignId) ?? 0;
-                    if (warehouseUnits > 0)
+                    if (_fleet.Cohorts.Any(c => c.DesignId == designToDelete.CatalogItem.DesignId && c.ActiveCount > 0))
+                    {
+                        _factoryActionMessage = $"Cannot delete '{designToDelete.Name}' while delivered aircraft remain in service. Decommission the type instead to preserve support records.";
+                    }
+                    else if (IsPartsGroupAnchorInUse(designToDelete.CatalogItem.DesignId, false)
+                        || (_productionFactory?.GetAirframeSparePartUnits(designToDelete.CatalogItem.DesignId) ?? 0) > 0
+                        || (_productionFactory?.CreateSnapshot().SupportWorkOrders.Any(o => o.DesignId == designToDelete.CatalogItem.DesignId) ?? false))
+                    {
+                        _factoryActionMessage = $"Cannot delete '{designToDelete.Name}' while spare-part stock or production remains. Decommission the type to retain these assets.";
+                    }
+                    else if (warehouseUnits > 0)
                     {
                         _factoryActionMessage = $"Cannot delete '{designToDelete.Name}'. Warehouse still has {FormatUiInteger(warehouseUnits)} units.";
                     }
                     else
                     {
+                        _airframeSparePartStockTargets.Remove(designToDelete.CatalogItem.DesignId);
                         _savedAircraftDesigns.RemoveAt(_selectedSavedAircraftDesignIndex);
                         var contractsToClear = _selectedWarehouseDesignByContractId
                             .Where(entry => string.Equals(entry.Value, designToDelete.CatalogItem.DesignId, StringComparison.Ordinal))
@@ -3673,14 +3758,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         }
     }
 
-    private void DrawEngineVersionComparison(
-        EngineParameters originalParameters,
-        EngineParameters newParameters,
-        EngineType engineType)
-    {
-        DrawSection("Original vs New Engine Parameters");
-        DrawEngineParameterComparisonRows(engineType, originalParameters, engineType, newParameters);
-    }
 
     private void DrawTypeVersionComparison(TypeVersionDevelopmentContext context)
     {
@@ -4045,6 +4122,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             "Precision Engineering",
             FormatUiInteger(originalParameters.PrecisionEngineeringLevel),
             FormatUiInteger(newParameters.PrecisionEngineeringLevel));
+        DrawVersionComparisonRow("Service interval (h)", FormatUiInteger(originalParameters.ServiceIntervalHours), FormatUiInteger(newParameters.ServiceIntervalHours));
+        DrawVersionComparisonRow("Durability", FormatUiInteger(originalParameters.DurabilityLevel), FormatUiInteger(newParameters.DurabilityLevel));
     }
 
     private static void DrawEnginePerformanceComparisonRows(Engine originalEngine, Engine newEngine)
@@ -4516,14 +4595,30 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         DrawModernKpiGrid(
             3,
-            new ModernKpiItem("MAX SPEED", $"{FormatUiNumber(maximumSpeedKilometersPerHour, "0")} km/h"),
-            new ModernKpiItem("CERTIFIED RANGE", $"{FormatUiNumber(maximumCertifiedRangeKilometers, "0")} km"),
-            new ModernKpiItem("PAYLOAD", $"{FormatUiNumber(perf.PayloadCapacity.Kilograms, "0")} kg"),
+            new ModernKpiItem(
+                "MAX SPEED",
+                $"{FormatUiNumber(maximumSpeedKilometersPerHour, "0")} km/h",
+                icon: ModernKpiIcon.Speed),
+            new ModernKpiItem(
+                "CERTIFIED RANGE",
+                $"{FormatUiNumber(maximumCertifiedRangeKilometers, "0")} km",
+                icon: ModernKpiIcon.Range),
+            new ModernKpiItem(
+                "PAYLOAD",
+                $"{FormatUiNumber(perf.PayloadCapacity.Kilograms, "0")} kg",
+                icon: ModernKpiIcon.Payload),
             new ModernKpiItem(
                 "RELIABILITY",
-                $"{FormatUiNumber(ResolveEffectiveAircraftReliability(perf.OverallReliability) * 100d, "0.0")}%"),
-            new ModernKpiItem("COMPLETE COST", FormatCurrency(perf.CompleteProductionCost)),
-            new ModernKpiItem("MANEUVERABILITY", FormatUiNumber(airframePerf.Maneuverability, "0.0")));
+                $"{FormatUiNumber(ResolveEffectiveAircraftReliability(perf.OverallReliability) * 100d, "0.0")}%",
+                icon: ModernKpiIcon.Reliability),
+            new ModernKpiItem(
+                "COMPLETE COST",
+                FormatCurrency(perf.CompleteProductionCost),
+                icon: ModernKpiIcon.CompleteCost),
+            new ModernKpiItem(
+                "MANEUVERABILITY",
+                FormatUiNumber(airframePerf.Maneuverability, "0.0"),
+                icon: ModernKpiIcon.Maneuverability));
 
         GUILayout.Label($"Family: {_aircraftPreview.FamilyDefinition.DisplayName}");
         GUILayout.BeginHorizontal(GUI.skin.box);
@@ -4651,6 +4746,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             perf.AverageCruiseFuelBurnKilogramsPerHour,
             "0.0",
             BuildAircraftCruiseFuelTooltip(_aircraftPreview));
+        DrawLifecyclePreview();
         if (_aircraftPreview.Airframe.Parameters.PayloadLimitKilograms.HasValue)
         {
             DrawMetric(
@@ -4664,6 +4760,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         DrawMetric("Maximum Takeoff Weight (kg)", perf.MaximumTakeoffWeightKilograms, "0.0", BuildAircraftMaximumTakeoffWeightTooltip(_aircraftPreview));
         DrawMetric("Aircraft Weight With Fuel (kg)", perf.AircraftWeightWithFuelKilograms, "0.0", BuildAircraftWetWeightTooltip(_aircraftPreview));
         DrawMetric("Empty Aircraft Weight (kg)", perf.EmptyAircraftWeightKilograms, "0.0", BuildAircraftEmptyWeightTooltip(_aircraftPreview));
+        DrawLandingGearDetails(perf.LandingGear, _aircraftPreview.Airframe.Parameters.LandingGearType);
         if (_aircraftPreview.TypeDefinition.HasPassengerCabin)
         {
             DrawMetric(
@@ -4808,6 +4905,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 var contractTotalPrice = GetContractTotalPrice(contract);
                 GUILayout.Label($"{categoryLabel} | {FormatUiInteger(contract.QuantityUnits)} units / {FormatUiInteger(contract.DeadlineMonths)} months | Price {FormatCurrency(contractTotalPrice)}");
                 GUILayout.EndHorizontal();
+                foreach (var line in ContractLifecycleText.Requirements(contract.Requirements)) GUILayout.Label(line);
             }
         }
         else
@@ -4831,6 +4929,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
+        using var contractUiCache = BeginContractUiCache();
         var activeCatalog = BuildProductionCatalog(includeOnlyResearched: false, includeDecommissioned: false);
         var warehouseCatalog = BuildProductionCatalog(includeOnlyResearched: false, includeDecommissioned: true);
         PruneContractDeliverySelections(_contractBoard.OpenContracts, warehouseCatalog);
@@ -4910,6 +5009,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 GUILayout.Label($"{contract.Id} | {contract.CompanyName}");
                 GUILayout.Label($"Quantity: {FormatUiInteger(contract.QuantityUnits)} units");
                 GUILayout.Label($"Deadline: {FormatUiInteger(contract.RemainingMonths)} months remaining (initial {FormatUiInteger(contract.DeadlineMonths)})");
+                foreach (var line in ContractLifecycleText.Requirements(contract.Requirements)) GUILayout.Label(line);
 
                 var deliveryCandidates = BuildContractDeliveryCandidates(
                     contract,
@@ -4921,7 +5021,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 {
                     DrawContractDeliveryDiagnosticDetails(snapshot);
                     GUILayout.Label("Contract Requirements");
-                    DrawContractRequirements(contract.Requirements);
+                    DrawContractRequirements(contract.Requirements, includeLifecycle: false);
                 }
 
                 if (snapshot.DeliveryStatus != ContractDeliveryStatus.Ready)
@@ -5032,6 +5132,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                         var expectedProfitLoss = contractTotalPrice - fulfillmentCost;
                         DrawMetric("Contract Unit Price", contractUnitPrice, "0.00");
                         DrawMetric("Contract Total Price", contractTotalPrice, "0.00");
+                        DrawCivilLifecycleComparison(contract, deliveryPlan);
                         DrawSignedCurrencyMetric("Expected Profit/Loss", expectedProfitLoss);
                         GUILayout.Label("Status: deliverable");
                         if (GUILayout.Button($"Deliver {FormatUiInteger(contract.QuantityUnits)} Units", GUILayout.Height(26f)))
@@ -5052,6 +5153,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 && deliveryAllocationsToApply is not null
                 && deliveryAllocationsToApply.Count > 0)
             {
+                ClearContractUiCache();
                 var withdrawnAllocations = new List<ContractDeliveryAllocation>(deliveryAllocationsToApply.Count);
                 string? withdrawalFailureMessage = null;
                 for (var allocationIndex = 0; allocationIndex < deliveryAllocationsToApply.Count; allocationIndex++)
@@ -5111,12 +5213,14 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                                 allocation.Candidate.DesignId,
                                 allocation.UnitsToDeliver,
                                 allocationRevenue);
+                            RegisterCivilFleetDelivery(contractToDeliver, allocation.Candidate.CatalogItem,
+                                allocation.UnitsToDeliver);
                             allocatedContractRevenue += allocationRevenue;
                         }
 
                         if (_accountingSystem is not null && _productionFactory is not null)
                         {
-                            var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
+                            var inventoryByDesign = CalculateInventoryWithSupport(
                                 _productionFactory.WarehouseUnitsByDesign,
                                 warehouseCatalog);
                             _accountingSystem.RegisterContractIncome(
@@ -5890,6 +5994,16 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         lines.Add($"- Minimum Maneuverability: {FormatUiNumber(requirements.MinimumManeuverability, "0.0")}");
         lines.Add($"- Minimum Crew: {FormatUiInteger(requirements.MinimumCrewSize)}");
         lines.Add($"- Maximum Runway Length: {FormatUiNumber(requirements.MaximumRequiredRunwayLengthMeters, "0.0")} m");
+        lines.AddRange(ContractLifecycleText.Requirements(requirements));
+        if (activeContract.LockedServiceOffer is not null)
+            lines.Add(ContractLifecycleText.AgreedSupport(activeContract.LockedServiceOffer));
+        if (activeContract.AcceptedSubmission is not null && activeContract.LockedLifecycleCostQuote is not null)
+        {
+            lines.Add(string.Empty);
+            lines.Add("Accepted Aircraft Operational Costs (Frozen)");
+            lines.AddRange(ContractLifecycleText.Comparison(activeContract.AcceptedSubmission.Metrics.ExpectedLifeHours,
+                requirements.MinimumExpectedLifeHours, activeContract.LockedLifecycleCostQuote, requirements.LifecycleModelVersion));
+        }
 
         _governmentContractNotebookWindow.SetContent(
             $"Government Contract Notebook | {activeContract.ContractId}",
@@ -6009,6 +6123,15 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             DrawMetric("Unit Price", activeDelivery.UnitPrice, "0.00");
             DrawMetric("Completion Bonus", activeDelivery.TotalContractValue * GovernmentContractBalance.DeliveryCompletionBonusShare, "0.00");
             DrawMetric("Total Contract Value", activeDelivery.TotalContractValue, "0.00");
+            if (activeDelivery.ServiceOffer is not null) GUILayout.Label(ContractLifecycleText.AgreedSupport(activeDelivery.ServiceOffer));
+            if (activeDelivery.LifecycleRequirements is not null)
+            {
+                foreach (var line in ContractLifecycleText.Requirements(activeDelivery.LifecycleRequirements)) GUILayout.Label(line);
+                if (activeDelivery.LifecycleCostQuote is not null && activeDelivery.LifecycleAircraftMetrics.HasValue)
+                    foreach (var line in ContractLifecycleText.Comparison(activeDelivery.LifecycleAircraftMetrics.Value.ExpectedLifeHours,
+                        activeDelivery.LifecycleRequirements.MinimumExpectedLifeHours, activeDelivery.LifecycleCostQuote,
+                        activeDelivery.LifecycleRequirements.LifecycleModelVersion)) GUILayout.Label(line);
+            }
 
             var availableInWarehouse = _productionFactory.GetWarehouseUnits(activeDelivery.AircraftDesignId);
             DrawMetric("Warehouse Units (Selected Type)", availableInWarehouse, "0");
@@ -6130,7 +6253,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                             compliance.IsSelectableInUi ? ModernUiTone.Success : ModernUiTone.Danger);
                         GUILayout.EndHorizontal();
                         TryDrawAircraftPictureByDesignId(candidate.DesignId, 220f, 130f);
-                        GUILayout.Label($"Lifecycle: {HumanizeUiToken(candidate.LifecycleStage.ToString())}");
+                        GUILayout.Label($"Development Stage: {HumanizeUiToken(candidate.LifecycleStage.ToString())}");
+                        DrawGovernmentLifecycleComparison(activeContract, candidate);
                         DrawMetric("Reliability", candidate.Metrics.Reliability, "0.000");
                         DrawMetric("Maneuverability", candidate.Metrics.Maneuverability, "0.0");
                         DrawMetric("Range (km)", candidate.Metrics.RangeKilometers, "0.0");
@@ -6165,7 +6289,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                                 && _accountingSystem is not null)
                             {
                                 var fullCatalog = BuildProductionCatalog(includeOnlyResearched: false);
-                                var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
+                                var inventoryByDesign = CalculateInventoryWithSupport(
                                     _productionFactory.WarehouseUnitsByDesign,
                                     fullCatalog);
                                 _accountingSystem.RegisterContractIncome(
@@ -6219,24 +6343,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label("Use the 'Past Orders' button in Government Contracts tab (left bottom) to review closed government activity.");
     }
 
-    private GovernmentContract? FindLatestFailedGovernmentContractEvaluation()
-    {
-        if (_governmentContractBoard is null)
-        {
-            return null;
-        }
-
-        for (var index = _governmentContractBoard.EvaluatedContracts.Count - 1; index >= 0; index--)
-        {
-            var evaluated = _governmentContractBoard.EvaluatedContracts[index];
-            if (evaluated.EvaluationResult?.IsSuccess == false)
-            {
-                return evaluated;
-            }
-        }
-
-        return null;
-    }
 
     private void DrawGovernmentEvaluationDetails(GovernmentContract contract, bool showSubmission = false)
     {
@@ -6261,8 +6367,11 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         for (var index = 0; index < evaluation.ParameterBonuses.Count; index++)
         {
             var parameterBonus = evaluation.ParameterBonuses[index];
+            var parameterLabel = parameterBonus.Parameter == GovernmentContractParameter.WholeLifeCost
+                ? contract.Requirements.LifecycleModelVersion >= 2 ? "Operational Costs ($/flight hour)" : "Legacy Total Cost ($/aircraft)"
+                : parameterBonus.Parameter.ToString();
             GUILayout.Label(
-                $"{parameterBonus.Parameter}: required {FormatUiNumber(parameterBonus.RequiredValue, "0.###")}, " +
+                $"{parameterLabel}: required {FormatUiNumber(parameterBonus.RequiredValue, "0.###")}, " +
                 $"actual {FormatUiNumber(parameterBonus.ActualValue, "0.###")}, " +
                 $"bonus +{FormatUiNumber(parameterBonus.BonusValue * 100d, "0.00")}%");
         }
@@ -6310,6 +6419,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         var bookedIncome = deliveryIncome + completionBonusIncome;
         if (deliveryUpdate.DeliveredUnitsThisMonth > 0)
         {
+            RegisterGovernmentFleetDelivery(deliveryContractBefore, deliveryUpdate.DeliveredUnitsThisMonth,
+                deliveryUpdate.TotalDeliveredUnits);
             RegisterSoldAircraftUnits(
                 deliveryContractBefore.AircraftDesignId,
                 deliveryUpdate.DeliveredUnitsThisMonth,
@@ -6319,7 +6430,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         if (_accountingSystem is not null && bookedIncome > 0d)
         {
             var fullCatalog = BuildProductionCatalog(includeOnlyResearched: false);
-            var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
+            var inventoryByDesign = CalculateInventoryWithSupport(
                 _productionFactory.WarehouseUnitsByDesign,
                 fullCatalog);
 
@@ -6457,7 +6568,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             savedDesign.CatalogItem.Aircraft,
             breakdown,
             _currentDate.Year,
-            _headquarters.CompanyQualityLevel);
+            _headquarters.CompanyQualityLevel,
+            BuildCombinedMaintenanceOffer(savedDesign),
+            _aviationFuelMarket.Get(_currentDate, !IsJetFamily(savedDesign.CatalogItem.Aircraft.Engine.Definition.EngineType)).DollarsPerKilogram);
     }
 
     private GovernmentContractDevelopmentPriceBreakdown BuildGovernmentDevelopmentPriceBreakdown(SavedAircraftDesign savedDesign)
@@ -6523,6 +6636,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         DrawMetric("Minimum Maneuverability", requirements.MinimumManeuverability, "0.0");
         DrawMetric("Minimum Crew", requirements.MinimumCrewSize, "0");
         DrawMetric("Maximum Runway Length (m)", requirements.MaximumRequiredRunwayLengthMeters, "0.0");
+        foreach (var line in ContractLifecycleText.Requirements(requirements)) GUILayout.Label(line);
     }
 
     private void DrawDemandTab()
@@ -6532,11 +6646,14 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             "Compare current requirements with the three-year forecast for every aircraft category.");
         var currentYear = _currentDate.Year;
         var forecastYear = System.Math.Min(CoreBalance.HistoricalCampaignTechnology.EndYear, currentYear + 3);
-        GUILayout.Label("Year-scaled demand uses min/max type requirements (reliability/range/speed/payload/maneuverability).");
+        DrawWrappedFactoryStatus("Compare category qualification and generated contract demand: performance, expected life, maintenance, support and operational costs per flight hour.");
+        DrawWrappedFactoryStatus("Most buyers prioritize operational costs; others prioritize purchase price. Government performance requirements use the upper third of the displayed ranges. Actual issued contracts remain authoritative.");
         DrawMetric("Current Year", currentYear, "0");
         DrawMetric("Forecast Year (+3)", forecastYear, "0");
         DrawMetric("Demand Multiplier (Current)", TypeRequirementBalance.ResolveMinimumRequirementMultiplier(currentYear), "0.000");
         DrawMetric("Demand Multiplier (+3)", TypeRequirementBalance.ResolveMinimumRequirementMultiplier(forecastYear), "0.000");
+        DrawWrappedFactoryStatus($"Current monthly fuel: Avgas {FormatOperationCurrency(_aviationFuelMarket.Get(_currentDate, true).DollarsPerKilogram)}/kg · Jet fuel {FormatOperationCurrency(_aviationFuelMarket.Get(_currentDate, false).DollarsPerKilogram)}/kg. These are current prices, not the three-year fuel forecast.");
+        DrawWrappedFactoryStatus("Operational costs = purchase-price depreciation + fuel + airframe/engine parts + replacement engines. Reference budgets below are category estimates, not quotations for a specific design.");
         GUILayout.Space(6f);
         GUILayout.Label("Detailed type list is shown on the right panel.");
     }
@@ -6567,6 +6684,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             }
 
             GUILayout.EndHorizontal();
+            DrawDemandSingleValueRow("Year Availability", DemandLifecycleText.Availability(currentProfile.Category, currentYear, forecastYear));
             DrawDemandRequirementRow("Minimum Reliability", currentMinimumReliability, forecastMinimumReliability, "0.000");
             DrawDemandRequirementRow("Maximum Reliability", currentMaximumReliability, forecastMaximumReliability, "0.000");
             DrawDemandRequirementRow("Minimum Range (km)", currentProfile.MinRequiredRangeKilometers, forecastProfile.MinRequiredRangeKilometers, "0.0");
@@ -6580,6 +6698,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             DrawDemandSingleValueRow("Construction", FormatDemandConstructionRequirement(currentProfile.Category));
             DrawDemandSingleValueRow("Role Modules", FormatDemandRoleRequirement(currentProfile));
             DrawDemandSingleValueRow("Runway Lengths (m)", FormatCategoryRunwayLengths(currentProfile.Category));
+            foreach (var line in DemandLifecycleText.ForCategory(currentProfile.Category)) DrawWrappedFactoryStatus(line);
             if (currentProfile.HasPassengerCapacityRequirement)
             {
                 DrawDemandSingleValueRow(
@@ -6734,6 +6853,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         var lines = new List<string>
         {
             $"Demand Type: {currentProfile.DisplayName}",
+            $"Year Availability: {DemandLifecycleText.Availability(category, currentYear, forecastYear)}",
             $"Demand Multiplier Now: {FormatUiNumber(TypeRequirementBalance.ResolveMinimumRequirementMultiplier(currentYear), "0.000")}",
             $"Demand Multiplier +3y: {FormatUiNumber(TypeRequirementBalance.ResolveMinimumRequirementMultiplier(forecastYear), "0.000")}",
             string.Empty,
@@ -6754,6 +6874,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             lines.Add(
                 $"- Passenger Capacity: {FormatUiInteger(currentProfile.GetMinimumPassengerCapacity())} - {FormatUiInteger(currentProfile.GetMaximumPassengerCapacity())}");
         }
+
+        lines.Add(string.Empty);
+        lines.AddRange(DemandLifecycleText.ForCategory(category));
+        lines.Add("Government performance thresholds sample the upper third of the current year-adjusted ranges. Actual issued contract requirements override this market reference.");
 
         return string.Join(Environment.NewLine, lines);
     }
@@ -6916,15 +7040,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             GUILayout.Label($"Engineering Subject: {GetResearchSubjectLabel(project.SubjectType)}");
             GUILayout.Label($"{GetResearchNameFieldLabel(project.SubjectType)}: {displayName}");
             DrawMetric("Engineering Cost", project.ResearchCost, "0.00");
-            DrawMetric("Engineering Time (months)", project.ResearchTimeMonths, "0");
             TryDrawResearchProjectPreview(project, 220f, 130f);
-
-            if (IsFirstYearResearchApprovalWindow())
-            {
-                GUILayout.Label(BuildResearchTimeBonusFormula(project.ResearchTimeMonths));
-            }
             DrawMetric("Complexity (%)", project.ComplexityNormalized * 100d, "0.0");
             DrawResearchModifierEditor(project);
+            DrawResearchApprovalTimeRow(project);
             if (isDetailed)
             {
                 GUILayout.Label($"Engineering ID: {project.SubjectId}");
@@ -6984,14 +7103,13 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        var displayedMonths = IsFirstYearResearchApprovalWindow()
-            ? System.Math.Max(1, assistedQuote.ResearchTimeMonths - ResearchBalance.FirstYearApprovalSpeedBonusMonths)
-            : assistedQuote.ResearchTimeMonths;
         GUILayout.Label(
             $"{facilityName} level {effects.Level}: {FormatCurrency(assistedQuote.ResearchCost)} | " +
-            $"{FormatUiInteger(displayedMonths)} approval month(s) | slots " +
+            "slots " +
             $"{FormatUiInteger(facility == DevelopmentFacility.WindTunnel ? _headquarters.WindTunnelResearchIds.Count : _headquarters.EngineTestCellResearchIds.Count)}/" +
             $"{FormatUiInteger(effects.ProjectSlots)}");
+
+        DrawResearchApprovalTimeRow(assistedQuote.ResearchTimeMonths, $"{facilityName} Time (months)");
 
         var previousGuiEnabled = GUI.enabled;
         GUI.enabled = previousGuiEnabled && _headquarters.CanAssignDevelopmentFacility(facility);
@@ -7009,6 +7127,14 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     {
         if (_researchBoard is null)
         {
+            return;
+        }
+
+        if (project.SubjectType == ResearchSubjectType.Engine
+            && !EngineDesignerBalance.Engine.IsAfterburnerAvailable(_currentDate.Year)
+            && _savedEngines.Any(engine => engine.ResearchId == project.SubjectId && engine.Parameters.HasAfterburner))
+        {
+            _researchActionMessage = "Afterburner is available from 1950.";
             return;
         }
 
@@ -7079,20 +7205,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         _researchActionMessage = message;
     }
 
-    private bool IsFirstYearResearchApprovalWindow()
-    {
-        var bookingMonthIndex = _elapsedMonths + 1;
-        return bookingMonthIndex >= 1
-            && bookingMonthIndex <= ResearchBalance.FirstYearApprovalSpeedBonusWindowMonths;
-    }
 
-    private string BuildResearchTimeBonusFormula(int baseResearchMonths)
-    {
-        var normalizedBaseMonths = System.Math.Max(baseResearchMonths, 1);
-        var bonusMonths = System.Math.Max(ResearchBalance.FirstYearApprovalSpeedBonusMonths, 0);
-        var adjustedMonths = System.Math.Max(1, normalizedBaseMonths - bonusMonths);
-        return $"Engineering time = {FormatUiInteger(normalizedBaseMonths)} - {FormatUiInteger(bonusMonths)} = {FormatUiInteger(adjustedMonths)}";
-    }
 
     private void ApplyApprovedYearForApprovedProject(ResearchProject project, SimulationDate approvedDate)
     {
@@ -7116,6 +7229,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 savedEngine.SetFrozenDate(approvedDate);
             }
         }
+        else if (project.SubjectType == ResearchSubjectType.AircraftFamily)
+        {
+            FreezeFamilyTechnology(project.SubjectId, approvedDate);
+        }
         else if (project.SubjectType == ResearchSubjectType.AircraftType)
         {
             for (var index = 0; index < _savedAircraftDesigns.Count; index++)
@@ -7129,6 +7246,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
                 savedDesign.SetApprovedYear(approvedDate.Year);
                 savedDesign.SetFrozenDate(approvedDate);
+                FreezeTypeTechnology(index, approvedDate);
                 if (!TryRebuildSavedAircraftCatalogItemAtDate(index, approvedDate, out var rebuildError))
                 {
                     _researchActionMessage = $"Failed to freeze type '{savedDesign.Name}': {rebuildError}";
@@ -7137,10 +7255,12 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         PropagateApprovedYearsToDerivedVariants();
+        RebuildResearchDependentCatalogs(project.SubjectType, project.SubjectId);
     }
 
     private void BackfillApprovedYearsFromResearchBoard()
     {
+        BackfillFamilyTechnologySnapshots();
         for (var index = 0; index < _savedEngines.Count; index++)
         {
             var savedEngine = _savedEngines[index];
@@ -7193,17 +7313,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         PropagateApprovedYearsToDerivedVariants();
     }
 
-    private bool TryResolveApprovedYearFromResearchBoard(ResearchSubjectType subjectType, string subjectId, out int approvedYear)
-    {
-        approvedYear = 0;
-        if (!TryResolveApprovedDateFromResearchBoard(subjectType, subjectId, out var approvedDate))
-        {
-            return false;
-        }
-
-        approvedYear = approvedDate.Year;
-        return approvedYear >= 1;
-    }
 
     private bool TryResolveApprovedDateFromResearchBoard(ResearchSubjectType subjectType, string subjectId, out SimulationDate approvedDate)
     {
@@ -7326,6 +7435,17 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
                 savedDesign.SetApprovedYear(inheritedYear);
                 savedDesign.SetFrozenDate(inheritedFrozenYear, inheritedFrozenMonth);
+                var inheritedType = WithTypeTechnology(savedDesign.CatalogItem.Aircraft.TypeDefinition,
+                    sourceDesign.CatalogItem.Aircraft.TypeDefinition.TechnologySnapshot,
+                    sourceDesign.CatalogItem.Aircraft.TypeDefinition.TechnologyModelVersion);
+                if (_aircraftFactory is not null)
+                {
+                    var inheritedAircraft = _aircraftFactory.CreateAircraft(
+                        ResolveFamilyDefinitionWithSavedEngineTechnology(savedDesign), inheritedType);
+                    _savedAircraftDesigns[index] = CopySavedAircraftDesign(savedDesign,
+                        new FactoryAircraftTypeCatalogItem(savedDesign.CatalogItem.DesignId, savedDesign.CatalogItem.DisplayName, inheritedAircraft),
+                        savedDesign.EngineResearchId);
+                }
                 if (savedDesign.TryGetFrozenDate(out var inheritedFrozenDate))
                 {
                     TryRebuildSavedAircraftCatalogItemAtDate(index, inheritedFrozenDate, out _);
@@ -7420,10 +7540,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         _researchModifiersByResearchId[BuildResearchModifierId(project.SubjectType, project.SubjectId)] = points.Clone();
-        if (project.SubjectType == ResearchSubjectType.AircraftType)
-        {
-            ApplyTypeResearchModifiersToSavedDesigns(project.SubjectId, points);
-        }
+        RebuildResearchDependentCatalogs(project.SubjectType, project.SubjectId);
 
         if (project.Status == ResearchStatus.Proposed)
         {
@@ -7460,10 +7577,12 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         TypeResearchModifierPoints points,
         TypeResearchModifierEffects effects)
     {
-        if (!TryBuildSavedEngineSnapshot(researchId, out var engine))
+        if (!TryGetSavedEngineByResearchId(researchId, out var savedEngine))
         {
             return;
         }
+        var engine = BuildSavedEngineWithResearch(savedEngine, new TypeResearchModifierPoints());
+        var modifiedEngine = BuildSavedEngineWithResearch(savedEngine, points);
 
         var baseQuote = _researchCalculator.CalculateEngineQuote(engine);
         var modifiedQuote = _researchCalculator.CalculateEngineQuote(engine, points);
@@ -7471,20 +7590,21 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         modifiedQuote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.Engine, researchId, modifiedQuote);
         baseQuote = ApplyEarlyResearchDiscountToResearchQuote(baseQuote);
         modifiedQuote = ApplyEarlyResearchDiscountToResearchQuote(modifiedQuote);
-        var modifiedReliability = ClampResearchPreviewReliability(engine.Performance.Reliability + effects.ReliabilityDelta);
-        var modifiedProductionCost = System.Math.Max(0d, engine.Performance.CompleteProductionCost * effects.ProductionCostMultiplier);
-        var modifiedProductionManDays = System.Math.Max(0d, engine.Performance.ProductionManDays * effects.ProductionManDaysMultiplier);
+        var modifiedReliability = modifiedEngine.Performance.Reliability;
+        var modifiedProductionCost = modifiedEngine.Performance.CompleteProductionCost;
+        var modifiedProductionManDays = modifiedEngine.Performance.ProductionManDays;
 
         DrawSection("Affected Parameters");
+        DrawMetric("Expected Life (h)", EngineMaintenancePolicy.Create(modifiedEngine, researchId, researchId).ReplacementLifeHours, "0");
         DrawModifierValuePreview("Reliability", modifiedReliability - engine.Performance.Reliability, "0.00", modifiedReliability, "0.000");
         DrawModifierPercentagePreview(
             "Production Cost",
-            (effects.ProductionCostMultiplier - 1d) * 100d,
+            CalculatePercentageDelta(engine.Performance.CompleteProductionCost, modifiedProductionCost),
             modifiedProductionCost,
             "0.00");
         DrawModifierPercentagePreview(
             "Production MD",
-            (effects.ProductionManDaysMultiplier - 1d) * 100d,
+            CalculatePercentageDelta(engine.Performance.ProductionManDays, modifiedProductionManDays),
             modifiedProductionManDays,
             "0.0");
         DrawModifierPercentagePreview(
@@ -7509,18 +7629,19 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        var aircraft = savedDesign.CatalogItem.Aircraft;
+        var aircraft = BuildResearchAircraft(savedDesign, familyOverride: new TypeResearchModifierPoints());
+        var modifiedAircraft = BuildResearchAircraft(savedDesign, familyOverride: points);
         var baseQuote = _researchCalculator.CalculateFamilyQuote(aircraft);
         var modifiedQuote = _researchCalculator.CalculateFamilyQuote(aircraft, points);
         baseQuote = ApplyEarlyResearchDiscountToResearchQuote(baseQuote);
         modifiedQuote = ApplyEarlyResearchDiscountToResearchQuote(modifiedQuote);
         var baseReliability = ResolveEffectiveAircraftReliability(aircraft.Performance.OverallReliability);
-        var modifiedReliability = ResolveEffectiveAircraftReliability(
-            ClampResearchPreviewReliability(aircraft.Performance.OverallReliability + effects.ReliabilityDelta));
-        var modifiedProductionCost = System.Math.Max(0d, aircraft.Performance.CompleteProductionCost * effects.ProductionCostMultiplier);
-        var modifiedProductionManDays = System.Math.Max(0d, aircraft.Performance.TotalProductionManDays * effects.ProductionManDaysMultiplier);
+        var modifiedReliability = ResolveEffectiveAircraftReliability(modifiedAircraft.Performance.OverallReliability);
+        var modifiedProductionCost = modifiedAircraft.Performance.CompleteProductionCost;
+        var modifiedProductionManDays = modifiedAircraft.Performance.TotalProductionManDays;
 
         DrawSection("Affected Parameters");
+        DrawMetric("Expected Life (h)", AircraftLifecycleSpecification.FromAircraft(modifiedAircraft, _headquarters.CompanyQualityLevel).ExpectedLifeHours, "0");
         DrawModifierValuePreview(
             "Reliability",
             modifiedReliability - baseReliability,
@@ -7529,12 +7650,12 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             "0.000");
         DrawModifierPercentagePreview(
             "Production Cost",
-            (effects.ProductionCostMultiplier - 1d) * 100d,
+            CalculatePercentageDelta(aircraft.Performance.CompleteProductionCost, modifiedProductionCost),
             modifiedProductionCost,
             "0.00");
         DrawModifierPercentagePreview(
             "Production MD",
-            (effects.ProductionManDaysMultiplier - 1d) * 100d,
+            CalculatePercentageDelta(aircraft.Performance.TotalProductionManDays, modifiedProductionManDays),
             modifiedProductionManDays,
             "0.0");
         DrawModifierPercentagePreview(
@@ -7558,6 +7679,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         {
             return;
         }
+        if (!TryGetSavedAircraftDesignByTypeResearchId(typeResearchId, out var savedType)) return;
+        var modifiedAircraft = BuildResearchAircraft(savedType, typeOverride: points);
 
         var baseQuote = _researchCalculator.CalculateTypeQuote(aircraft);
         var modifiedQuote = _researchCalculator.CalculateTypeQuote(aircraft, points);
@@ -7566,12 +7689,13 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         baseQuote = ApplyEarlyResearchDiscountToResearchQuote(baseQuote);
         modifiedQuote = ApplyEarlyResearchDiscountToResearchQuote(modifiedQuote);
         var baseReliability = ResolveEffectiveAircraftReliability(aircraft.Performance.OverallReliability);
-        var modifiedReliability = ResolveEffectiveAircraftReliability(
-            ClampResearchPreviewReliability(aircraft.Performance.OverallReliability + effects.ReliabilityDelta));
-        var modifiedProductionCost = System.Math.Max(0d, aircraft.Performance.CompleteProductionCost * effects.ProductionCostMultiplier);
-        var modifiedProductionManDays = System.Math.Max(0d, aircraft.Performance.TotalProductionManDays * effects.ProductionManDaysMultiplier);
+        var modifiedReliability = ResolveEffectiveAircraftReliability(modifiedAircraft.Performance.OverallReliability);
+        var modifiedProductionCost = modifiedAircraft.Performance.CompleteProductionCost;
+        var modifiedProductionManDays = modifiedAircraft.Performance.TotalProductionManDays;
 
         DrawSection("Affected Parameters");
+        DrawMetric("Expected Life (h)", AircraftLifecycleSpecification.FromAircraft(modifiedAircraft, _headquarters.CompanyQualityLevel).ExpectedLifeHours, "0");
+        GUILayout.Label($"Additive family + type: REL {modifiedAircraft.FamilyDefinition.ResearchModifiers.ReliabilityPoints} + {points.ReliabilityPoints}; PROD {modifiedAircraft.FamilyDefinition.ResearchModifiers.ProductionOptimizationPoints} + {points.ProductionOptimizationPoints}");
         DrawModifierValuePreview(
             "Reliability",
             modifiedReliability - baseReliability,
@@ -7580,12 +7704,12 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             "0.000");
         DrawModifierPercentagePreview(
             "Production Cost",
-            (effects.ProductionCostMultiplier - 1d) * 100d,
+            CalculatePercentageDelta(aircraft.Performance.CompleteProductionCost, modifiedProductionCost),
             modifiedProductionCost,
             "0.00");
         DrawModifierPercentagePreview(
             "Production MD",
-            (effects.ProductionManDaysMultiplier - 1d) * 100d,
+            CalculatePercentageDelta(aircraft.Performance.TotalProductionManDays, modifiedProductionManDays),
             modifiedProductionManDays,
             "0.0");
         DrawModifierPercentagePreview(
@@ -7626,6 +7750,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     }
 
     private Engine BuildSavedEngineAtReferenceDate(SavedEngineDesign savedEngine)
+        => BuildSavedEngineWithResearch(savedEngine, GetResearchModifierPoints(ResearchSubjectType.Engine, savedEngine.ResearchId));
+
+    private Engine BuildSavedEngineWithResearch(SavedEngineDesign savedEngine, TypeResearchModifierPoints points)
     {
         if (savedEngine is null)
         {
@@ -7634,7 +7761,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         if (savedEngine.TryGetFrozenDate(out var frozenDate))
         {
-            return BuildEngineForDate(savedEngine.Definition, savedEngine.Parameters.Clone(), frozenDate);
+            var source = new HistoricalCampaignRuntimeTechnologyModifierSource(_historicalCampaignTechnologyProgression, () => frozenDate);
+            return new EngineBuilder(new EngineCalculator(), _atmosphereModel, source)
+                .Build(savedEngine.Definition, savedEngine.Parameters.Clone(), points);
         }
 
         if (_engineBuilder is null)
@@ -7642,20 +7771,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             throw new InvalidOperationException("Engine builder is not initialized.");
         }
 
-        return _engineBuilder.Build(savedEngine.Definition, savedEngine.Parameters.Clone());
+        return _engineBuilder.Build(savedEngine.Definition, savedEngine.Parameters.Clone(), points);
     }
 
-    private Engine BuildEngineForDate(EngineDefinition definition, EngineParameters parameters, SimulationDate date)
-    {
-        var technologyModifierSource = new HistoricalCampaignRuntimeTechnologyModifierSource(
-            _historicalCampaignTechnologyProgression,
-            () => date);
-        var datedEngineBuilder = new EngineBuilder(
-            new EngineCalculator(),
-            _atmosphereModel,
-            technologyModifierSource);
-        return datedEngineBuilder.Build(definition, parameters);
-    }
 
     private Aircraft BuildAircraftForDate(
         AircraftFamilyDefinition familyDefinition,
@@ -7792,18 +7910,23 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             WeaponPayloadKilograms = existingType.WeaponPayloadKilograms,
             HasSpecialEquipment = existingType.HasSpecialEquipment,
             HasCombatEquipment = existingType.HasCombatEquipment,
+            ConstructionDurabilityLevel = existingType.ConstructionDurabilityLevel,
+            ServiceIntervalHours = existingType.ServiceIntervalHours,
+            GuaranteedSupportMonths = existingType.GuaranteedSupportMonths,
             ResearchModifiers = new TypeResearchModifierPoints(),
+            TechnologySnapshot = existingType.TechnologySnapshot,
+            TechnologyModelVersion = existingType.TechnologyModelVersion,
         };
 
         try
         {
             if (savedDesign.TryGetFrozenDate(out var frozenDate))
             {
-                aircraft = BuildAircraftForDate(savedDesign.CatalogItem.Aircraft.FamilyDefinition, baselineType, frozenDate);
+                aircraft = BuildAircraftForDate(ResolveFamilyDefinitionWithSavedEngineTechnology(savedDesign), baselineType, frozenDate);
             }
             else
             {
-                aircraft = _aircraftFactory.CreateAircraft(savedDesign.CatalogItem.Aircraft.FamilyDefinition, baselineType);
+                aircraft = _aircraftFactory.CreateAircraft(ResolveFamilyDefinitionWithSavedEngineTechnology(savedDesign), baselineType);
             }
 
             return true;
@@ -7850,8 +7973,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         return ((resultValue / baseValue) - 1d) * 100d;
     }
 
-    private static double ClampResearchPreviewReliability(double value) =>
-        System.Math.Max(0d, System.Math.Min(0.995d, value));
 
     private double ResolveEffectiveAircraftReliability(double baseReliability) =>
         HeadquartersBalance.ApplyCompanyReliabilityBonus(baseReliability, _headquarters.CompanyQualityLevel);
@@ -7899,7 +8020,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
                 try
                 {
-                    var engineSnapshot = BuildSavedEngineAtReferenceDate(savedEngine);
+                    var engineSnapshot = BuildSavedEngineWithResearch(savedEngine, new TypeResearchModifierPoints());
                     displayName = savedEngine.Name;
                     quote = _researchCalculator.CalculateEngineQuote(engineSnapshot, modifierPoints);
                     quote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.Engine, project.SubjectId, quote);
@@ -7928,13 +8049,23 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 }
 
                 displayName = savedDesign.CatalogItem.Aircraft.FamilyDefinition.DisplayName;
-                quote = _researchCalculator.CalculateFamilyQuote(savedDesign.CatalogItem.Aircraft, modifierPoints);
+                quote = _researchCalculator.CalculateFamilyQuote(BuildResearchAircraft(savedDesign, familyOverride: new TypeResearchModifierPoints()), modifierPoints);
                 quote = ApplyDevelopmentFacilityEffects(ResearchSubjectType.AircraftFamily, developmentFacility, quote);
                 quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
                 return true;
             }
 
-            return false;
+            var standalone = _savedFamilies.FirstOrDefault(item => item.FamilyId == project.SubjectId);
+            if (standalone?.ReferenceFamilyDefinition is null || standalone.ReferenceTypeDefinition is null)
+            {
+                _researchActionMessage = "This legacy family has no saved reference configuration. Open and re-save its unapproved family design to refresh the quote.";
+                return false;
+            }
+            displayName = standalone.Name;
+            quote = _researchCalculator.CalculateFamilyQuote(BuildStandaloneFamilyResearchAircraft(standalone), modifierPoints);
+            quote = ApplyDevelopmentFacilityEffects(ResearchSubjectType.AircraftFamily, developmentFacility, quote);
+            quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
+            return true;
         }
 
         if (project.SubjectType == ResearchSubjectType.AircraftType)
@@ -7948,7 +8079,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 }
 
                 displayName = savedDesign.CatalogItem.Aircraft.TypeDefinition.DisplayName;
-                quote = _researchCalculator.CalculateTypeQuote(savedDesign.CatalogItem.Aircraft, modifierPoints);
+                quote = _researchCalculator.CalculateTypeQuote(BuildResearchAircraft(savedDesign, typeOverride: new TypeResearchModifierPoints()), modifierPoints);
                 quote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.AircraftType, project.SubjectId, quote);
                 quote = ApplyDevelopmentFacilityEffects(ResearchSubjectType.AircraftType, developmentFacility, quote);
                 quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
@@ -8040,77 +8171,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         }
     }
 
-    private void ApplyTypeResearchModifiersToSavedDesigns(string typeSubjectId, TypeResearchModifierPoints points)
-    {
-        if (_aircraftFactory is null)
-        {
-            return;
-        }
-
-        for (var index = 0; index < _savedAircraftDesigns.Count; index++)
-        {
-            var savedDesign = _savedAircraftDesigns[index];
-            if (!string.Equals(savedDesign.TypeResearchId, typeSubjectId, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (savedDesign.HasFrozenDate || savedDesign.ApprovedYear.HasValue)
-            {
-                continue;
-            }
-
-            var aircraft = savedDesign.CatalogItem.Aircraft;
-            var existingType = aircraft.TypeDefinition;
-            var updatedType = new AircraftTypeDefinition
-            {
-                Id = existingType.Id,
-                FamilyId = existingType.FamilyId,
-                DisplayName = existingType.DisplayName,
-                EngineDelta = existingType.EngineDelta,
-                AirframeDelta = existingType.AirframeDelta,
-                NavigationEquipment = existingType.NavigationEquipment,
-                HasPassengerCabin = existingType.HasPassengerCabin,
-                HasCargoSpace = existingType.HasCargoSpace,
-                WeaponPayloadKilograms = existingType.WeaponPayloadKilograms,
-                HasSpecialEquipment = existingType.HasSpecialEquipment,
-                HasCombatEquipment = existingType.HasCombatEquipment,
-                ResearchModifiers = points.Clone(),
-            };
-
-            try
-            {
-                var familyDefinition = ResolveFamilyDefinitionWithSavedEngineTechnology(savedDesign);
-                var rebuiltAircraft = savedDesign.TryGetFrozenDate(out var frozenDate)
-                    ? BuildAircraftForDate(familyDefinition, updatedType, frozenDate)
-                    : _aircraftFactory.CreateAircraft(familyDefinition, updatedType);
-                var updatedCatalogItem = new FactoryAircraftTypeCatalogItem(
-                    savedDesign.CatalogItem.DesignId,
-                    savedDesign.CatalogItem.DisplayName,
-                    rebuiltAircraft);
-
-                _savedAircraftDesigns[index] = new SavedAircraftDesign(
-                    savedDesign.Name,
-                    updatedCatalogItem,
-                    savedDesign.EngineResearchId,
-                    savedDesign.FamilyResearchId,
-                    savedDesign.TypeResearchId,
-                    savedDesign.AircraftPictureId,
-                    savedDesign.DevelopmentStartedYear,
-                    savedDesign.VariantDevelopmentStartedYear,
-                    savedDesign.TypeVersionDevelopmentBaselineYear,
-                    savedDesign.SourceTypeResearchId,
-                    savedDesign.ApprovedYear,
-                    savedDesign.FrozenYear,
-                    savedDesign.FrozenMonth,
-                    savedDesign.IsDecommissioned);
-            }
-            catch (Exception ex)
-            {
-                _researchActionMessage = $"Failed to apply type modifiers to '{savedDesign.Name}': {ex.Message}";
-            }
-        }
-    }
 
     private string ResolveResearchProjectDisplayName(ResearchProject project)
     {
@@ -8204,6 +8264,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             _companySubTab == 0 ? "HEADQUARTERS" : "FINANCE",
             ModernUiTone.Neutral);
         _companySubTab = GUILayout.Toolbar(_companySubTab, _companySubTabs, GUILayout.Height(30f));
+        GUILayout.Label($"Reputation: {FormatUiNumber(_reputation.Score, "0.0")}/100 | willingness to pay {FormatUiNumber(_reputation.PriceMultiplier * 100d, "0.0")}%");
 
         if (_companySubTab == 0)
         {
@@ -8228,7 +8289,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     private void DrawHeadquartersTab()
     {
         DrawSection("Corporate Research Program");
-        DrawMetric("Company Quality", _headquarters.CompanyQualityLevel, "0");
         DrawMetric("Research Points", _headquarters.CompanyResearchPoints, "0");
         DrawMetric(
             "Aircraft Reliability Bonus",
@@ -8334,7 +8394,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     {
         DrawSection("Headquarters Overview");
         DrawMetric("Monthly Headquarters Cost", _headquarters.GetMonthlyOperatingCost(), "0.00");
-        DrawMetric("Company Quality Level", _headquarters.CompanyQualityLevel, "0");
         DrawMetric(
             "Global Aircraft Reliability Bonus",
             HeadquartersBalance.GetCompanyReliabilityBonus(_headquarters.CompanyQualityLevel) * 100d,
@@ -8413,7 +8472,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label("Track cash, monthly fixed/variable costs (including R&D), income, inventory value and profit/loss.");
         DrawMetric("Current Cash", _accountingSystem.Cash, "0.00");
         DrawMetric("Outstanding Debt", _loanPortfolio.OutstandingPrincipal, "0.00");
-        DrawMetric("Next Debt Service", _loanPortfolio.GetNextScheduledDebtService(), "0.00");
+        DrawMetric("Next Debt Service", _loanPortfolio.GetNextScheduledDebtService(_elapsedMonths + 1), "0.00");
         DrawMetric("Recorded Months", _accountingSystem.GetHistory().Count, "0");
         DrawMetric("Recorded Transactions", _accountingSystem.GetTransactions().Count, "0");
 
@@ -8624,7 +8683,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             $"APR {loan.AnnualInterestRate * 100d:0.00}%");
         GUILayout.Label(
             $"Outstanding {FormatCurrency(loan.OutstandingPrincipal)} / {FormatCurrency(loan.OriginalPrincipal)} | " +
-            $"{loan.RemainingMonths} months remaining | next payment {FormatCurrency(CalculateDisplayedNextLoanPayment(loan))}");
+            $"{loan.RemainingMonths} months remaining | next payment {FormatCurrency(loan.NextDueMonthIndex > _elapsedMonths + 1 ? 0d : CalculateDisplayedNextLoanPayment(loan))}");
+        if (loan.NextDueMonthIndex > _elapsedMonths + 1)
+            GUILayout.Label("Payments start: " + FormatSimulationDate(_currentDate.AddMonths(loan.NextDueMonthIndex - _elapsedMonths)) + " · construction deferral; no accrued interest.");
 
         if (!_loanPrepaymentInputs.TryGetValue(loan.LoanId, out var input))
         {
@@ -8708,6 +8769,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         var inventoryValue = history.Count == 0 ? 0d : history[history.Count - 1].InventoryValue;
         var factoryResaleValue = _productionFactory?.Factories.Sum(factory => _productionFactory.GetFactoryResaleValue(factory.FactoryId)) ?? 0d;
         var equipmentScrapValue = _productionFactory?.Equipment.Sum(equipment => equipment.PurchaseCost * FactoryBalance.EquipmentScrapRecoveryShare) ?? 0d;
+        factoryResaleValue += _engineManufacturing.Sites.Sum(site => site.BuildingResaleValue);
+        equipmentScrapValue += _engineManufacturing.Sites.Sum(site => site.EquipmentCost * FactoryBalance.EquipmentScrapRecoveryShare);
+        equipmentScrapValue += _engineManufacturing.StoredEquipment.Sum(item => item.PurchaseCost * FactoryBalance.EquipmentScrapRecoveryShare);
         return new LoanFinancialContext(
             _accountingSystem?.Cash ?? 0d,
             inventoryValue,
@@ -8770,7 +8834,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 line.AssignedDesignId!,
                 engineResearchId,
                 enginesPerAircraft,
-                line.ProducedUnits);
+                line.ProducedUnits,
+                includeEngineProduction: !report.UsesExternalEngineSupply);
         }
     }
 
@@ -8996,6 +9061,11 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         _myMachinesSubTab = Mathf.Clamp(_myMachinesSubTab, 0, _myMachinesSubTabs.Length - 1);
         _myMachinesSubTab = GUILayout.Toolbar(_myMachinesSubTab, _myMachinesSubTabs, GUILayout.Height(30f));
+        if (_myMachinesSubTab == 2)
+        {
+            DrawOperatingFleet();
+            return;
+        }
 
         if (_myMachinesSubTab == 0)
         {
@@ -9008,6 +9078,11 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void DrawMyMachinesReport()
     {
+        if (_myMachinesSubTab == 2)
+        {
+            DrawFleetSupportReport();
+            return;
+        }
         if (_myMachinesSubTab == 0)
         {
             DrawMyMachinesSelectedEngineReport();
@@ -9256,6 +9331,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             DrawParameterValueRow("Parts Cost", FormatUiNumber(built.Performance.Cost, "0"));
             DrawParameterValueRow("Complete Production Cost", FormatUiNumber(built.Performance.CompleteProductionCost, "0"));
             DrawParameterValueRow("Production MD", FormatUiNumber(built.Performance.ProductionManDays, "0.0"));
+            DrawEngineMaintenanceParameters(built, selected.ResearchId);
+            DrawEngineSimilarity(built, selected.ResearchId);
+            DrawEngineFleetMaintenanceSummary(selected);
             var producedEngineUnits = _machineStatistics.GetProducedEngineUnits(selected.ResearchId);
             var soldEngineUnits = _machineStatistics.GetSoldEngineUnits(selected.ResearchId);
             DrawParameterValueRow(
@@ -9416,6 +9494,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         DrawParameterValueRow("Production Parts", FormatUiNumber(aircraft.Performance.TotalProductionCost, "0"));
         DrawParameterValueRow("Complete Production Cost", FormatUiNumber(aircraft.Performance.CompleteProductionCost, "0"));
         DrawParameterValueRow("Production MD", FormatUiNumber(aircraft.Performance.TotalProductionManDays, "0.0"));
+        DrawAircraftOwnershipMetrics(aircraft);
+        DrawMachineFleetMaintenanceSummary("type:" + selected.CatalogItem.DesignId,
+            new[] { selected.CatalogItem.DesignId }, false);
         var aircraftCosts = MachineEconomicsCalculator.Calculate(
             ResolveAllocatedAircraftResearchCost(selected),
             producedUnits,
@@ -9604,6 +9685,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         if (CanEditSavedEngine(saved))
         {
             _editingEngineResearchId = saved.ResearchId;
+            RebuildEnginePreview();
             _researchActionMessage = $"Editing unapproved engine '{saved.Name}'. Saving will replace it.";
         }
         else
@@ -9911,6 +9993,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         var typeDelta = typeDefinition.AirframeDelta;
         _typeNavigationEquipment = typeDefinition.NavigationEquipment;
+        _typeConstructionDurabilityLevel = typeDefinition.ConstructionDurabilityLevel;
+        _typeServiceIntervalHours = NormalizeServiceInterval(typeDefinition.ServiceIntervalHours);
         _typeHasPassengerCabin = typeDefinition.HasPassengerCabin;
         _typeHasCargoSpace = typeDefinition.HasCargoSpace;
         _typeWeaponPayloadKilograms = typeDefinition.WeaponPayloadKilograms;
@@ -10085,34 +10169,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         return "No proposal";
     }
 
-    private int ResolveResearchReferenceYear(ResearchSubjectType subjectType, string subjectId)
-    {
-        if (_researchBoard is null || string.IsNullOrWhiteSpace(subjectId))
-        {
-            return _currentDate.Year;
-        }
-
-        var projects = _researchBoard.GetAllProjects();
-        for (var index = 0; index < projects.Count; index++)
-        {
-            var project = projects[index];
-            if (project.SubjectType != subjectType || !string.Equals(project.SubjectId, subjectId, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var monthIndex = project.CompletedMonthIndex ?? project.StartedMonthIndex;
-            if (!monthIndex.HasValue)
-            {
-                break;
-            }
-
-            var startDate = ResolveCampaignStartDate();
-            return startDate.AddMonths(monthIndex.Value).Year;
-        }
-
-        return _currentDate.Year;
-    }
 
     private SimulationDate ResolveCampaignStartDate()
     {
@@ -10297,32 +10353,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         return (currentMultiplier / baselineMultiplier) - 1d;
     }
 
-    private static void DrawFactoryPane(float paneWidth, Action drawContents)
-    {
-        var labelStyle = GUI.skin.label;
-        var buttonStyle = GUI.skin.button;
-        var boxStyle = GUI.skin.box;
-        var previousLabelWordWrap = labelStyle.wordWrap;
-        var previousButtonWordWrap = buttonStyle.wordWrap;
-        var previousBoxWordWrap = boxStyle.wordWrap;
-        var contentWidth = Mathf.Max(320f, paneWidth - 32f);
-
-        labelStyle.wordWrap = true;
-        buttonStyle.wordWrap = true;
-        boxStyle.wordWrap = true;
-        GUILayout.BeginVertical(GUILayout.Width(contentWidth), GUILayout.ExpandWidth(false));
-        try
-        {
-            drawContents();
-        }
-        finally
-        {
-            GUILayout.EndVertical();
-            labelStyle.wordWrap = previousLabelWordWrap;
-            buttonStyle.wordWrap = previousButtonWordWrap;
-            boxStyle.wordWrap = previousBoxWordWrap;
-        }
-    }
 
     private static void DrawWrappedFactoryStatus(string message)
     {
@@ -10335,181 +10365,16 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label(message, style, GUILayout.ExpandWidth(true));
     }
 
-    private void DrawFactoryTab()
-    {
-        if (_productionFactory is null)
-        {
-            DrawError("Production system is not initialized.");
-            return;
-        }
 
-        var factories = _productionFactory.Factories;
-        DrawModernPageHeader(
-            "Production",
-            "Manage factory capacity, equipment, production lines and finished warehouse stock.",
-            $"{FormatUiInteger(factories.Count)} FACTORIES",
-            ModernUiTone.Neutral);
-        var activeTarget = 0;
-        var activeCapacity = 0;
-        var queuedTarget = 0;
-        var installationsInProgress = 0;
-        for (var index = 0; index < factories.Count; index++)
-        {
-            var factory = factories[index];
-            var equipment = _productionFactory.GetEquipmentForFactory(factory.FactoryId);
-            if (factory.Line is null || equipment is null || IsAircraftDesignDecommissioned(equipment.DesignId))
-            {
-                continue;
-            }
 
-            var lineTarget = ResolveEffectiveFactoryLineTarget(factory.Line);
-            if (equipment.IsReady)
-            {
-                activeTarget += lineTarget;
-                activeCapacity += FactoryBalance.GetMaximumMonthlyOutput(equipment.AutomationTier);
-            }
-            else if (equipment.InstallationMonthsRemaining > 0)
-            {
-                queuedTarget += lineTarget;
-                installationsInProgress++;
-            }
-        }
 
-        GUILayout.Label(
-            $"Factories: {FormatUiInteger(factories.Count)} " +
-            $"({_productionFactory.OperationalFactoryCount} operational, {_productionFactory.FactoriesUnderConstructionCount} building)");
-        GUILayout.BeginHorizontal();
-        DrawModernKpi(
-            "ACTIVE OUTPUT THIS MONTH",
-            $"{FormatUiInteger(activeTarget)} / {FormatUiInteger(activeCapacity)}",
-            "READY LINES",
-            ModernUiTone.Success);
-        DrawModernKpi(
-            "QUEUED AFTER INSTALLATION",
-            $"{FormatUiInteger(queuedTarget)} / MONTH",
-            queuedTarget > 0 ? "NOT PRODUCING YET" : "NONE QUEUED",
-            queuedTarget > 0 ? ModernUiTone.Warning : ModernUiTone.Neutral);
-        DrawModernKpi(
-            "INSTALLATIONS IN PROGRESS",
-            FormatUiInteger(installationsInProgress),
-            installationsInProgress > 0 ? "SETTING UP" : "ALL READY",
-            installationsInProgress > 0 ? ModernUiTone.Warning : ModernUiTone.Success);
-        GUILayout.EndHorizontal();
-        GUILayout.Label(
-            $"Property maintenance {FormatCurrency(_productionFactory.GetMonthlyFactoryMaintenance())}/month | " +
-            $"active equipment {FormatCurrency(_productionFactory.GetMonthlyActiveEquipmentCost())}/month");
-        GUILayout.Label(
-            $"Each factory costs {FormatCurrency(FactoryBalance.FactoryConstructionCost)}, takes " +
-            $"{FormatUiInteger(FactoryBalance.FactoryConstructionMonths)} months to build, and contains one production line.");
-
-        var previousEnabled = GUI.enabled;
-        GUI.enabled = previousEnabled && _accountingSystem is not null && _accountingSystem.Cash >= FactoryBalance.FactoryConstructionCost;
-        if (GUILayout.Button($"Build Another Factory — {FormatCurrency(FactoryBalance.FactoryConstructionCost)}", GUILayout.Height(30f))
-            && _accountingSystem is not null
-            && _productionFactory.TryStartFactoryConstruction(_accountingSystem.Cash, out var constructionCost, out var constructionMessage))
-        {
-            _accountingSystem.RegisterCapitalExpense(_elapsedMonths, _currentDate, constructionCost, "Factory construction.");
-            _factoryActionMessage = constructionMessage;
-            _selectedFactoryIndex = System.Math.Max(_productionFactory.Factories.Count - 1, 0);
-        }
-        GUI.enabled = previousEnabled;
-
-        if (!string.IsNullOrWhiteSpace(_factoryActionMessage))
-        {
-            DrawWrappedFactoryStatus(_factoryActionMessage);
-        }
-
-        _factoryViewTab = GUILayout.Toolbar(
-            Mathf.Clamp(_factoryViewTab, 0, 2),
-            new[] { "Factories", "Equipment Depot", "Aircraft Warehouse" },
-            GUILayout.Height(28f));
-
-        if (_factoryViewTab == 0)
-        {
-            DrawFactoryNetworkView();
-        }
-        else if (_factoryViewTab == 1)
-        {
-            DrawEquipmentDepotView();
-        }
-        else
-        {
-            DrawAircraftWarehouseView();
-        }
-    }
-
-    private void DrawFactoryNetworkView()
-    {
-        if (_productionFactory is null) return;
-        var factories = _productionFactory.Factories;
-        DrawSection("Factories");
-        if (factories.Count == 0)
-        {
-            GUILayout.Label("No factories owned. Build the first factory to begin production.");
-            return;
-        }
-
-        var labels = factories.Select(factory =>
-        {
-            if (factory.IsUnderConstruction)
-                return $"{factory.DisplayName} | Building | {factory.ConstructionMonthsRemaining} mo";
-            var equipment = _productionFactory.GetEquipmentForFactory(factory.FactoryId);
-            if (equipment is null) return $"{factory.DisplayName} | Operational | Empty line";
-            var target = factory.Line?.MonthlyProductionTargetUnits ?? 0;
-            var capacity = FactoryBalance.GetMaximumMonthlyOutput(equipment.AutomationTier);
-            if (IsAircraftDesignDecommissioned(equipment.DesignId))
-                return $"{factory.DisplayName} | {ResolveAircraftDesignName(equipment.DesignId)} | DECOMMISSIONED | stopped";
-            if (!equipment.IsReady)
-                return $"{factory.DisplayName} | {ResolveAircraftDesignName(equipment.DesignId)} | INSTALLING {equipment.InstallationMonthsRemaining} mo | queued {target}/{capacity}";
-            return target > 0
-                ? $"{factory.DisplayName} | {ResolveAircraftDesignName(equipment.DesignId)} | READY | active {target}/{capacity}"
-                : $"{factory.DisplayName} | {ResolveAircraftDesignName(equipment.DesignId)} | IDLE | target 0/{capacity}";
-        }).ToArray();
-        _selectedFactoryIndex = Mathf.Clamp(_selectedFactoryIndex, 0, factories.Count - 1);
-        _selectedFactoryIndex = DrawListSelector("Factory", _selectedFactoryIndex, labels);
-        var selectedFactory = factories[_selectedFactoryIndex];
-
-        GUILayout.BeginVertical(GUI.skin.box);
-        GUILayout.Label(selectedFactory.DisplayName);
-        if (selectedFactory.IsUnderConstruction)
-        {
-            var completed = FactoryBalance.FactoryConstructionMonths - selectedFactory.ConstructionMonthsRemaining;
-            GUILayout.Label($"Under construction: {FormatUiInteger(completed)}/{FormatUiInteger(FactoryBalance.FactoryConstructionMonths)} months completed");
-            GUILayout.Label($"Remaining: {FormatUiInteger(selectedFactory.ConstructionMonthsRemaining)} month(s)");
-            GUILayout.EndVertical();
-            return;
-        }
-
-        GUILayout.Label($"Operational | 1 line | maintenance {FormatCurrency(FactoryBalance.FactoryMonthlyMaintenance)}/month");
-        var equipment = _productionFactory.GetEquipmentForFactory(selectedFactory.FactoryId);
-        if (equipment is null)
-        {
-            GUILayout.Label("Line status: empty. Buy new equipment here or install stored equipment from the Equipment Depot.");
-            DrawFactoryEquipmentPurchase(selectedFactory);
-            var resaleValue = _productionFactory.GetFactoryResaleValue(selectedFactory.FactoryId);
-            if (GUILayout.Button($"Sell {selectedFactory.DisplayName} — {FormatCurrency(resaleValue)}", GUILayout.Height(25f))
-                && _productionFactory.TrySellFactory(selectedFactory.FactoryId, out var income, out var message))
-            {
-                var inventory = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
-                    _productionFactory.WarehouseUnitsByDesign,
-                    BuildProductionCatalog(includeOnlyResearched: false));
-                _accountingSystem?.RegisterContractIncome(_elapsedMonths, _currentDate, income, inventory, "Factory asset sale.");
-                _factoryActionMessage = $"{message} Proceeds: {FormatCurrency(income)}.";
-                _selectedFactoryIndex = Mathf.Clamp(_selectedFactoryIndex, 0, System.Math.Max(_productionFactory.Factories.Count - 1, 0));
-            }
-        }
-        else
-        {
-            DrawInstalledFactoryEquipment(selectedFactory, equipment);
-        }
-        GUILayout.EndVertical();
-    }
 
     private void DrawFactoryEquipmentPurchase(FactorySiteState factory)
     {
         if (_productionFactory is null) return;
         var productionReadyDesigns = _savedAircraftDesigns
-            .Where(design => !design.IsDecommissioned && IsAircraftDesignReadyForProduction(design))
+            .Where(design => (!design.IsDecommissioned || _fleet.Cohorts.Any(c => c.DesignId == design.CatalogItem.DesignId && c.ActiveCount > 0))
+                && IsAircraftDesignReadyForProduction(design))
             .ToArray();
         if (productionReadyDesigns.Length == 0)
         {
@@ -10517,32 +10382,35 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             return;
         }
 
-        DrawSection("Buy Type-specific Equipment");
+        DrawSection("Production & Equipment");
         _factoryEquipmentDesignIndex = Mathf.Clamp(_factoryEquipmentDesignIndex, 0, productionReadyDesigns.Length - 1);
-        _factoryEquipmentDesignIndex = DrawListSelector(
+        _factoryEquipmentDesignIndex = DrawFactoryChoice(
+            "aircraft.product",
             "Aircraft Type",
             _factoryEquipmentDesignIndex,
-            productionReadyDesigns.Select(item => $"{item.Name} | {FormatQualifiedCategorySummary(item.CatalogItem.Aircraft)}").ToArray());
+            productionReadyDesigns.Select(item => item.Name).ToArray());
         var selected = productionReadyDesigns[_factoryEquipmentDesignIndex];
-        var tierLabels = new[] { "Hand-built", "Jigs", "Mechanized", "Automated", "Sophisticated" };
-        _factoryAutomationTierSelection = GUILayout.Toolbar(Mathf.Clamp(_factoryAutomationTierSelection, 0, 4), tierLabels, GUILayout.Height(28f));
+        _factoryAutomationTierSelection = DrawFactoryAutomationChoice("aircraft.automation", _factoryAutomationTierSelection, confirmed: false);
         var tier = (FactoryAutomationTier)_factoryAutomationTierSelection;
         var aircraft = selected.CatalogItem.Aircraft;
         var baselineMd = aircraft.Performance.AirframeProductionManDays + aircraft.Performance.EnginesProductionManDays;
         var baselineLaborCost = baselineMd * ProductionEconomyBalance.LaborCostPerManDay;
-        var equipmentCost = baselineLaborCost * FactoryBalance.GetPurchaseCostMultiplier(tier);
+        var equipmentCost = FactoryBalance.GetEquipmentPurchaseCost(tier, factory.BuildingSize);
         var laborMultiplier = FactoryBalance.GetProductionManDayMultiplier(tier);
         var savingsPerAircraft = baselineLaborCost * (1d - laborMultiplier);
         var monthlyUpkeep = equipmentCost * FactoryBalance.GetMonthlyActiveEquipmentCostShare(tier);
         GUILayout.Label(
             $"Cost {FormatCurrency(equipmentCost)} | setup {FormatUiInteger(FactoryBalance.GetInitialInstallationMonths(tier))} months | " +
-            $"capacity {FormatUiInteger(FactoryBalance.GetMaximumMonthlyOutput(tier))}/month");
+            $"building-limited output ~{FormatUiNumber(factory.AvailableManDays / System.Math.Max(1d, baselineMd * laborMultiplier), "0.0")}/month");
         GUILayout.Label(
             $"Labor {FormatUiNumber(laborMultiplier * 100d, "0")}% of Hand-built | " +
             $"gross saving {FormatCurrency(savingsPerAircraft)}/aircraft | active upkeep {FormatCurrency(monthlyUpkeep)}/month");
-        if (GUILayout.Button($"Purchase and Install in {factory.DisplayName}", GUILayout.Height(28f))
-            && _accountingSystem is not null
-            && _productionFactory.TryPurchaseAndInstallEquipment(
+        var purchaseEnabled = GUI.enabled;
+        GUI.enabled = purchaseEnabled && _accountingSystem is not null && _accountingSystem.Cash >= equipmentCost && factory.ExpansionMonthsRemaining == 0;
+        if (PlannerPrimaryButton("aircraft.purchase", "Approve and Install Equipment", GUILayout.Height(28f))
+            && _accountingSystem is not null)
+        {
+            if (_productionFactory.TryPurchaseAndInstallEquipment(
                 factory.FactoryId,
                 selected.CatalogItem.DesignId,
                 tier,
@@ -10550,27 +10418,36 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 _accountingSystem.Cash,
                 out var cost,
                 out var message))
-        {
-            _accountingSystem.RegisterCapitalExpense(
+            {
+                _accountingSystem.RegisterCapitalExpense(
                 _elapsedMonths,
                 _currentDate,
                 cost,
-                $"Production equipment - {selected.Name} ({tier}) for {factory.DisplayName}.");
+                    $"Production equipment - {selected.Name} ({tier}) for {factory.DisplayName}.");
+                _factoryPlannerRefreshAt = 0;
+            }
             _factoryActionMessage = message;
         }
+        GUI.enabled = purchaseEnabled;
+        if (_accountingSystem is not null && _accountingSystem.Cash < equipmentCost)
+            GUILayout.Label($"Additional cash needed: {FormatCurrency(equipmentCost - _accountingSystem.Cash)}");
+        if (factory.ExpansionMonthsRemaining > 0) GUILayout.Label("Wait for the building expansion to finish before installing equipment.");
     }
 
-    private void DrawInstalledFactoryEquipment(FactorySiteState factory, FactoryEquipmentState equipment)
+    private void DrawInstalledFactoryEquipment(FactorySiteState factory, FactoryEquipmentState equipment, bool compact = false)
     {
         if (_productionFactory is null || factory.Line is null) return;
         var line = factory.Line;
         DrawSection("Production Line");
-        GUILayout.Label($"Location: {factory.DisplayName} / Line 1");
-        GUILayout.Label($"Equipment: {equipment.EquipmentId} | {ResolveAircraftDesignName(equipment.DesignId)} | {equipment.AutomationTier}");
+        if (!compact)
+        {
+            GUILayout.Label($"Location: {factory.DisplayName} / Line 1");
+            GUILayout.Label($"Equipment: {equipment.EquipmentId} | {ResolveAircraftDesignName(equipment.DesignId)} | {equipment.AutomationTier}");
+        }
         if (equipment.IsReady)
         {
             DrawModernBadge("READY", ModernUiTone.Success);
-            GUILayout.Label("This line can produce aircraft during the current month.");
+            if (!compact) GUILayout.Label("This line can produce aircraft during the current month.");
         }
         else
         {
@@ -10578,9 +10455,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 $"INSTALLING — {FormatUiInteger(equipment.InstallationMonthsRemaining)} MONTH(S)",
                 ModernUiTone.Warning);
             var expectedFirstProductionDate = _currentDate.AddMonths(equipment.InstallationMonthsRemaining + 1);
-            GUILayout.Label(
+            if (!compact) GUILayout.Label(
                 $"First expected production: {FormatSimulationDate(expectedFirstProductionDate)}. " +
-                "The production target below is queued and produces no aircraft until installation is complete.");
+                "Automatic stock replenishment starts after installation is complete.");
         }
 
         var isDecommissioned = IsAircraftDesignDecommissioned(equipment.DesignId);
@@ -10591,78 +10468,29 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         }
         else
         {
-            var maximum = FactoryBalance.GetMaximumMonthlyOutput(equipment.AutomationTier);
-            var nextTargetUnits = DrawIntSlider(
-                equipment.IsReady
-                    ? $"Active production target / month ({line.LineId})"
-                    : $"Production target after installation ({line.LineId})",
-                line.MonthlyProductionTargetUnits,
-                0,
-                maximum);
-            if (nextTargetUnits != line.MonthlyProductionTargetUnits)
-            {
-                _productionFactory.TrySetMonthlyProductionTargetUnits(factory.FactoryId, nextTargetUnits, out _, out _factoryActionMessage);
-            }
-            GUILayout.Label(equipment.IsReady
-                ? $"Active production: {FormatUiInteger(line.MonthlyProductionTargetUnits)} / {FormatUiInteger(maximum)} aircraft per month"
-                : $"Queued production: {FormatUiInteger(line.MonthlyProductionTargetUnits)} / {FormatUiInteger(maximum)} aircraft per month after installation");
-
-            DrawFactoryTotalTarget(line);
-            if (line.TotalProductionTargetUnits > 0)
-            {
-                var remainingUnits = System.Math.Max(line.TotalProductionTargetUnits - line.LifetimeProducedUnits, 0);
-                GUILayout.Label($"Progress: {FormatUiInteger(line.LifetimeProducedUnits)}/{FormatUiInteger(line.TotalProductionTargetUnits)} (remaining {FormatUiInteger(remainingUnits)})");
-            }
-            else
-            {
-                GUILayout.Label($"Progress: {FormatUiInteger(line.LifetimeProducedUnits)} built (no total limit)");
-            }
+            var maximum = _productionFactory.GetMaximumMonthlyOutput(factory.FactoryId);
+            GUILayout.Label($"Automatic replenishment · capacity up to {FormatUiInteger(maximum)} aircraft/month before parts allocation and supply limits.");
+            GUILayout.Label("Aircraft and parts share capacity. Stock targets stop production when full; withdrawals restart it.");
+            GUILayout.Label($"Total built: {FormatUiInteger(line.LifetimeProducedUnits)}");
         }
         GUILayout.Label($"Auto-hired staff (last month): {FormatUiInteger(line.Employees)}");
 
-        DrawFactoryLineEconomics(factory, equipment);
+        if (!compact || _expandedFactoryProductionDetails.Contains(factory.FactoryId)) DrawFactoryLineEconomics(factory, equipment);
+        if (compact && PlannerButton("aircraft.details", _expandedFactoryProductionDetails.Contains(factory.FactoryId) ? "Hide Production Economics" : "Show Production Economics"))
+        {
+            if (!_expandedFactoryProductionDetails.Add(factory.FactoryId)) _expandedFactoryProductionDetails.Remove(factory.FactoryId);
+        }
 
         var previousEnabled = GUI.enabled;
-        GUI.enabled = previousEnabled && equipment.IsReady && line.MonthlyProductionTargetUnits == 0;
-        if (GUILayout.Button("Move Equipment to Central Depot (free)", GUILayout.Height(26f)))
+        GUI.enabled = previousEnabled && equipment.IsReady;
+        if (PlannerButton("aircraft.store", "Move Equipment to Central Depot (free)", GUILayout.Height(26f)))
         {
             _productionFactory.TryStoreInstalledEquipment(factory.FactoryId, out _factoryActionMessage);
             _factoryViewTab = 1;
         }
         GUI.enabled = previousEnabled;
         if (!equipment.IsReady) GUILayout.Label("Equipment cannot be moved while installation is in progress.");
-        else if (line.MonthlyProductionTargetUnits > 0) GUILayout.Label("Set planned production to 0 before moving the equipment.");
-    }
-
-    private void DrawFactoryTotalTarget(AircraftProductionLineState line)
-    {
-        if (_productionFactory is null) return;
-        if (!_factoryTotalTargetInputByLineId.TryGetValue(line.LineId, out var totalTargetInput))
-        {
-            totalTargetInput = line.TotalProductionTargetUnits > 0 ? FormatUiInteger(line.TotalProductionTargetUnits) : string.Empty;
-        }
-        GUILayout.BeginHorizontal();
-        GUILayout.Label("Total production target", GUILayout.Width(200f));
-        totalTargetInput = DrawDragSelectTextField(
-            BuildControlName("text", $"total-target:{line.LineId}"),
-            totalTargetInput,
-            GUILayout.Width(120f));
-        GUILayout.Label("blank = no limit");
-        GUILayout.EndHorizontal();
-        _factoryTotalTargetInputByLineId[line.LineId] = totalTargetInput;
-
-        if (string.IsNullOrWhiteSpace(totalTargetInput))
-        {
-            if (line.TotalProductionTargetUnits != 0) _productionFactory.SetTotalProductionTargetUnits(line.LineId, 0);
-        }
-        else if (TryParsePositiveInt(totalTargetInput, out var parsedTarget))
-        {
-            if (parsedTarget != line.TotalProductionTargetUnits) _productionFactory.SetTotalProductionTargetUnits(line.LineId, parsedTarget);
-        }
-        else
-        {
-            DrawError("Total target must be a positive whole number, or leave it blank for no limit.");
-        }
+        else GUILayout.Label("Moving equipment stops production and discards paid unfinished work without refund. Finished stock is kept.");
     }
 
     private void DrawFactoryLineEconomics(FactorySiteState factory, FactoryEquipmentState equipment)
@@ -10675,10 +10503,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         var currentLaborCost = baselineLaborCost * FactoryBalance.GetProductionManDayMultiplier(equipment.AutomationTier);
         var grossSavingPerAircraft = System.Math.Max(0d, baselineLaborCost - currentLaborCost);
         var activeUpkeep = equipment.PurchaseCost * FactoryBalance.GetMonthlyActiveEquipmentCostShare(equipment.AutomationTier);
-        var target = factory.Line.MonthlyProductionTargetUnits;
+        var target = System.Math.Min(_productionFactory.GetRequestedAircraftUnits(factory.FactoryId), _productionFactory.GetMaximumMonthlyOutput(factory.FactoryId));
         var grossMonthlySaving = grossSavingPerAircraft * target;
         var netMonthlySaving = grossMonthlySaving - (target > 0 ? activeUpkeep : 0d);
-        var handBuiltCost = baselineLaborCost * FactoryBalance.GetPurchaseCostMultiplier(FactoryAutomationTier.HandBuilt);
+        var handBuiltCost = FactoryBalance.GetEquipmentPurchaseCost(FactoryAutomationTier.HandBuilt, equipment.BuildingSize);
         var investmentPremium = System.Math.Max(0d, equipment.PurchaseCost - handBuiltCost);
         var netSavingPerAircraft = target > 0 ? grossSavingPerAircraft - activeUpkeep / target : 0d;
 
@@ -10705,29 +10533,18 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"Recorded lifetime: gross labor saving {FormatCurrency(equipment.CumulativeGrossLaborSavings)} | active upkeep {FormatCurrency(equipment.CumulativeActiveEquipmentExpenses)} | net {FormatCurrency(equipment.CumulativeNetSavings)}");
     }
 
-    private static int ResolveEffectiveFactoryLineTarget(AircraftProductionLineState line)
-    {
-        if (line.TotalProductionTargetUnits <= 0)
-        {
-            return line.MonthlyProductionTargetUnits;
-        }
-
-        var remainingUnits = System.Math.Max(
-            line.TotalProductionTargetUnits - line.LifetimeProducedUnits,
-            0);
-        return System.Math.Min(line.MonthlyProductionTargetUnits, remainingUnits);
-    }
 
     private void DrawEquipmentDepotView()
     {
         if (_productionFactory is null) return;
         DrawSection("Central Equipment Depot");
+        DrawMotorEquipmentDepot();
         var storedEquipment = _productionFactory.Equipment.Where(item => !item.IsInstalled).ToArray();
-        GUILayout.Label($"Stored sets: {FormatUiInteger(storedEquipment.Length)} | storage and dismantling cost: {FormatCurrency(0d)}/month");
+        GUILayout.Label($"Stored aircraft sets: {FormatUiInteger(storedEquipment.Length)} | storage: {FormatCurrency(_productionFactory.GetMonthlyEquipmentStorageCost())}/month (0.01%)");
         GUILayout.Label("Installed sets remain listed below with their exact factory location.");
         if (_productionFactory.Equipment.Count == 0)
         {
-            GUILayout.Label("No production equipment is owned.");
+            GUILayout.Label("No aircraft production equipment is owned.");
             return;
         }
 
@@ -10737,8 +10554,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             var location = equipment.IsInstalled
                 ? $"{_productionFactory.GetFactory(equipment.FactoryId!)?.DisplayName ?? equipment.FactoryId} / Line 1"
                 : "Stored in Central Depot";
-            GUILayout.Label($"{equipment.EquipmentId} | {ResolveAircraftDesignName(equipment.DesignId)} | {equipment.AutomationTier}");
-            GUILayout.Label($"Location: {location} | capacity {FormatUiInteger(FactoryBalance.GetMaximumMonthlyOutput(equipment.AutomationTier))}/month | lifetime {FormatUiInteger(equipment.LifetimeProducedUnits)} aircraft");
+            GUILayout.Label($"{equipment.EquipmentId} | {ResolveAircraftDesignName(equipment.DesignId)} | {equipment.AutomationTier} | {equipment.BuildingSize}");
+            GUILayout.Label($"Location: {location} | labor requirement {FormatUiNumber(FactoryBalance.GetProductionManDayMultiplier(equipment.AutomationTier) * 100d, "0")}% | lifetime {FormatUiInteger(equipment.LifetimeProducedUnits)} aircraft");
             if (!equipment.IsInstalled)
             {
                 var isDecommissioned = IsAircraftDesignDecommissioned(equipment.DesignId);
@@ -10750,18 +10567,20 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 else
                 {
                     var emptyFactories = _productionFactory.Factories
-                        .Where(factory => factory.IsOperational && _productionFactory.GetEquipmentForFactory(factory.FactoryId) is null)
+                        .Where(factory => factory.IsOperational && factory.ExpansionMonthsRemaining == 0
+                            && factory.BuildingSize == equipment.BuildingSize && _productionFactory.GetEquipmentForFactory(factory.FactoryId) is null)
                         .ToArray();
                     if (emptyFactories.Length > 0)
                     {
                         _factoryDepotInstallTargetIndex = Mathf.Clamp(_factoryDepotInstallTargetIndex, 0, emptyFactories.Length - 1);
-                        _factoryDepotInstallTargetIndex = DrawListSelector(
+                        _factoryDepotInstallTargetIndex = DrawFactoryChoice(
+                            "depot.target:" + equipment.EquipmentId,
                             $"Install {equipment.EquipmentId} in",
                             _factoryDepotInstallTargetIndex,
                             emptyFactories.Select(factory => factory.DisplayName).ToArray());
                         var targetFactory = emptyFactories[_factoryDepotInstallTargetIndex];
                         var reinstallCost = equipment.PurchaseCost * FactoryBalance.EquipmentReinstallationCostShare;
-                        if (GUILayout.Button($"Install in {targetFactory.DisplayName} — {FormatCurrency(reinstallCost)} / {FormatUiInteger(FactoryBalance.GetReinstallationMonths(equipment.AutomationTier))} months", GUILayout.Height(26f))
+                        if (PlannerPrimaryButton("depot.install:" + equipment.EquipmentId, $"Install in {targetFactory.DisplayName} — {FormatCurrency(reinstallCost)} / {FormatUiInteger(FactoryBalance.GetReinstallationMonths(equipment.AutomationTier))} months", GUILayout.Height(26f))
                             && _accountingSystem is not null
                             && _productionFactory.TryReinstallEquipment(equipment.EquipmentId, targetFactory.FactoryId, _accountingSystem.Cash, out var cost, out var message))
                         {
@@ -10771,42 +10590,26 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                     }
                     else
                     {
-                        GUILayout.Label("No empty operational factory is available for installation.");
+                        GUILayout.Label($"No empty operational {equipment.BuildingSize} factory is available for installation.");
                     }
                 }
-                if (GUILayout.Button("Sell Stored Equipment (15%)", GUILayout.Height(24f))
-                    && _productionFactory.TryScrapStoredEquipment(equipment.EquipmentId, out var income, out var saleMessage))
+                if (PlannerButton("depot.sell:" + equipment.EquipmentId, "Sell Stored Equipment (15%)", GUILayout.Height(24f)))
                 {
-                    var inventory = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
-                        _productionFactory.WarehouseUnitsByDesign,
-                        BuildProductionCatalog(includeOnlyResearched: false));
-                    _accountingSystem?.RegisterContractIncome(_elapsedMonths, _currentDate, income, inventory, "Stored production equipment sale.");
-                    _factoryActionMessage = $"{saleMessage} Proceeds: {FormatCurrency(income)}.";
+                    if (_productionFactory.TryScrapStoredEquipment(equipment.EquipmentId, out var income, out var saleMessage))
+                    {
+                        var inventory = CalculateInventoryWithSupport(
+                            _productionFactory.WarehouseUnitsByDesign,
+                            BuildProductionCatalog(includeOnlyResearched: false));
+                        _accountingSystem?.RegisterContractIncome(_elapsedMonths, _currentDate, income, inventory, "Stored production equipment sale.");
+                        _factoryActionMessage = $"{saleMessage} Proceeds: {FormatCurrency(income)}.";
+                    }
+                    else _factoryActionMessage = saleMessage;
                 }
             }
             GUILayout.EndVertical();
         }
     }
 
-    private void DrawAircraftWarehouseView()
-    {
-        if (_productionFactory is null) return;
-        DrawSection("Aircraft Warehouse");
-        var liveWarehouseSnapshot = _productionFactory.WarehouseUnitsByDesign;
-        DrawMetric("Stored Aircraft Units", liveWarehouseSnapshot.Values.Sum(), "0");
-        if (liveWarehouseSnapshot.Count == 0)
-        {
-            GUILayout.Label("Aircraft warehouse is empty.");
-            return;
-        }
-        foreach (var entry in liveWarehouseSnapshot.OrderByDescending(item => item.Value).ThenBy(item => item.Key, StringComparer.Ordinal))
-        {
-            GUILayout.BeginHorizontal(GUI.skin.box);
-            GUILayout.Label($"{ResolveAircraftDesignName(entry.Key)} ({ResolveAircraftCategoryName(entry.Key)})", GUILayout.Width(360f));
-            GUILayout.Label($"{FormatUiInteger(entry.Value)} units");
-            GUILayout.EndHorizontal();
-        }
-    }
 
     private void PruneFactoryScrapQuantityInputs(IReadOnlyDictionary<string, int> liveWarehouseSnapshot)
     {
@@ -10850,7 +10653,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         var recoveredIncome = normalizedUnitProductionCost * 0.5d * unitsToScrap;
         if (_accountingSystem is not null && recoveredIncome > 0d)
         {
-            var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
+            var inventoryByDesign = CalculateInventoryWithSupport(
                 _productionFactory.WarehouseUnitsByDesign,
                 fullProductionCatalog);
             _accountingSystem.RegisterContractIncome(
@@ -10890,6 +10693,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             DrawMetric("Produced Aircraft", lastReport.TotalAircraftProduced, "0");
             DrawMetric("Warehouse Aircraft Units", lastReport.TotalWarehouseUnits, "0");
             DrawMetric("Available MD", lastReport.TotalAvailableManDays, "0.0");
+            DrawMetric("Building Limit (MD)", lastReport.TotalPhysicalCapacityManDays, "0");
+            DrawMetric("Support Production (MD)", lastReport.SupportProductionManDays, "0.0");
+            DrawMetric("Building Utilization (%)", lastReport.PhysicalCapacityUtilization * 100d, "0.0");
             DrawMetric("Used MD", lastReport.TotalUsedManDays, "0.0");
             DrawMetric("Capacity Utilization", lastReport.CapacityUtilization * 100d, "0.0");
 
@@ -10907,8 +10713,13 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 }
 
                 GUILayout.Label($"Produced: {FormatUiInteger(line.ProducedUnits)}");
-                GUILayout.Label($"Target: {FormatUiInteger(line.TargetUnits)} aircraft / month");
-                if (line.TotalProductionTargetUnits > 0)
+                if (_productionFactory?.AutomaticStockReplenishment == true)
+                {
+                    var stockTarget = _productionFactory.GetAircraftStockTarget(line.AssignedDesignId);
+                    GUILayout.Label($"Automatic replenishment · stock limit: {(stockTarget.HasValue ? FormatUiInteger(stockTarget.Value) : "unlimited")}");
+                    GUILayout.Label($"Total built: {FormatUiInteger(line.LifetimeProducedUnits)}");
+                }
+                else if (line.TotalProductionTargetUnits > 0)
                 {
                     var remainingUnits = System.Math.Max(line.TotalProductionTargetUnits - line.LifetimeProducedUnits, 0);
                     GUILayout.Label(
@@ -11113,6 +10924,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             familyDefinitionForCatalog);
         var typeModifiers = GetResearchModifierPoints(ResearchSubjectType.AircraftType, typeResearchId);
         var typeDefinition = BuildTypeForAircraft(familyDefinitionForCatalog, typeModifiers);
+        typeDefinition = ApplyDraftTypeTechnology(typeDefinition, familyResearchId);
         var aircraftForCatalog = _aircraftFactory.CreateAircraft(familyDefinitionForCatalog, typeDefinition);
 
         var catalogItem = new FactoryAircraftTypeCatalogItem(
@@ -11232,7 +11044,12 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             familyDefinition.LockedWingShape ?? baseAirframe.WingShape,
             baseAirframe.WingProfile,
             familyDefinition.AllowedEngineFamily,
-            familyDefinition.ConstructionStandard));
+            familyDefinition.ConstructionStandard,
+            baseAirframe.UseModularWingProfile,
+            baseAirframe.WingDesignSpeedKph,
+            baseAirframe.WingPayloadAgility,
+            baseAirframe.WingProfileEfficiency,
+            familyDefinition.TechnologySnapshot?.Origin == "preview" ? null : familyDefinition.TechnologySnapshot));
         _selectedSavedFamilyIndex = _savedFamilies.Count - 1;
         return true;
     }
@@ -11272,7 +11089,11 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             _baseAirframeParameters.WingShape,
             NormalizeFamilyWingProfile(_baseAirframeParameters.WingProfile),
             _familyAllowedEngineFamily,
-            _familyConstructionStandard);
+            _familyConstructionStandard,
+            _baseAirframeParameters.UseModularWingProfile,
+            _baseAirframeParameters.WingDesignSpeedKph,
+            _baseAirframeParameters.WingPayloadAgility,
+            _baseAirframeParameters.WingProfileEfficiency);
         if (isEditingSavedFamily)
         {
             _savedFamilies[editingFamilyIndex] = savedFamily;
@@ -11412,6 +11233,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             LockedWingPosition = source.LockedWingPosition,
             Category = source.Category,
             InstalledEngineTechnologyModifiers = source.InstalledEngineTechnologyModifiers,
+            InstalledEngineResearchModifiers = source.InstalledEngineResearchModifiers.Clone(),
+            ResearchModifiers = source.ResearchModifiers.Clone(),
+            TechnologySnapshot = source.TechnologySnapshot,
             BaseEngineParameters = source.BaseEngineParameters.Clone(),
             BaseAirframeParameters = source.BaseAirframeParameters.Clone(),
             BaseDevelopmentCost = source.BaseDevelopmentCost,
@@ -11461,6 +11285,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         _baseAirframeParameters.WingAspectRatio = saved.WingAspectRatio;
         _baseAirframeParameters.WingShape = saved.WingShape;
         _baseAirframeParameters.WingProfile = saved.WingProfile;
+        _baseAirframeParameters.UseModularWingProfile = saved.UseModularWingProfile;
+        _baseAirframeParameters.WingDesignSpeedKph = saved.WingDesignSpeedKph;
+        _baseAirframeParameters.WingPayloadAgility = saved.WingPayloadAgility;
+        _baseAirframeParameters.WingProfileEfficiency = saved.WingProfileEfficiency;
         _typeWingShape = _baseAirframeParameters.WingShape;
         _typeWingProfile = _baseAirframeParameters.WingProfile;
         _typeWingAreaSquareMeters = ClampTypeWingArea(_typeWingAreaSquareMeters);
@@ -11565,7 +11393,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         var engineDisplayName = BuildEngineDisplayName(savedDesign.Name, savedDesign.Definition.EngineType, savedDesign.Parameters);
         var points = GetResearchModifierPoints(ResearchSubjectType.Engine, savedDesign.ResearchId);
-        var quote = _researchCalculator.CalculateEngineQuote(engineSnapshot, points);
+        var quote = _researchCalculator.CalculateEngineQuote(BuildSavedEngineWithResearch(savedDesign, new TypeResearchModifierPoints()), points);
         quote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.Engine, savedDesign.ResearchId, quote);
         quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
         _researchBoard.UpsertProposal(
@@ -11587,13 +11415,18 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void RegisterFamilyResearchProposal(string familyId, string familyName, Aircraft aircraft)
     {
+        _savedFamilies.FirstOrDefault(item => item.FamilyId == familyId)?.SetResearchReference(aircraft);
         if (_researchBoard is null)
         {
             return;
         }
 
         var points = GetResearchModifierPoints(ResearchSubjectType.AircraftFamily, familyId);
-        var quote = _researchCalculator.CalculateFamilyQuote(aircraft, points);
+        var baseline = TryGetSavedAircraftDesignByFamilyResearchId(familyId, out var savedFamilyType)
+            ? BuildResearchAircraft(savedFamilyType, familyOverride: new TypeResearchModifierPoints())
+            : _aircraftFactory is null ? aircraft : _aircraftFactory.CreateAircraft(
+                aircraft.FamilyDefinition.WithResearchModifiers(new TypeResearchModifierPoints()), aircraft.TypeDefinition);
+        var quote = _researchCalculator.CalculateFamilyQuote(baseline, points);
         quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
         _researchBoard.UpsertProposal(
             ResearchSubjectType.AircraftFamily,
@@ -11610,7 +11443,11 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         }
 
         var points = GetResearchModifierPoints(ResearchSubjectType.AircraftType, typeId);
-        var quote = _researchCalculator.CalculateTypeQuote(aircraft, points);
+        var baseline = TryGetSavedAircraftDesignByTypeResearchId(typeId, out var savedType)
+            ? BuildResearchAircraft(savedType, typeOverride: new TypeResearchModifierPoints())
+            : _aircraftFactory is null ? aircraft : _aircraftFactory.CreateAircraft(
+                aircraft.FamilyDefinition, WithTypeResearchModifiers(aircraft.TypeDefinition, new TypeResearchModifierPoints()));
+        var quote = _researchCalculator.CalculateTypeQuote(baseline, points);
         quote = ApplyVersionDevelopmentAdjustmentsIfNeeded(ResearchSubjectType.AircraftType, typeId, quote);
         quote = ApplyEarlyResearchDiscountToResearchQuote(quote);
         _researchBoard.UpsertProposal(
@@ -12005,6 +11842,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         IReadOnlyDictionary<string, FactoryAircraftTypeCatalogItem> warehouseCatalog,
         IReadOnlyDictionary<string, int> warehouseSnapshot)
     {
+        if (_contractUiCacheActive && _contractUiAvailability.TryGetValue(contract, out var cached)) return cached;
         var qualifyingTypeNames = new List<string>();
         var qualifyingDesignIds = new List<string>();
         var hasCategoryEligibleType = false;
@@ -12020,7 +11858,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 hasCategoryEligibleType = true;
             }
 
-            var evaluation = contractBoard.Evaluate(contract, catalogItem.Aircraft);
+            var evaluation = EvaluateContractForUi(contract, contractBoard, catalogItem.Aircraft);
             if (evaluation.CanDeliver)
             {
                 qualifyingTypeNames.Add(catalogItem.DisplayName);
@@ -12065,7 +11903,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             expectedProfitLoss = GetContractTotalPrice(contract) - fulfillmentCost;
         }
 
-        return new ContractAvailabilitySnapshot(
+        var result = new ContractAvailabilitySnapshot(
             contract,
             canBeDeliveredNow,
             hasMatchingPlaneBySpecification,
@@ -12079,6 +11917,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             closestType?.DisplayName ?? string.Empty,
             closestUnmetRequirements.ToArray(),
             activeCatalog.Count);
+        if (_contractUiCacheActive) _contractUiAvailability.Add(contract, result);
+        return result;
     }
 
     private bool IsAircraftEligibleForContractCategory(Contract contract, Aircraft aircraft)
@@ -12100,6 +11940,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         IReadOnlyDictionary<string, FactoryAircraftTypeCatalogItem> catalog,
         IReadOnlyDictionary<string, int> warehouseSnapshot)
     {
+        if (_contractUiCacheActive && _contractUiCandidates.TryGetValue(contract, out var cached)) return cached;
         var candidates = new List<ContractDeliveryCandidate>();
         foreach (var warehouseEntry in warehouseSnapshot)
         {
@@ -12108,7 +11949,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 continue;
             }
 
-            var evaluation = contractBoard.Evaluate(contract, catalogItem.Aircraft);
+            var evaluation = EvaluateContractForUi(contract, contractBoard, catalogItem.Aircraft);
             if (!evaluation.CanDeliver)
             {
                 continue;
@@ -12121,11 +11962,13 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 CalculateAircraftUnitCostWithManDayLabor(catalogItem.Aircraft)));
         }
 
-        return candidates
+        var result = candidates
             .OrderBy(candidate => candidate.UnitFulfillmentCost)
             .ThenBy(candidate => candidate.CatalogItem.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(candidate => candidate.DesignId, StringComparer.Ordinal)
             .ToArray();
+        if (_contractUiCacheActive) _contractUiCandidates.Add(contract, result);
+        return result;
     }
 
     private static IReadOnlyList<ContractDeliveryAllocation> BuildCheapestContractDeliveryPlan(
@@ -12222,6 +12065,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void AdvanceToNextMonth()
     {
+        if (_monthlyCompletions.HasPending) return;
+        var completedEvents = new List<string>();
+        var factoryConstructionBefore = CaptureFactoryConstructionStates();
         _currentDate = _currentDate.NextMonth();
         _elapsedMonths++;
         LogHistoricalCampaignTechnologyModifiersIfYearChanged();
@@ -12237,6 +12083,14 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                     _researchBoard.GetProjectsByStatus(ResearchStatus.Completed)
                         .Where(project => project.CompletedMonthIndex == _elapsedMonths)
                         .Select(project => project.ResearchId));
+                foreach (var project in _researchBoard.GetProjectsByStatus(ResearchStatus.Completed)
+                    .Where(project => project.CompletedMonthIndex == _elapsedMonths))
+                {
+                    var entry = $"{GetResearchSubjectLabel(project.SubjectType)} research completed: {ResolveResearchProjectDisplayName(project)}";
+                    // Distinct projects may deliberately use the same display name.
+                    if (completedEvents.Contains(entry)) entry += $" ({project.SubjectId})";
+                    completedEvents.Add(entry);
+                }
                 _researchActionMessage =
                     $"{FormatUiInteger(completedThisMonth)} research project(s) completed in {FormatSimulationDate(_currentDate)}.";
             }
@@ -12249,6 +12103,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             _researchActionMessage =
                 $"{FormatHeadquartersFacility(headquartersUpdate.CompletedFacility.Value)} level " +
                 $"{FormatUiInteger(headquartersUpdate.CompletedFacilityLevel)} construction completed.";
+            completedEvents.Add(_researchActionMessage);
         }
 
         if (_contractBoard is not null)
@@ -12316,6 +12171,13 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         {
             var productionCatalog = BuildProductionCatalog(includeOnlyResearched: true, includeDecommissioned: false);
             var fullCatalog = BuildProductionCatalog(includeOnlyResearched: false);
+            ConfigureAircraftEngineSupply();
+            _lastEngineManufacturingReport = _engineManufacturing.ProcessMonth(_elapsedMonths,
+                BuildEngineManufacturingCatalog(), BuildEngineManufacturingDemand());
+            foreach (var produced in _lastEngineManufacturingReport.ProducedEnginesByDesign)
+                if (produced.Value > 0) _machineStatistics.RegisterEngineProduction(produced.Key, produced.Value);
+            var supportReport = _productionFactory.ProduceSupport(_elapsedMonths, fullCatalog,
+                BuildSparePartsProductionRequests());
             _lastFactoryReport = _productionFactory.SimulateMonth(productionCatalog, _elapsedMonths, _currentDate);
             RegisterProducedMachineUnits(_lastFactoryReport);
             _companyRunStatistics.RegisterAircraftProduced(_lastFactoryReport.TotalAircraftProduced);
@@ -12329,13 +12191,17 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                     _lastFactoryReport,
                     productionCatalog,
                     _lastFactoryReport.TotalFactoryMaintenanceExpenses,
-                    _lastFactoryReport.TotalActiveEquipmentExpenses)
-                    with
+                    _lastFactoryReport.TotalActiveEquipmentExpenses);
+                monthlyCosts = monthlyCosts with
                     {
                         VariableResearchExpenses = researchExpenses,
                         HeadquartersExpenses = headquartersUpdate.OperatingCost,
+                        FactoryMaintenanceExpenses = _lastFactoryReport.TotalFactoryMaintenanceExpenses + _lastEngineManufacturingReport.MaintenanceExpenses,
+                        ActiveEquipmentExpenses = _lastFactoryReport.TotalActiveEquipmentExpenses + _lastEngineManufacturingReport.EquipmentExpenses,
+                        VariableEngineStaffExpenses = monthlyCosts.VariableEngineStaffExpenses + _lastEngineManufacturingReport.LaborExpenses,
+                        VariableEngineBuildExpenses = monthlyCosts.VariableEngineBuildExpenses + _lastEngineManufacturingReport.MaterialExpenses,
                     };
-                var inventoryByDesign = _factoryAccountingCalculator.CalculateInventoryValueByDesign(
+                var inventoryByDesign = CalculateInventoryWithSupport(
                     _lastFactoryReport.WarehouseUnitsByDesign,
                     fullCatalog);
                 _accountingSystem.RegisterMonthlyFactoryCosts(
@@ -12345,7 +12211,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                     inventoryByDesign);
             }
 
+            ProcessFleetMonth(supportReport);
             _productionFactory.AdvanceMonth();
+            _engineManufacturing.AdvanceMonth();
 
             if (_governmentContractBoard is not null)
             {
@@ -12367,12 +12235,18 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             }
         }
 
+        CollectCompletedFactoryConstruction(factoryConstructionBefore, completedEvents);
+        _monthlyCompletions.Publish(_elapsedMonths, completedEvents);
+
         if (_accountingSystem is not null && BankruptcyPolicy.IsBankrupt(_accountingSystem.Cash))
         {
             var fixedObligations = (_productionFactory?.GetMonthlyFactoryMaintenance() ?? 0d)
+                + _engineManufacturing.Sites.Where(s => s.IsOperational).Sum(s => EngineManufacturingNetwork.Maintenance(s.BuildingSize)
+                    + s.EquipmentCost * FactoryBalance.GetMonthlyActiveEquipmentCostShare(s.AutomationTier))
                 + (_productionFactory?.GetMonthlyActiveEquipmentCost() ?? 0d)
+                + (_productionFactory?.GetMonthlyEquipmentStorageCost() ?? 0d) + _engineManufacturing.MonthlyEquipmentStorageCost
                 + _headquarters.GetMonthlyOperatingCost()
-                + _loanPortfolio.GetNextScheduledDebtService();
+                + _loanPortfolio.GetNextScheduledDebtService(_elapsedMonths + 1);
             if (_loanPortfolio.TryBuildEmergencyOffer(
                 -_accountingSystem.Cash,
                 fixedObligations,
@@ -12503,6 +12377,11 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
     {
         _enginePreview = null;
         _enginePreviewError = string.Empty;
+        if (_engineParameters.HasAfterburner && !EngineDesignerBalance.Engine.IsAfterburnerAvailable(_currentDate.Year))
+        {
+            _enginePreviewError = "Afterburner is available from 1950.";
+            return;
+        }
         if (_engineBuilder is null || _engineDefinitions.Count == 0)
         {
             return;
@@ -12524,7 +12403,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         try
         {
-            _enginePreview = _engineBuilder.Build(selectedDefinition, _engineParameters);
+            var previewPoints = !string.IsNullOrWhiteSpace(_editingEngineResearchId)
+                ? GetResearchModifierPoints(ResearchSubjectType.Engine, _editingEngineResearchId)
+                : new TypeResearchModifierPoints();
+            _enginePreview = _engineBuilder.Build(selectedDefinition, _engineParameters, previewPoints);
         }
         catch (Exception ex)
         {
@@ -12577,7 +12459,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             }
 
             var family = ResolveFamilyDefinitionForCurrentDesigner(saved);
-            var type = BuildTypeForAircraft(family);
+            var typePoints = TryGetEditingSavedType(out var editedType, out _)
+                ? GetResearchModifierPoints(ResearchSubjectType.AircraftType, editedType.TypeResearchId)
+                : new TypeResearchModifierPoints();
+            var type = BuildTypeForAircraft(family, typePoints);
             _aircraftPreview = _aircraftFactory.CreateAircraft(family, type);
         }
         catch (Exception ex)
@@ -12588,6 +12473,11 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
     private void SaveCurrentEngine()
     {
+        if (_engineParameters.HasAfterburner && !EngineDesignerBalance.Engine.IsAfterburnerAvailable(_currentDate.Year))
+        {
+            _enginePreviewError = "Afterburner is available from 1950.";
+            return;
+        }
         if (_enginePreview is null)
         {
             _enginePreviewError = "Current engine values are invalid.";
@@ -12848,6 +12738,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             BaseDevelopmentCost = ApplyEarlyResearchDiscountToCost(_baseDevelopmentCost * constructionStandardEffects.DevelopmentCostMultiplier),
             BaseDevelopmentManDays = _baseDevelopmentManDays * constructionStandardEffects.DevelopmentManDaysMultiplier,
             InstalledEngineTechnologyModifiers = ResolveInstalledEngineTechnologyModifiers(saved),
+            InstalledEngineResearchModifiers = GetResearchModifierPoints(ResearchSubjectType.Engine, saved.ResearchId),
+            ResearchModifiers = GetResearchModifierPoints(ResearchSubjectType.AircraftFamily, BuildFamilyId()),
+            TechnologySnapshot = ResolveFamilyTechnology(BuildFamilyId()),
             BaseEngineParameters = saved.Parameters.Clone(),
             BaseAirframeParameters = baseAirframe,
         };
@@ -12868,16 +12761,22 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             throw new ArgumentNullException(nameof(familyDefinition));
         }
 
+        var storedFamily = _savedFamilies.FirstOrDefault(item => item.FamilyId == familyDefinition.Id);
+        familyDefinition = familyDefinition.WithTechnologySnapshot(storedFamily?.TechnologySnapshot
+            ?? (familyDefinition.TechnologySnapshot?.Origin != "preview" ? familyDefinition.TechnologySnapshot : null)
+            ?? ResolveFamilyTechnology(familyDefinition.Id));
+
         if (!TryGetSavedEngineByResearchId(engineResearchId, out var savedEngine))
         {
-            return familyDefinition;
+            return ResolveFamilyResearchModifiers(familyDefinition);
         }
 
-        return familyDefinition.WithInstalledEngine(
+        return ResolveFamilyResearchModifiers(familyDefinition).WithInstalledEngine(
             savedEngine.Definition.Id,
             savedEngine.Definition.EngineType,
             savedEngine.Parameters,
-            ResolveInstalledEngineTechnologyModifiers(savedEngine));
+            ResolveInstalledEngineTechnologyModifiers(savedEngine),
+            GetResearchModifierPoints(ResearchSubjectType.Engine, savedEngine.ResearchId));
     }
 
     private HistoricalCampaignTechnologyModifiers? ResolveInstalledEngineTechnologyModifiers(SavedEngineDesign savedEngine)
@@ -12954,7 +12853,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         var weaponPayloadKilograms = _typeHasCombatEquipment
             ? Math.Clamp(weaponPayloadKilogramsOverride ?? _typeWeaponPayloadKilograms, 0d, TypePayloadLimitMaxKilograms)
             : 0d;
-        return new AircraftTypeDefinition
+        return ApplyDraftTypeTechnology(new AircraftTypeDefinition
         {
             Id = BuildTypeId(),
             FamilyId = familyId,
@@ -12967,8 +12866,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             WeaponPayloadKilograms = weaponPayloadKilograms,
             HasSpecialEquipment = _typeHasSpecialEquipment,
             HasCombatEquipment = _typeHasCombatEquipment,
+            ConstructionDurabilityLevel = _typeConstructionDurabilityLevel,
+            ServiceIntervalHours = _typeServiceIntervalHours,
             ResearchModifiers = (researchModifiers ?? new TypeResearchModifierPoints()).Clone(),
-        };
+        }, familyId);
     }
 
     private void ApplyCategoryDefaultsToCurrentRoleConfiguration(bool includeFamilyConstructionStandard = true)
@@ -13370,7 +13271,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 seed,
                 options,
                 _historicalCampaignContractModifierSource,
-                () => _currentDate);
+                () => _currentDate,
+                () => _reputation.PriceMultiplier);
             var generatedBatch = generator.GenerateMonthlyContracts(monthIndex);
             var remappedBatch = RemapHistoricalCampaignBonusContractIds(
                 generatedBatch,
@@ -13425,7 +13327,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 ComputeCommercialDepartmentSeed(monthIndex, sequence),
                 options,
                 _historicalCampaignContractModifierSource,
-                () => _currentDate);
+                () => _currentDate,
+                () => _reputation.PriceMultiplier);
             var standardBatch = generator.GenerateMonthlyContracts(monthIndex);
             var source = standardBatch[sequence % standardBatch.Count];
             generatedContracts.Add(new Contract(
@@ -13537,6 +13440,17 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         var clone = new ContractRequirements
         {
+            EconomicSnapshot = requirements.EconomicSnapshot,
+            LifecycleModelVersion = requirements.LifecycleModelVersion,
+            MaintenanceModelVersion = requirements.MaintenanceModelVersion,
+            MinimumExpectedLifeHours = requirements.MinimumExpectedLifeHours,
+            MaximumServiceIntervalHours = requirements.MaximumServiceIntervalHours,
+            MinimumSupportMonths = requirements.MinimumSupportMonths,
+            UtilizationHoursPerMonth = requirements.UtilizationHoursPerMonth,
+            AverageFlightHours = requirements.AverageFlightHours,
+            OperatingProfileId = requirements.OperatingProfileId,
+            ProcurementPreference = requirements.ProcurementPreference,
+            MaximumOperatingCostPerUnit = requirements.MaximumOperatingCostPerUnit,
             RequiredCategory = requirements.RequiredCategory,
             MinimumReliability = requirements.MinimumReliability,
             MaximumTotalWeightKilograms = requirements.MaximumTotalWeightKilograms,
@@ -13700,66 +13614,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.EndVertical();
     }
 
-    private void DrawHistoricalCampaignDebugPanel()
-    {
-        GUILayout.BeginVertical(GUI.skin.box);
-        if (GUILayout.Button(
-                _showHistoricalCampaignDebugPanel
-                    ? "Hide Historical Debug"
-                    : "Show Historical Debug"))
-        {
-            _showHistoricalCampaignDebugPanel = !_showHistoricalCampaignDebugPanel;
-        }
-
-        if (_showHistoricalCampaignDebugPanel)
-        {
-            GUILayout.Label("Historical campaign debug tools");
-            GUILayout.Label($"Current date: {FormatSimulationDate(_currentDate)}");
-
-            if (_historicalCampaign is null)
-            {
-                GUILayout.Label("Historical campaign service is unavailable.");
-            }
-            else
-            {
-                var nextEvent = _historicalCampaign.GetNextUpcomingUnfiredEvent(_currentDate, _historicalCampaignState);
-                GUILayout.Label(nextEvent is null
-                    ? "Next event: none"
-                    : $"Next event: {nextEvent.Title} ({nextEvent.Year:D4}-{nextEvent.Month:D2})");
-
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("Year", GUILayout.Width(40f));
-                _historicalCampaignDebugYearInput = DrawDragSelectTextField(
-                    BuildControlName("text", "historical-debug-year"),
-                    _historicalCampaignDebugYearInput,
-                    GUILayout.Width(80f));
-                GUILayout.Label("Month", GUILayout.Width(50f));
-                _historicalCampaignDebugMonthInput = DrawDragSelectTextField(
-                    BuildControlName("text", "historical-debug-month"),
-                    _historicalCampaignDebugMonthInput,
-                    GUILayout.Width(60f));
-                if (GUILayout.Button("Set Date (Debug)", GUILayout.Width(150f)))
-                {
-                    ApplyHistoricalCampaignDebugDateOverride();
-                }
-
-                if (GUILayout.Button("Trigger Next Event (Debug)", GUILayout.Width(210f)))
-                {
-                    TriggerNextHistoricalCampaignEventForDebug();
-                }
-
-                GUILayout.EndHorizontal();
-                GUILayout.Label("Debug date override only moves simulation date; it does not replay skipped monthly simulation.");
-            }
-
-            if (!string.IsNullOrWhiteSpace(_historicalCampaignDebugMessage))
-            {
-                GUILayout.Label(_historicalCampaignDebugMessage);
-            }
-        }
-
-        GUILayout.EndVertical();
-    }
 
     private void AppendHistoricalCampaignArchiveEntry(HistoricalCampaignEventDefinition definition)
     {
@@ -13838,69 +13692,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             $"fuel={modifiers.FuelEfficiencyMultiplier:F3}");
     }
 
-    private void SyncHistoricalCampaignDebugInputsToCurrentDate()
-    {
-        _historicalCampaignDebugYearInput = _currentDate.Year.ToString();
-        _historicalCampaignDebugMonthInput = _currentDate.Month.ToString("00");
-    }
 
-    private void ApplyHistoricalCampaignDebugDateOverride()
-    {
-        if (!int.TryParse(_historicalCampaignDebugYearInput?.Trim(), out var year) ||
-            !int.TryParse(_historicalCampaignDebugMonthInput?.Trim(), out var month))
-        {
-            _historicalCampaignDebugMessage = "Debug date override failed: year/month must be numeric.";
-            return;
-        }
-
-        try
-        {
-            var overriddenDate = new SimulationDate(year, month);
-            _currentDate = overriddenDate;
-            _lastLoggedTechnologyModifierYear = int.MinValue;
-            LogHistoricalCampaignTechnologyModifiersIfYearChanged();
-            RebuildEnginePreview();
-            _historicalCampaignDebugMessage = $"Debug date set to {FormatSimulationDate(_currentDate)}.";
-            Debug.Log($"[Campaign][Debug] Date override applied: {_currentDate}");
-        }
-        catch (ArgumentOutOfRangeException ex)
-        {
-            _historicalCampaignDebugMessage = $"Debug date override failed: {ex.Message}";
-        }
-    }
-
-    private void TriggerNextHistoricalCampaignEventForDebug()
-    {
-        if (_historicalCampaign is null)
-        {
-            _historicalCampaignDebugMessage = "Cannot trigger event: historical campaign service is unavailable.";
-            return;
-        }
-
-        var nextEvent = _historicalCampaign.GetNextUnfiredEvent(_historicalCampaignState);
-        if (nextEvent is null)
-        {
-            _historicalCampaignDebugMessage = "No unfired historical campaign events remain.";
-            return;
-        }
-
-        _currentDate = nextEvent.GetDate();
-        SyncHistoricalCampaignDebugInputsToCurrentDate();
-        _lastLoggedTechnologyModifierYear = int.MinValue;
-        LogHistoricalCampaignTechnologyModifiersIfYearChanged();
-        RebuildEnginePreview();
-        var bonusBatchRequests = ProcessHistoricalCampaignForCurrentDate();
-        var injectedContracts = InjectHistoricalCampaignBonusContractsForCurrentMonth(bonusBatchRequests);
-        if (injectedContracts.Count > 0)
-        {
-            _lastGeneratedContracts.AddRange(injectedContracts);
-        }
-
-        _historicalCampaignDebugMessage = injectedContracts.Count > 0
-            ? $"Triggered '{nextEvent.Title}' at {_currentDate}; injected {injectedContracts.Count} bonus contracts."
-            : $"Triggered '{nextEvent.Title}' at {_currentDate}.";
-        Debug.Log($"[Campaign][Debug] {_historicalCampaignDebugMessage}");
-    }
 
     private static void LogGeneratedContractMix(IReadOnlyList<Contract> generatedContracts)
     {
@@ -14102,6 +13894,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
     private double GetContractUnitPrice(Contract contract)
     {
+        if (contract.Requirements.PricingModelVersion > 0) return contract.UnitPrice;
         if (contract.UnitPrice > 0d)
         {
             return contract.UnitPrice;
@@ -14112,6 +13905,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
     private double GetContractTotalPrice(Contract contract)
     {
+        if (contract.Requirements.PricingModelVersion > 0) return contract.TotalPrice;
         if (contract.TotalPrice > 0d)
         {
             return contract.TotalPrice;
@@ -14120,13 +13914,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         return _contractPricingCalculator.CalculateQuote(contract.Requirements, contract.QuantityUnits).TotalPrice;
     }
 
-    private double CalculateContractProfitLoss(Contract contract, FactoryAircraftTypeCatalogItem selectedAircraftDesign)
-    {
-        var revenue = GetContractTotalPrice(contract);
-        var unitFulfillmentCost = CalculateAircraftUnitCostWithManDayLabor(selectedAircraftDesign.Aircraft);
-        var fulfillmentCost = unitFulfillmentCost * contract.QuantityUnits;
-        return revenue - fulfillmentCost;
-    }
 
     private static double CalculateAircraftUnitCostWithManDayLabor(Aircraft aircraft)
     {
@@ -14466,20 +14253,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         return Mathf.Clamp(selectedIndex, 0, options.Length - 1);
     }
 
-    private int DrawEngineCountSelector(string label, int currentValue)
-    {
-        GUILayout.Label(label);
-        var labels = _engineCountOptions.Select(c => c.ToString()).ToArray();
-        var index = Array.IndexOf(_engineCountOptions, currentValue);
-        if (index < 0)
-        {
-            index = 0;
-        }
-
-        var next = GUILayout.SelectionGrid(index, labels, labels.Length);
-        next = Mathf.Clamp(next, 0, _engineCountOptions.Length - 1);
-        return _engineCountOptions[next];
-    }
 
     private static string DrawText(string label, string value, string keySuffix = "")
     {
@@ -14577,7 +14350,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"{label}: {FormatUiNumber(currentValue, format)}");
         GUILayout.BeginHorizontal();
         var sliderPosition = ToExponentialSliderPosition(currentValue, min, max);
-        var nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
+        var nextSliderPosition = WrightTycoonSlider.Layout(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
         var nextInput = DrawDragSelectTextField(controlName, currentInput, GUILayout.Width(120f));
         GUILayout.Label(
             $"[{FormatUiNumber(min, format)} - {FormatUiNumber(max, format)}]",
@@ -14658,7 +14431,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.Label($"{label}: {FormatUiNumber(currentValue, format)}");
         GUILayout.BeginHorizontal();
         var sliderPosition = ToExponentialSliderPosition(currentValue, min, max);
-        var nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
+        var nextSliderPosition = WrightTycoonSlider.Layout(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
         var nextInput = DrawDragSelectTextField(controlName, currentInput, GUILayout.Width(120f));
         GUILayout.Label(
             $"[{FormatUiNumber(min, format)} - {FormatUiNumber(max, format)}]",
@@ -14738,7 +14511,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         string format,
         ModifierTooltipDefinition? tooltip = null,
         bool useLinearScale = false,
-        bool showAspectRatioRangeGuides = false)
+        bool showAspectRatioRangeGuides = false,
+        double step = 0d)
     {
         var currentValue = Math.Clamp(value, min, max);
         var keyFamily = useLinearScale ? "double.linear" : "double";
@@ -14770,13 +14544,13 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         float nextSliderPosition;
         if (showAspectRatioRangeGuides)
         {
-            var allocatedSliderRect = GUILayoutUtility.GetRect(1f, 20f, GUILayout.ExpandWidth(true));
+            var allocatedSliderRect = GUILayoutUtility.GetRect(1f, Mathf.Max(20f, WrightTycoonSlider.ThumbHeight * WrightTycoonSlider.HitScale), GUILayout.ExpandWidth(true));
             sliderRect = allocatedSliderRect;
-            nextSliderPosition = GUI.HorizontalSlider(allocatedSliderRect, (float)sliderPosition, 0f, 1f);
+            nextSliderPosition = WrightTycoonSlider.Horizontal(allocatedSliderRect, (float)sliderPosition, 0f, 1f);
         }
         else
         {
-            nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
+            nextSliderPosition = WrightTycoonSlider.Layout(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
         }
         var nextInput = DrawDragSelectTextField(controlName, currentInput, GUILayout.Width(120f));
         GUILayout.Label(
@@ -14798,7 +14572,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         var sliderMappedValue = useLinearScale
             ? FromLinearSliderPosition(nextSliderPosition, min, max)
             : FromExponentialSliderPosition(nextSliderPosition, min, max);
-        var sliderRounded = Math.Clamp(Math.Round(sliderMappedValue, 4, MidpointRounding.AwayFromZero), min, max);
+        var sliderRounded = step > 0d
+            ? SnapWingProfileValue(sliderMappedValue, min, max, step)
+            : Math.Clamp(Math.Round(sliderMappedValue, 4, MidpointRounding.AwayFromZero), min, max);
         var sliderChanged = Math.Abs(sliderRounded - currentValue) > 1e-6;
         if (sliderChanged)
         {
@@ -14816,7 +14592,9 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
                 && parsedValue >= min
                 && parsedValue <= max)
             {
-                currentValue = Math.Round(parsedValue, 4, MidpointRounding.AwayFromZero);
+                currentValue = step > 0d
+                    ? SnapWingProfileValue(parsedValue, min, max, step)
+                    : Math.Round(parsedValue, 4, MidpointRounding.AwayFromZero);
                 _doubleSliderInputBuffer[key] = FormatUiNumber(currentValue, format);
             }
 
@@ -14846,7 +14624,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         };
         labelStyle.normal.textColor = new Color(0.58f, 0.64f, 0.72f, 0.92f);
 
-        var thumbWidth = Mathf.Max(10f, GUI.skin.horizontalSliderThumb.fixedWidth);
+        var thumbWidth = WrightTycoonSlider.ThumbWidth;
         var usableMinX = sliderRect.x + (thumbWidth * 0.5f);
         var usableMaxX = sliderRect.xMax - (thumbWidth * 0.5f);
         var previousColor = GUI.color;
@@ -14904,7 +14682,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         var sliderPosition = useLinearScale
             ? ToLinearSliderPosition(currentValue, min, max)
             : ToExponentialSliderPosition(currentValue, min, max);
-        var nextSliderPosition = GUILayout.HorizontalSlider(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
+        var nextSliderPosition = WrightTycoonSlider.Layout(sliderPosition, 0f, 1f, GUILayout.ExpandWidth(true));
         var nextInput = DrawDragSelectTextField(controlName, currentInput, GUILayout.Width(120f));
         GUILayout.Label($"[{FormatUiInteger(min)} - {FormatUiInteger(max)}]", GUILayout.Width(185f));
         GUILayout.EndHorizontal();
@@ -15473,33 +15251,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         GUILayout.EndHorizontal();
     }
 
-    private void DrawMetricWithBreakdownTooltip(
-        string label,
-        double value,
-        string format,
-        ProductionBreakdown? breakdown,
-        string tooltipId,
-        string tooltipTitle,
-        string adjustmentLabel = "Post-development production adjustment")
-    {
-        GUILayout.BeginHorizontal(GUI.skin.box);
-        GUILayout.Label(label, GUILayout.Width(240f));
-        GUILayout.Label(FormatUiNumber(value, format));
-        if (breakdown is not null)
-        {
-            GUILayout.FlexibleSpace();
-            DrawModifierTooltipIcon(
-                BuildProductionBreakdownTooltip(
-                    tooltipId,
-                    tooltipTitle,
-                    breakdown,
-                    value,
-                    format,
-                    adjustmentLabel));
-        }
-
-        GUILayout.EndHorizontal();
-    }
 
     private static ModifierTooltipDefinition BuildProductionBreakdownTooltip(
         string id,
@@ -15542,30 +15293,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         return new ModifierTooltipDefinition(id, title, neutralLines: lines);
     }
 
-    private void RegisterModifierTooltipRegion(ModifierTooltipDefinition tooltip, Rect hoverRect)
-    {
-        var anchorScreen = GUIUtility.GUIToScreenPoint(new Vector2(hoverRect.xMax + 8f, hoverRect.yMin - 4f));
-        _modifierTooltipEntries[tooltip.Id] = new ModifierTooltipFrameEntry(tooltip, anchorScreen);
 
-        var currentEvent = Event.current;
-        if (currentEvent is null
-            || currentEvent.type != EventType.Repaint
-            || !hoverRect.Contains(currentEvent.mousePosition))
-        {
-            return;
-        }
-
-        _hasModifierTooltipHoverCandidate = true;
-        _modifierTooltipHoverCandidateId = tooltip.Id;
-        _modifierTooltipHoverCandidateDistance = 0f;
-    }
-
-    private static Rect CombineRects(Rect first, Rect second) =>
-        Rect.MinMaxRect(
-            Mathf.Min(first.xMin, second.xMin),
-            Mathf.Min(first.yMin, second.yMin),
-            Mathf.Max(first.xMax, second.xMax),
-            Mathf.Max(first.yMax, second.yMax));
 
     private bool DrawModifierToggleWithTooltip(bool currentValue, string label, ModifierTooltipDefinition tooltip)
     {
@@ -15855,10 +15583,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         return _modifierTooltipBodyStyle;
     }
 
-    private static ModifierTooltipDefinition BuildAllowedEngineFamilyTooltipDefinition(AircraftAllowedEngineFamily family) =>
-        family == AircraftAllowedEngineFamily.Jet
-            ? AllowedEngineFamilyJetTooltip
-            : AllowedEngineFamilyPropellerTooltip;
 
     private static ModifierTooltipDefinition BuildBoostTooltipDefinition(BoostType boostType) =>
         boostType switch
@@ -15902,14 +15626,6 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             WingShape.Swept => WingShapeSweptTooltip,
             WingShape.Delta => WingShapeDeltaTooltip,
             _ => WingShapeStraightTooltip,
-        };
-
-    private static ModifierTooltipDefinition BuildWingProfileTooltipDefinition(WingProfileType wingProfileType) =>
-        wingProfileType switch
-        {
-            WingProfileType.Naca4DigitLight => WingProfileNacaTooltip,
-            WingProfileType.SymmetricalAcrobatic => WingProfileSymmetricalTooltip,
-            _ => WingProfileLaminarTooltip,
         };
 
     private static ModifierTooltipDefinition BuildFlapTooltipDefinition(FlapType flapType) =>
@@ -16067,8 +15783,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         return categories[nextIndex];
     }
 
-    private static void DrawContractRequirements(ContractRequirements requirements)
+    private static void DrawContractRequirements(ContractRequirements requirements, bool includeLifecycle = true)
     {
+        if (includeLifecycle)
+            foreach (var line in ContractLifecycleText.Requirements(requirements)) GUILayout.Label(line);
         if (requirements.RequiredCategory.HasValue)
         {
             var profile = AircraftCategoryCatalog.GetProfile(requirements.RequiredCategory.Value);
@@ -16258,8 +15976,8 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             wordWrap = false,
             clipping = TextClipping.Clip,
         };
-        var sliderAreaRect = GUILayoutUtility.GetRect(120f, 20f, GUILayout.ExpandWidth(true));
-        var thumbWidth = Mathf.Max(10f, GUI.skin.horizontalSliderThumb.fixedWidth);
+        var sliderAreaRect = GUILayoutUtility.GetRect(120f, Mathf.Max(20f, WrightTycoonSlider.ThumbHeight * WrightTycoonSlider.HitScale), GUILayout.ExpandWidth(true));
+        var thumbWidth = WrightTycoonSlider.ThumbWidth;
         var edgeLabelHalfWidth = Mathf.Max(
             labelStyle.CalcSize(new GUIContent(labels[0])).x,
             labelStyle.CalcSize(new GUIContent(labels[^1])).x) * 0.5f + 6f;
@@ -16269,7 +15987,7 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             sliderAreaRect.y,
             Mathf.Max(1f, sliderAreaRect.width - (sliderInset * 2f)),
             sliderAreaRect.height);
-        index = Mathf.RoundToInt(GUI.HorizontalSlider(sliderRect, index, 0, values.Length - 1));
+        index = Mathf.RoundToInt(WrightTycoonSlider.Horizontal(sliderRect, index, 0, values.Length - 1));
         index = Mathf.Clamp(index, 0, values.Length - 1);
         GUILayout.Label($"Selected: {labels[index]}");
         var labelRowRect = GUILayoutUtility.GetRect(120f, 20f, GUILayout.ExpandWidth(true));
@@ -16297,51 +16015,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         return values[index];
     }
 
-    private WingProfileType DrawWingProfileSelector(string label, WingProfileType wingProfile)
-    {
-        DrawModifierLabelWithTooltip(label, BuildWingProfileTooltipDefinition(wingProfile));
-        var values = new[]
-        {
-            WingProfileType.Laminar6SeriesAerodynamic,
-            WingProfileType.Naca4DigitLight,
-            WingProfileType.SymmetricalAcrobatic,
-        };
-        var labels = new[]
-        {
-            "Laminar 6-series",
-            "NACA 4-digit Light",
-            "Symmetrical Acrobatic",
-        };
-        var index = Array.IndexOf(values, wingProfile);
-        if (index < 0)
-        {
-            index = 0;
-        }
-
-        var next = GUILayout.SelectionGrid(index, labels, 2);
-        next = Mathf.Clamp(next, 0, values.Length - 1);
-        return values[next];
-    }
-
     private static WingProfileType NormalizeFamilyWingProfile(WingProfileType wingProfile) =>
         wingProfile == WingProfileType.Standard
             ? WingProfileType.Laminar6SeriesAerodynamic
             : wingProfile;
-
-    private static void DrawWingProfileHelp(WingProfileType wingProfile)
-    {
-        GUILayout.Label(wingProfile switch
-        {
-            WingProfileType.Laminar6SeriesAerodynamic =>
-                "Laminar 6-series: up to +5% lift and -5% drag (full effect at 50 m2, fades to 0 at 500 m2).",
-            WingProfileType.Naca4DigitLight =>
-                "NACA 4-digit Light: -10% airframe cost, -10% weight, and drag rises by up to +80% from 250 to 1,000 km/h.",
-            WingProfileType.SymmetricalAcrobatic =>
-                "Symmetrical Acrobatic: +10% maneuverability, +20% airframe cost, -10% lift.",
-            _ =>
-                "Laminar 6-series: up to +5% lift and -5% drag (full effect at 50 m2, fades to 0 at 500 m2).",
-        });
-    }
 
     private static TailType DrawTailSelector(string label, TailType tailType)
     {
@@ -16704,6 +16381,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             WingPosition = WingPosition.Biplane,
             WingShape = WingShape.Straight,
             WingProfile = WingProfileType.Standard,
+            UseModularWingProfile = true,
+            WingDesignSpeedKph = 350d,
+            WingPayloadAgility = 0d,
+            WingProfileEfficiency = 50d,
             WingAreaSquareMeters = 9.8d,
             TailType = TailType.Classic,
             FlapType = FlapType.Plain,
@@ -17318,7 +16999,14 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             WingShape wingShape,
             WingProfileType wingProfile,
             AircraftAllowedEngineFamily allowedEngineFamily,
-            AircraftConstructionStandard constructionStandard)
+            AircraftConstructionStandard constructionStandard,
+            bool useModularWingProfile = true,
+            double wingDesignSpeedKph = 350d,
+            double wingPayloadAgility = 0d,
+            double wingProfileEfficiency = 50d,
+            AirframeTechnologySnapshot? technologySnapshot = null,
+            AircraftFamilyDefinition? referenceFamilyDefinition = null,
+            AircraftTypeDefinition? referenceTypeDefinition = null)
         {
             Name = name;
             FamilyId = familyId;
@@ -17332,6 +17020,13 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
             WingProfile = NormalizeFamilyWingProfile(wingProfile);
             AllowedEngineFamily = allowedEngineFamily;
             ConstructionStandard = constructionStandard;
+            UseModularWingProfile = useModularWingProfile;
+            WingDesignSpeedKph = SnapWingProfileValue(wingDesignSpeedKph, 100d, 2000d, 50d);
+            WingPayloadAgility = SnapWingProfileValue(wingPayloadAgility, -100d, 100d, 5d);
+            WingProfileEfficiency = SnapWingProfileValue(wingProfileEfficiency, 0d, 100d, 5d);
+            TechnologySnapshot = technologySnapshot;
+            ReferenceFamilyDefinition = referenceFamilyDefinition;
+            ReferenceTypeDefinition = referenceTypeDefinition;
         }
 
         public string Name { get; }
@@ -17354,9 +17049,23 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         public WingProfileType WingProfile { get; }
 
+        public bool UseModularWingProfile { get; }
+        public double WingDesignSpeedKph { get; }
+        public double WingPayloadAgility { get; }
+        public double WingProfileEfficiency { get; }
+
         public AircraftAllowedEngineFamily AllowedEngineFamily { get; }
 
         public AircraftConstructionStandard ConstructionStandard { get; }
+        public AirframeTechnologySnapshot? TechnologySnapshot { get; private set; }
+        public void SetTechnologySnapshot(AirframeTechnologySnapshot snapshot) => TechnologySnapshot = snapshot;
+        public AircraftFamilyDefinition? ReferenceFamilyDefinition { get; private set; }
+        public AircraftTypeDefinition? ReferenceTypeDefinition { get; private set; }
+        public void SetResearchReference(Aircraft aircraft)
+        {
+            ReferenceFamilyDefinition = aircraft.FamilyDefinition;
+            ReferenceTypeDefinition = aircraft.TypeDefinition;
+        }
     }
 
     private sealed class SavedAircraftDesign
@@ -17611,6 +17320,10 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         public double TypeFuelLiters { get; set; }
 
         public int TypePrecisionEngineeringLevel { get; set; }
+        public int TypeConstructionDurabilityLevel { get; set; }
+        public int TypeServiceIntervalHours { get; set; } = 1000;
+        // Retained to read old saves; no longer a player-editable aircraft parameter.
+        public int TypeGuaranteedSupportMonths { get; set; } = 120;
 
         public AircraftNavigationEquipment TypeNavigationEquipment { get; set; }
 
@@ -17679,8 +17392,14 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         public GovernmentContractBoardSnapshot? GovernmentContractBoardSnapshot { get; set; }
 
         public ResearchBoardSnapshot? ResearchBoardSnapshot { get; set; }
+        public MonthlyCompletionSummarySnapshot? MonthlyCompletionSummary { get; set; }
 
         public FactoryStateSnapshot? FactoryStateSnapshot { get; set; }
+        public EngineManufacturingSnapshot? EngineManufacturingSnapshot { get; set; }
+        public SparePartsGroupRegistrySnapshot? EnginePartsGroups { get; set; }
+        public SparePartsGroupRegistrySnapshot? AirframePartsGroups { get; set; }
+        public bool SeparateEngineProduction { get; set; }
+        public Dictionary<string, int> AirframeSparePartStockTargets { get; set; } = new(StringComparer.Ordinal);
 
         public AccountingSystemSnapshot? AccountingSnapshot { get; set; }
 
@@ -17689,6 +17408,11 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
         public HeadquartersSnapshot? HeadquartersSnapshot { get; set; }
 
         public CompanyRunStatisticsSnapshot? CompanyRunStatisticsSnapshot { get; set; }
+        public CompanyReputationSnapshot? ReputationSnapshot { get; set; }
+        public FleetRegistrySnapshot? FleetSnapshot { get; set; }
+        public MaintenanceFinancialSnapshot? MaintenanceFinancialSnapshot { get; set; }
+        public int FleetRecordStartYear { get; set; }
+        public int FleetRecordStartMonth { get; set; }
 
         public string? ContractActionMessage { get; set; }
 
@@ -17782,9 +17506,17 @@ public sealed partial class WrightTycoonLaunchRunner : MonoBehaviour
 
         public WingProfileType WingProfile { get; set; }
 
+        public bool UseModularWingProfile { get; set; } = true;
+        public double WingDesignSpeedKph { get; set; } = 350d;
+        public double WingPayloadAgility { get; set; }
+        public double WingProfileEfficiency { get; set; } = 50d;
+
         public AircraftAllowedEngineFamily AllowedEngineFamily { get; set; }
 
         public AircraftConstructionStandard ConstructionStandard { get; set; }
+        public AirframeTechnologySnapshot? TechnologySnapshot { get; set; }
+        public AircraftFamilyDefinition? ReferenceFamilyDefinition { get; set; }
+        public AircraftTypeDefinition? ReferenceTypeDefinition { get; set; }
     }
 
     private sealed class SavedAircraftDesignState

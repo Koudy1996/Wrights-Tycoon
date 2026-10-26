@@ -7,6 +7,11 @@ namespace WrightTycoon.Core.GovernmentContracts;
 public sealed class GovernmentContractPricingService : IGovernmentContractPricingService
 {
     private readonly ContractPricingCalculator _pricingCalculator = new();
+    private readonly Func<double>? _reputationPriceMultiplierProvider;
+    public GovernmentContractPricingService(Func<double>? reputationPriceMultiplierProvider = null)
+    {
+        _reputationPriceMultiplierProvider = reputationPriceMultiplierProvider;
+    }
 
     public GovernmentContractPricingQuote CalculateQuote(GovernmentContractRequirements requirements, int quantityUnits)
     {
@@ -22,9 +27,22 @@ public sealed class GovernmentContractPricingService : IGovernmentContractPricin
 
         requirements.Validate();
 
+        if (requirements.EconomicSnapshot is { } economic)
+            return new GovernmentContractPricingQuote(economic.ReferenceDirectUnitCost, economic.OfferedUnitPrice,
+                RoundCurrency(economic.OfferedUnitPrice * quantityUnits), economic.OfferedUnitPrice / economic.ReferenceDirectUnitCost - 1d);
+
         var bridgeRequirements = new ContractRequirements
         {
             RequiredCategory = requirements.RequiredAircraftType,
+            LifecycleModelVersion = requirements.LifecycleModelVersion,
+            MinimumExpectedLifeHours = requirements.MinimumExpectedLifeHours,
+            MaximumServiceIntervalHours = requirements.MaximumServiceIntervalHours,
+            MinimumSupportMonths = requirements.MinimumSupportMonths,
+            UtilizationHoursPerMonth = requirements.UtilizationHoursPerMonth,
+            AverageFlightHours = requirements.AverageFlightHours,
+            OperatingProfileId = requirements.OperatingProfileId,
+            ProcurementPreference = requirements.ProcurementPreference,
+            MaximumOperatingCostPerUnit = requirements.MaximumOperatingCostPerUnit,
             MinimumReliability = requirements.MinimumReliability,
             MinimumRangeKilometers = requirements.MinimumRangeKilometers,
             MinimumSpeed = new ContractSpeedRequirement(
@@ -37,9 +55,18 @@ public sealed class GovernmentContractPricingService : IGovernmentContractPricin
         };
 
         var estimatedMinimumUnitCost = _pricingCalculator.EstimateMinimumUnitProductionCost(bridgeRequirements);
-        var appliedMarkup = ((1d + GovernmentContractBalance.PricingMargin)
-            * GovernmentContractBalance.ContractPriceMarginImprovementMultiplier) - 1d;
-        var unitPrice = estimatedMinimumUnitCost * (1d + appliedMarkup);
+        var appliedMarkup = (((1d + GovernmentContractBalance.PricingMargin)
+            * GovernmentContractBalance.ContractPriceMarginImprovementMultiplier) - 1d)
+            * GovernmentContractBalance.AdditionalMarginMultiplier;
+        var unitPrice = estimatedMinimumUnitCost * (1d + appliedMarkup)
+            * LifecycleCostCalculator.ReputationMultiplier(_reputationPriceMultiplierProvider);
+        if (requirements.LifecycleModelVersion > 0 && requirements.ProcurementPreference == ProcurementPreference.WholeLifeCost)
+        {
+            var operation = LifecycleContractPolicy.ReferenceOperationQuote(requirements.RequiredAircraftType, estimatedMinimumUnitCost,
+                    requirements.MinimumExpectedLifeHours, requirements.MaximumServiceIntervalHours, requirements.MinimumSupportMonths, purchasePrice: 0d);
+            unitPrice = System.Math.Min(unitPrice, System.Math.Max(0d, requirements.MaximumOperatingCostPerUnit
+                - operation.OperationCosts));
+        }
         var totalContractValue = unitPrice * quantityUnits;
 
         return new GovernmentContractPricingQuote(

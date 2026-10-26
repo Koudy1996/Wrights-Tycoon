@@ -12,7 +12,18 @@ namespace WrightTycoon.Core.Tests.Engines;
 [TestFixture]
 public sealed class EngineCalculatorTests
 {
+    [TestCase(1946, false)]
+    [TestCase(1949, false)]
+    [TestCase(1950, true)]
+    [TestCase(1960, true)]
+    [Category("Extended")]
+    public void AfterburnerUnlocksIn1950(int year, bool expected)
+    {
+        Assert.That(EngineDesignerBalance.Engine.IsAfterburnerAvailable(year), Is.EqualTo(expected));
+    }
+
     [Test]
+    [Category("Extended")]
     public void PrecisionEngineering_UsesDiminishingBenefitsAndEscalatingPenalties()
     {
         var levelOne = PrecisionEngineeringBalance.GetEffects(1);
@@ -68,6 +79,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void BoostedPistonEngine_IncreasesPowerAndFuelButReducesReliability()
     {
         var calculator = new EngineCalculator();
@@ -95,6 +107,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void DirectInjection_ImprovesSpecificFuelConsumptionByTenPercent()
     {
         var calculator = new EngineCalculator();
@@ -122,6 +135,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void BoostHardware_AppliesConfiguredSpecificFuelConsumptionEffects()
     {
         var calculator = new EngineCalculator();
@@ -224,6 +238,7 @@ public sealed class EngineCalculatorTests
         Assert.That(afterburnerReport.ProductionManDays, Is.GreaterThan(noAfterburnerReport.ProductionManDays));
     }
     [Test]
+    [Category("Extended")]
     public void Turbojet_BypassRatioDoesNotChangePerformance()
     {
         var calculator = new EngineCalculator();
@@ -265,6 +280,7 @@ public sealed class EngineCalculatorTests
     [TestCase(10d, 1.21d)]
     [TestCase(15d, 1.24d)]
     [TestCase(20d, 1.25d)]
+    [Category("Extended")]
     public void TurbofanBypassRatio_UsesCalibratedThrustCorrectionTable(double bypassRatio, double expectedOutputRatio)
     {
         var calculator = new EngineCalculator();
@@ -291,6 +307,7 @@ public sealed class EngineCalculatorTests
     [TestCase(10d, 0.83d)]
     [TestCase(15d, 0.81d)]
     [TestCase(20d, 0.80d)]
+    [Category("Extended")]
     public void TurbofanBypassRatio_UsesCalibratedSpecificFuelCorrectionTable(double bypassRatio, double expectedSpecificFuelRatio)
     {
         var calculator = new EngineCalculator();
@@ -309,6 +326,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void TurbofanBypassRatio_DoesNotApplyAdditionalAltitudeRetentionBonus()
     {
         var calculator = new EngineCalculator();
@@ -330,6 +348,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void TurbofanBypassRatio_HigherRatioIncreasesWeightAtFixedInputs()
     {
         var calculator = new EngineCalculator();
@@ -355,6 +374,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void InlineEngine_MoreThanEightCylinders_ThrowsArgumentOutOfRangeException()
     {
         var calculator = new EngineCalculator();
@@ -375,6 +395,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void BoostHardware_IncreasesEngineFrontalArea()
     {
         var calculator = new EngineCalculator();
@@ -406,6 +427,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void RadialEngine_HasLargerFrontalAreaButLowerWeightThanInlineAndV()
     {
         var calculator = new EngineCalculator();
@@ -439,6 +461,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void EfficiencyOptimization_ScalesProductionBurdenLinearly()
     {
         var calculator = new EngineCalculator();
@@ -471,6 +494,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void EngineResearch_RangesFromSimpleThirtyMonthToAdvancedEightyMonthPrograms()
     {
         var calculator = new EngineCalculator();
@@ -513,6 +537,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void LowBypassTurbofan_ScalesPoorlyAbove150kNewton()
     {
         var calculator = new EngineCalculator();
@@ -600,6 +625,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void PistonCompression_IncreasesPowerAndFuelFlowButImprovesSpecificFuelConsumption()
     {
         var calculator = new EngineCalculator();
@@ -639,6 +665,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void PistonCompressionOutOfRange_ThrowsArgumentOutOfRangeException()
     {
         var calculator = new EngineCalculator();
@@ -659,6 +686,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void OptimizationHeight_HasStrongVisibleImpactOnPistonOutput()
     {
         var calculator = new EngineCalculator();
@@ -688,6 +716,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void TurboAndSupercharger_ReduceOptimizationMismatchPenalty()
     {
         var calculator = new EngineCalculator();
@@ -724,6 +753,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void JetWeight_CalibratesNearLargeCivilAndFighterAnchors()
     {
         var calculator = new EngineCalculator();
@@ -757,6 +787,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void JetWeight_HighBypassMidSizeStaysLighterThanVeryLargeWidebodyFan()
     {
         var calculator = new EngineCalculator();
@@ -789,6 +820,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void PistonWeight_ModelSeparatesLightGeneralAviationFromLargeRadial()
     {
         var calculator = new EngineCalculator();
@@ -827,6 +859,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void PistonRpmAroundSixThousand_IsAllowedByUpdatedScale()
     {
         var calculator = new EngineCalculator();
@@ -847,6 +880,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void JetAltitudeOutputRetention_IsHigherThanLinearDensityDrop()
     {
         var calculator = new EngineCalculator();
@@ -872,6 +906,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Carburetor_ReducesPowerButLowersCostAndProductionTime()
     {
         var calculator = new EngineCalculator();
@@ -905,6 +940,7 @@ public sealed class EngineCalculatorTests
 
 
     [Test]
+    [Category("Extended")]
     public void Turbocharger_HasMuchStrongerPowerGainAtHighAltitudeThanAtSeaLevel()
     {
         var calculator = new EngineCalculator();
@@ -937,6 +973,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Supercharger_RetainsMoreOutputNearOptimizationAltitudeThanAtHighAltitude()
     {
         var calculator = new EngineCalculator();
@@ -964,6 +1001,7 @@ public sealed class EngineCalculatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Turbojet_HasHigherSpecificFuelFlowThanComparableTurbofan()
     {
         var calculator = new EngineCalculator();

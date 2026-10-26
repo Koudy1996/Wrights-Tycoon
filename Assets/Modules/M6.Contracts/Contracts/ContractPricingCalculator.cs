@@ -10,10 +10,12 @@ namespace WrightTycoon.Core.Contracts;
 public sealed class ContractPricingCalculator
 {
     private readonly IHistoricalCampaignContractModifierSource? _campaignModifierSource;
+    private readonly Func<double>? _reputationPriceMultiplierProvider;
 
-    public ContractPricingCalculator(IHistoricalCampaignContractModifierSource? campaignModifierSource = null)
+    public ContractPricingCalculator(IHistoricalCampaignContractModifierSource? campaignModifierSource = null, Func<double>? reputationPriceMultiplierProvider = null)
     {
         _campaignModifierSource = campaignModifierSource;
+        _reputationPriceMultiplierProvider = reputationPriceMultiplierProvider;
     }
 
     public ContractPricingQuote CalculateQuote(ContractRequirements requirements, int quantityUnits)
@@ -32,6 +34,10 @@ public sealed class ContractPricingCalculator
 
         requirements.Validate();
 
+        if (requirements.EconomicSnapshot is { } economic)
+            return new ContractPricingQuote(economic.ReferenceDirectUnitCost, economic.OfferedUnitPrice,
+                RoundCurrency(economic.OfferedUnitPrice * quantityUnits), economic.OfferedUnitPrice / economic.ReferenceDirectUnitCost - 1d);
+
         var estimatedMinimumUnitCost = EstimateMinimumUnitProductionCost(requirements);
         var markup = quantityUnits < ContractBalance.LargeOrderMinQuantityUnits
             ? ContractBalance.SmallOrderContractMarkup
@@ -45,7 +51,18 @@ public sealed class ContractPricingCalculator
             adjustedMarkup = ContractBalance.CampaignAdjustedMarkupFloor;
         }
 
-        var unitPrice = estimatedMinimumUnitCost * (1d + adjustedMarkup);
+        adjustedMarkup *= ContractBalance.AdditionalMarginMultiplier;
+        var unitPrice = estimatedMinimumUnitCost * (1d + adjustedMarkup) * LifecycleCostCalculator.ReputationMultiplier(_reputationPriceMultiplierProvider);
+        if (requirements.LifecycleModelVersion > 0 && requirements.ProcurementPreference == ProcurementPreference.WholeLifeCost)
+        {
+            var fuelRange = ContractBalance.ResolveFuelConsumptionRequirementRangeKilogramsPerHour(requirements.RequiredCategory ?? AircraftCategory.LightSportAndRecreational);
+            var category = requirements.RequiredCategory ?? AircraftCategory.LightSportAndRecreational;
+            var operation = LifecycleContractPolicy.ReferenceOperationQuote(category, estimatedMinimumUnitCost, requirements.MinimumExpectedLifeHours,
+                    requirements.MaximumServiceIntervalHours, requirements.MinimumSupportMonths, purchasePrice: 0d,
+                    fuelBurnKilogramsPerHour: requirements.MaximumFuelConsumptionKilogramsPerHour ?? fuelRange.Item2);
+            unitPrice = System.Math.Min(unitPrice, System.Math.Max(0d, requirements.MaximumOperatingCostPerUnit
+                - operation.OperationCosts));
+        }
         var totalPrice = unitPrice * quantityUnits;
 
         return new ContractPricingQuote(
@@ -96,7 +113,10 @@ public sealed class ContractPricingCalculator
         return System.Math.Max(ContractBalance.PricingMinimumUnitCostFloor, estimated);
     }
 
-    private static double CalculateReferenceCompleteProductionCost(
+    private static double CalculateReferenceCompleteProductionCost(AircraftCategoryProfile profile, double structuralIndex, double difficulty) =>
+        CalculateReferenceEstimate(profile, structuralIndex, difficulty).DirectUnitCost;
+
+    internal static ContractReferenceEstimate CalculateReferenceEstimate(
         AircraftCategoryProfile profile,
         double structuralIndex,
         double difficulty)
@@ -152,12 +172,12 @@ public sealed class ContractPricingCalculator
 
         var engineCount = EstimateEngineCount(category, profile.MinMaximumWeightKilograms
             + ((profile.MaxMaximumWeightKilograms - profile.MinMaximumWeightKilograms) * difficulty));
-        var engineCost = CalculateReferenceEngineCompleteCost(category, structuralIndex);
-        return ProductionEconomyBalance.CalculateCompleteCost(airframeParts, airframeManDays)
-            + (engineCount * engineCost);
+        var engine = CalculateReferenceEngineCost(category, structuralIndex);
+        return new ContractReferenceEstimate(airframeParts, airframeManDays, engineCount, engine.Parts, engine.ManDays,
+            !IsJetCategory(category), 0d, .8d);
     }
 
-    private static double CalculateReferenceEngineCompleteCost(AircraftCategory category, double structuralIndex)
+    private static (double Parts, double ManDays) CalculateReferenceEngineCost(AircraftCategory category, double structuralIndex)
     {
         if (IsJetCategory(category))
         {
@@ -181,7 +201,7 @@ public sealed class ContractPricingCalculator
                 jetManDays *= 1d + (6d * ProductionEconomyBalance.Engine.BypassManDaysIncreasePerPoint);
             }
 
-            return ProductionEconomyBalance.CalculateCompleteCost(jetParts, jetManDays);
+            return (jetParts, jetManDays);
         }
 
         var displacement = Numeric.Clamp(
@@ -205,7 +225,7 @@ public sealed class ContractPricingCalculator
             + (displacement * ProductionEconomyBalance.Engine.PistonDisplacementManDaysPerLiter);
         parts *= ProductionEconomyBalance.GetPistonCompressionPartsMultiplier(8d);
         manDays *= ProductionEconomyBalance.GetPistonCompressionManDaysMultiplier(8d);
-        return ProductionEconomyBalance.CalculateCompleteCost(parts, manDays);
+        return (parts, manDays);
     }
 
     private static bool IsJetCategory(AircraftCategory category) => category is
@@ -323,7 +343,7 @@ public sealed class ContractPricingCalculator
             ContractBalance.PricingEstimatedEngineCountMax);
     }
 
-    private static double CalculateDifficultyNormalized(ContractRequirements requirements, AircraftCategoryProfile profile)
+    internal static double CalculateDifficultyNormalized(ContractRequirements requirements, AircraftCategoryProfile profile)
     {
         var sum = 0d;
         var count = 0;
@@ -437,6 +457,23 @@ public sealed class ContractPricingCalculator
         }
 
         return modifiers.ResolvePriceMultiplier(category);
+    }
+
+    public ContractEconomicSnapshot CreateEconomicSnapshot(ContractRequirements requirements,
+        WrightTycoon.Core.Simulation.SimulationDate date, int quantity, OperationalCostPriority? priority = null)
+    {
+        var reference = new ReferenceProductionCostEstimator().Estimate(requirements, date);
+        var reputation = LifecycleCostCalculator.ReputationMultiplier(_reputationPriceMultiplierProvider);
+        var historical = ResolvePriceMultiplier(requirements.RequiredCategory);
+        var price = ContractPricingBalance.PurchasePrice(reference.DirectUnitCost, quantity, reputation, historical);
+        var fuel = new WrightTycoon.Core.Fleet.MonthlyAviationFuelMarket().Get(date, reference.UsesAviationGasoline).DollarsPerKilogram;
+        var operation = ContractOperatingBudgetCalculator.ReferenceCostPerHour(reference, price, requirements, fuel);
+        var selectedPriority = priority ?? ContractPricingBalance.Priority(requirements.ProcurementPreference);
+        var result = new ContractEconomicSnapshot(1, date, reference, ContractPricingBalance.OverheadMultiplier,
+            ContractPricingBalance.MarkupMultiplier, ContractPricingBalance.QuantityMultiplier(quantity), reputation,
+            historical, price, operation, operation * ContractPricingBalance.OperatingTolerance(selectedPriority), selectedPriority, fuel);
+        result.Validate();
+        return result;
     }
 
     private static double RoundCurrency(double value) =>

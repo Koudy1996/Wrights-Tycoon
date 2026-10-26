@@ -32,6 +32,10 @@ public sealed class EngineParameters
 
     public bool HasAfterburner { get; set; }
 
+    public int ServiceIntervalHours { get; set; } = 500;
+
+    public int DurabilityLevel { get; set; }
+
     public EngineParameters Clone() =>
         new()
         {
@@ -48,10 +52,15 @@ public sealed class EngineParameters
             PrecisionEngineeringLevel = PrecisionEngineeringLevel,
             EfficiencyOptimizationsPercent = EfficiencyOptimizationsPercent,
             HasAfterburner = HasAfterburner,
+            ServiceIntervalHours = ServiceIntervalHours,
+            DurabilityLevel = DurabilityLevel,
         };
 
     public void Validate()
     {
+        Fleet.EngineMaintenancePolicy.ValidateSelectableServiceInterval(ServiceIntervalHours);
+        if (DurabilityLevel < 0 || DurabilityLevel > 10)
+            throw new System.ArgumentOutOfRangeException(nameof(DurabilityLevel));
         Numeric.ThrowIfNegative(DisplacementLiters, nameof(DisplacementLiters));
         if (CylinderCount < 1)
         {

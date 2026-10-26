@@ -47,6 +47,17 @@ public sealed class ContractSnapshot
 
 public sealed class ContractRequirementsSnapshot
 {
+    public ContractEconomicSnapshot? EconomicSnapshot { get; set; }
+    public int LifecycleModelVersion { get; set; }
+    public int MaintenanceModelVersion { get; set; } = 2;
+    public double MinimumExpectedLifeHours { get; set; }
+    public int MaximumServiceIntervalHours { get; set; } = 1000;
+    public int MinimumSupportMonths { get; set; } = 120;
+    public double UtilizationHoursPerMonth { get; set; } = 100d;
+    public double AverageFlightHours { get; set; } = 2d;
+    public string OperatingProfileId { get; set; } = "civil";
+    public WrightTycoon.Core.Contracts.ProcurementPreference ProcurementPreference { get; set; }
+    public double MaximumOperatingCostPerUnit { get; set; }
     public AircraftCategory? RequiredCategory { get; set; }
 
     public double? MinimumReliability { get; set; }
@@ -66,4 +77,5 @@ public sealed class ContractRequirementsSnapshot
     public double? MinimumSpeedMetersPerSecond { get; set; }
 
     public double? MaximumFuelConsumptionKilogramsPerHour { get; set; }
+    public double? MaximumRequiredRunwayLengthMeters { get; set; }
 }

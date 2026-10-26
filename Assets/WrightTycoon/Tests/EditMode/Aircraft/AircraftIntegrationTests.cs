@@ -18,7 +18,134 @@ namespace WrightTycoon.Core.Tests.Aircraft;
 [TestFixture]
 public sealed class AircraftIntegrationTests
 {
+    [TestCase(0, 0)]
+    [TestCase(5, 0)]
+    [TestCase(0, 5)]
+    [TestCase(5, 5)]
+    [TestCase(10, 10)]
+    [Category("Extended")]
+    public void ResearchSources_AddFamilyAndTypeWithoutDiscountingFinishedEngines(int familyPoints, int typePoints)
+    {
+        var factory = CreateFactory();
+        var rawFamily = CreateFamily("fam.additive", 2);
+        var baselineType = new AircraftTypeDefinition { Id = "type.raw", FamilyId = rawFamily.Id, DisplayName = "Raw" };
+        var baseline = factory.CreateAircraft(rawFamily, baselineType);
+        var family = rawFamily.WithResearchModifiers(new TypeResearchModifierPoints
+        {
+            ReliabilityPoints = familyPoints, ProductionOptimizationPoints = familyPoints,
+        });
+        var type = new AircraftTypeDefinition
+        {
+            Id = "type.bonus", FamilyId = family.Id, DisplayName = "Bonus",
+            ResearchModifiers = new TypeResearchModifierPoints
+            {
+                ReliabilityPoints = typePoints, ProductionOptimizationPoints = typePoints,
+            },
+        };
+        var actual = factory.CreateAircraft(family, type);
+        var repeat = factory.CreateAircraft(family, type);
+        var points = familyPoints + typePoints;
+        Assert.That(actual.Performance.OverallReliability,
+            Is.EqualTo(baseline.Performance.OverallReliability + .02d * points).Within(1e-9));
+        Assert.That(actual.Performance.AirframeProductionCost,
+            Is.EqualTo(baseline.Performance.AirframeProductionCost * (1d - .01d * points)).Within(1e-8));
+        Assert.That(actual.Performance.AirframeProductionManDays,
+            Is.EqualTo(baseline.Performance.AirframeProductionManDays * (1d - .02d * points)).Within(1e-8));
+        Assert.That(actual.Performance.EnginesProductionCost, Is.EqualTo(baseline.Performance.EnginesProductionCost));
+        Assert.That(actual.Performance.EnginesProductionManDays, Is.EqualTo(baseline.Performance.EnginesProductionManDays));
+        Assert.That(actual.Performance.TotalProductionCost,
+            Is.EqualTo(actual.Performance.AirframeProductionCost + actual.Performance.EnginesProductionCost).Within(1e-8));
+        Assert.That(actual.Performance.TotalProductionManDays,
+            Is.EqualTo(actual.Performance.AirframeProductionManDays + actual.Performance.EnginesProductionManDays).Within(1e-8));
+        Assert.That(actual.Performance.CostBreakdown!.Total, Is.EqualTo(actual.Performance.TotalProductionCost).Within(1e-7));
+        Assert.That(actual.Performance.ProductionManDaysBreakdown!.Total,
+            Is.EqualTo(actual.Performance.TotalProductionManDays).Within(1e-7));
+        Assert.That(repeat.Performance.TotalProductionCost, Is.EqualTo(actual.Performance.TotalProductionCost));
+        Assert.That(repeat.Performance.OverallReliability, Is.EqualTo(actual.Performance.OverallReliability));
+        Assert.That(actual.Performance.TotalWeight, Is.EqualTo(baseline.Performance.TotalWeight));
+        Assert.That(actual.Performance.RangeKilometers, Is.EqualTo(baseline.Performance.RangeKilometers));
+        Assert.That(actual.Performance.MaxSpeedByAltitude, Is.EqualTo(baseline.Performance.MaxSpeedByAltitude));
+        Assert.That(actual.Performance.AverageCruiseFuelBurnKilogramsPerHour,
+            Is.EqualTo(baseline.Performance.AverageCruiseFuelBurnKilogramsPerHour));
+        if (points > 0) Assert.That(actual.Performance.ExpectedLifeHours, Is.GreaterThan(baseline.Performance.ExpectedLifeHours));
+    }
+
+    [TestCase(0, 0)]
+    [TestCase(10, 0)]
+    [TestCase(0, 10)]
+    [TestCase(5, 5)]
+    [Category("Extended")]
+    public void EngineResearch_IsAppliedOnceToStandaloneAndInstalledFrozenReports(int reliability, int production)
+    {
+        var factory = CreateFactory();
+        var family = CreateFamily("fam.engine.research", 2);
+        var type = new AircraftTypeDefinition { Id = "type.engine.research", FamilyId = family.Id, DisplayName = "Engine test" };
+        var baseline = factory.CreateAircraft(family, type);
+        var builder = new EngineBuilder(new EngineCalculator(), new IsaAtmosphereModel());
+        var modifiers = new TypeResearchModifierPoints
+        {
+            ReliabilityPoints = reliability, ProductionOptimizationPoints = production,
+        };
+        var technology = new HistoricalCampaignTechnologyProgression().ResolveForDate(new SimulationDate(1946, 1));
+        var raw = builder.Build(baseline.Engine.Definition, baseline.Engine.Parameters, technology);
+        var researched = builder.Build(baseline.Engine.Definition, baseline.Engine.Parameters, technology, modifiers);
+        var repeat = builder.Build(baseline.Engine.Definition, baseline.Engine.Parameters, technology, modifiers);
+        var installedFamily = family.WithInstalledEngineResearchModifiers(modifiers)
+            .WithResearchModifiers(new TypeResearchModifierPoints { ReliabilityPoints = 5, ProductionOptimizationPoints = 5 })
+            .WithInstalledEngineTechnologyModifiers(technology);
+        var installed = factory.CreateAircraft(installedFamily, type);
+        Assert.That(researched.Performance.Reliability, Is.EqualTo(raw.Performance.Reliability + .02d * reliability).Within(1e-9));
+        Assert.That(researched.Performance.Cost, Is.EqualTo(raw.Performance.Cost * (1d - .01d * production)).Within(1e-8));
+        Assert.That(researched.Performance.ProductionManDays,
+            Is.EqualTo(raw.Performance.ProductionManDays * (1d - .02d * production)).Within(1e-8));
+        Assert.That(researched.Performance.CostBreakdown.Total, Is.EqualTo(researched.Performance.Cost).Within(1e-7));
+        Assert.That(researched.Performance.ProductionManDaysBreakdown.Total,
+            Is.EqualTo(researched.Performance.ProductionManDays).Within(1e-7));
+        Assert.That(researched.Performance.AltitudePerformance, Is.EqualTo(raw.Performance.AltitudePerformance));
+        Assert.That(researched.Performance.Weight, Is.EqualTo(raw.Performance.Weight));
+        Assert.That(repeat.Performance.Cost, Is.EqualTo(researched.Performance.Cost));
+        Assert.That(repeat.Performance.Reliability, Is.EqualTo(researched.Performance.Reliability));
+        Assert.That(installed.Engine.Performance.Cost, Is.EqualTo(researched.Performance.Cost));
+        Assert.That(installed.Engine.Performance.ProductionManDays, Is.EqualTo(researched.Performance.ProductionManDays));
+        Assert.That(installed.Engine.Performance.Reliability, Is.EqualTo(researched.Performance.Reliability));
+        Assert.That(installedFamily.ResearchModifiers.ReliabilityPoints, Is.EqualTo(5));
+        modifiers.ReliabilityPoints = 0;
+        Assert.That(installedFamily.InstalledEngineResearchModifiers.ReliabilityPoints, Is.EqualTo(reliability));
+    }
+
     [Test]
+    public void ReplacingInstalledEngine_PreservesFamilyEffectsAndUsesOnlyNewEngineEffects()
+    {
+        var family = CreateFamily("fam.swap", 1)
+            .WithResearchModifiers(new TypeResearchModifierPoints { ReliabilityPoints = 4 })
+            .WithInstalledEngineResearchModifiers(new TypeResearchModifierPoints { ReliabilityPoints = 10 });
+        var swapped = family.WithInstalledEngine(family.EngineDefinitionId, family.LockedEngineType,
+            family.BaseEngineParameters, researchModifiers: new TypeResearchModifierPoints { ReliabilityPoints = 3 });
+        Assert.That(swapped.ResearchModifiers.ReliabilityPoints, Is.EqualTo(4));
+        Assert.That(swapped.InstalledEngineResearchModifiers.ReliabilityPoints, Is.EqualTo(3));
+        var unresearched = family.WithInstalledEngine(family.EngineDefinitionId, family.LockedEngineType, family.BaseEngineParameters);
+        Assert.That(unresearched.InstalledEngineResearchModifiers.ReliabilityPoints, Is.Zero);
+    }
+
+    [Test]
+    [Category("Extended")]
+    public void CombinedEngineeringEffects_DoNotLeakIntoResearchProjectSurcharges()
+    {
+        var family = new TypeResearchModifierPoints { ReliabilityPoints = 10, ProductionOptimizationPoints = 10, FastDevelopmentPoints = 10 };
+        var type = new TypeResearchModifierPoints { ReliabilityPoints = 5, ProductionOptimizationPoints = 5, FastDevelopmentPoints = 5 };
+        var engineering = TypeResearchModifierCalculator.CalculateCombined(family, type);
+        Assert.That(engineering.ReliabilityDelta, Is.EqualTo(.3d).Within(1e-9));
+        Assert.That(engineering.ProductionCostMultiplier, Is.EqualTo(.85d).Within(1e-9));
+        Assert.That(engineering.ProductionManDaysMultiplier, Is.EqualTo(.7d).Within(1e-9));
+        Assert.That(engineering.ResearchCostMultiplier, Is.EqualTo(1d));
+        Assert.That(engineering.ResearchTimeMultiplier, Is.EqualTo(1d));
+        var ownQuoteEffects = TypeResearchModifierCalculator.Calculate(type);
+        Assert.That(ownQuoteEffects.ResearchCostMultiplier, Is.EqualTo(2d).Within(1e-9));
+        Assert.That(ownQuoteEffects.ResearchTimeMultiplier, Is.EqualTo(1.05d).Within(1e-9));
+    }
+
+    [Test]
+    [Category("Extended")]
     public void AirframePrecisionEngineering_RaisesWholeAircraftProductionAndTypeDevelopmentBurden()
     {
         var factory = CreateFactory();
@@ -58,6 +185,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void SpeedWeightFactorCurve_IsContinuousAroundFormerThresholds()
     {
         var factorAt99 = EvaluateSpeedWeightFactor(99d);
@@ -69,6 +197,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void SpeedWeightFactorCurve_InterpolatesBetweenConfiguredBalancePoints()
     {
         Assert.That(EvaluateSpeedWeightFactor(0d), Is.EqualTo(1.00d).Within(1e-9));
@@ -80,6 +209,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void TwinEngineFamily_HasHigherMaxSpeedThanSingleEngineFamily()
     {
         var factory = CreateFactory();
@@ -143,6 +273,7 @@ public sealed class AircraftIntegrationTests
 
 
     [Test]
+    [Category("Extended")]
     public void BiplaneWingPosition_HasLowerMaxSpeedThanLowAndHighWing()
     {
         var factory = CreateFactory();
@@ -195,6 +326,7 @@ public sealed class AircraftIntegrationTests
             Is.GreaterThan(highWingAircraft.Performance.PayloadCapacity.Kilograms));
     }
     [Test]
+    [Category("Extended")]
     public void FamilyLocks_OverrideTypeParameterOverrides()
     {
         var factory = CreateFactory();
@@ -225,6 +357,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void FamilyEnginePolicy_BlocksIncompatibleEngineFamilies()
     {
         var factory = CreateFactory();
@@ -247,6 +380,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void FamilyEngineClassification_BlocksIncompatibleEngineBranches()
     {
         var factory = CreateFactory();
@@ -269,6 +403,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void TypeWingArea_MustStayWithinTwentyPercentOfFamilyReference()
     {
         var factory = CreateFactory();
@@ -291,6 +426,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void LargerTypeDelta_IncreasesDevelopmentCostAndManDays()
     {
         var factory = CreateFactory();
@@ -345,6 +481,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void CategoryModifiers_AdjustWeightSpeedReliabilityAndRange()
     {
         var factory = CreateFactory();
@@ -386,6 +523,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void NavigationEquipment_AddsWeightDragReliabilityAndProductionCost()
     {
         var factory = CreateFactory();
@@ -444,6 +582,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void PassengerCapacity_IsComputedFromPayloadUsing250KgPerPassenger()
     {
         var factory = CreateFactory();
@@ -463,6 +602,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void LongRunway_AllowsHigherMaximumTakeoffWeightThanShortRunway()
     {
         var factory = CreateFactory();
@@ -502,6 +642,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void AircraftWeightWithFuel_UsesTenPercentEmptyWeightMarginPlusFuelMass()
     {
         var factory = CreateFactory();
@@ -526,6 +667,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void UsefulWeight_EqualsMaximumTakeoffWeightMinusAircraftWeightWithFuel()
     {
         var factory = CreateFactory();
@@ -548,6 +690,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void PayloadLimitCapsUsefulWeightAndReducesMaximumTakeoffWeight()
     {
         var factory = CreateFactory();
@@ -581,6 +724,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void OptimalCruiseSpeed_IsPositiveAndWithinMaxSpeedEnvelope()
     {
         var factory = CreateFactory();
@@ -612,6 +756,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void MoreFuel_IncreasesRangeAtOptimalCruise()
     {
         var factory = CreateFactory();
@@ -646,6 +791,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void HighBypassJet_MaxSpeedIsCappedToTransportEnvelope()
     {
         var calculator = new AircraftPerformanceCalculator(new IsaAtmosphereModel(), new AerodynamicsCalculator());
@@ -736,6 +882,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void MediumBypassJet_MaxSpeedEnvelope_KeepsAltitudeSpeedProfileWhenCapped()
     {
         var calculator = new AircraftPerformanceCalculator(new IsaAtmosphereModel(), new AerodynamicsCalculator());
@@ -835,6 +982,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void LargeWingAndWeight_AirframeLengthScalesIntoLargeAircraftRange()
     {
         var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
@@ -921,9 +1069,11 @@ public sealed class AircraftIntegrationTests
         var optimizedAircraft = factory.CreateAircraft(family, optimizedType);
         var effects = TypeResearchModifierCalculator.Calculate(optimizedType.ResearchModifiers);
 
-        var expectedReliability = System.Math.Min(0.995d, baselineAircraft.Performance.OverallReliability + effects.ReliabilityDelta);
-        var expectedProductionCost = baselineAircraft.Performance.TotalProductionCost * effects.ProductionCostMultiplier;
-        var expectedProductionManDays = baselineAircraft.Performance.TotalProductionManDays * effects.ProductionManDaysMultiplier;
+        var expectedReliability = baselineAircraft.Performance.OverallReliability + effects.ReliabilityDelta;
+        var expectedProductionCost = baselineAircraft.Performance.AirframeProductionCost * effects.ProductionCostMultiplier
+            + baselineAircraft.Performance.EnginesProductionCost;
+        var expectedProductionManDays = baselineAircraft.Performance.AirframeProductionManDays * effects.ProductionManDaysMultiplier
+            + baselineAircraft.Performance.EnginesProductionManDays;
 
         Assert.That(optimizedAircraft.Performance.OverallReliability, Is.EqualTo(expectedReliability).Within(1e-9));
         Assert.That(optimizedAircraft.Performance.TotalProductionCost, Is.EqualTo(expectedProductionCost).Within(0.01d));
@@ -931,6 +1081,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void TypeResearchModifiers_AdjustResearchTypeQuoteCostAndTime()
     {
         var factory = CreateFactory();
@@ -974,6 +1125,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void ResearchModifiers_AdjustEngineQuoteCostAndTime()
     {
         var calculator = new ResearchCalculator();
@@ -1026,6 +1178,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void ResearchModifiers_AdjustFamilyQuoteCostAndTime()
     {
         var factory = CreateFactory();
@@ -1058,6 +1211,7 @@ public sealed class AircraftIntegrationTests
 
 
     [Test]
+    [Category("Extended")]
     public void DeltaWing_HighSpeedDragModifier_IncreasesTopSpeedAbove500KilometersPerHour()
     {
         var calculator = new AircraftPerformanceCalculator(new IsaAtmosphereModel(), new AerodynamicsCalculator());
@@ -1168,6 +1322,7 @@ public sealed class AircraftIntegrationTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Naca4DigitLightProfile_HighSpeedDragPenalty_ReducesTopSpeedAtHighSpeed()
     {
         var calculator = new AircraftPerformanceCalculator(new IsaAtmosphereModel(), new AerodynamicsCalculator());

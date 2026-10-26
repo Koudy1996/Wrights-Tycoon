@@ -7,5 +7,6 @@ public interface IAirframeCalculator
     AirframePerformanceReport Calculate(
         AirframeDefinition definition,
         AirframeParameters parameters,
-        HistoricalCampaignTechnologyModifiers? technologyModifiers = null);
+        HistoricalCampaignTechnologyModifiers? technologyModifiers = null,
+        AirframeTechnologyEffects? technologyEffects = null);
 }

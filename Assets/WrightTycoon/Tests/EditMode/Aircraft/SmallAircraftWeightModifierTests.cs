@@ -10,6 +10,7 @@ using WrightTycoon.Core.Simulation;
 namespace WrightTycoon.Core.Tests.Aircraft;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class SmallAircraftWeightModifierTests
 {
     [Test]

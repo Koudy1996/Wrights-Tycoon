@@ -1,9 +1,14 @@
 using System;
+using WrightTycoon.Core.Airframes;
 
 namespace WrightTycoon.Core.Aircraft;
 
 public sealed class AircraftTypeDefinition
 {
+    public AirframeTechnologySnapshot? TechnologySnapshot { get; init; }
+
+    public int TechnologyModelVersion { get; init; } = 1;
+
     public string Id { get; init; } = string.Empty;
 
     public string FamilyId { get; init; } = string.Empty;
@@ -28,8 +33,20 @@ public sealed class AircraftTypeDefinition
 
     public TypeResearchModifierPoints ResearchModifiers { get; init; } = new();
 
+    public int ConstructionDurabilityLevel { get; init; }
+
+    public int ServiceIntervalHours { get; init; } = 1000;
+
+    /// <summary>Legacy save compatibility only. New commercial guarantees are defined by each contract.</summary>
+    public int GuaranteedSupportMonths { get; init; } = 120;
+
     public void Validate()
     {
+        if (TechnologyModelVersion != 1 && TechnologyModelVersion != 2)
+            throw new ArgumentOutOfRangeException(nameof(TechnologyModelVersion));
+        TechnologySnapshot?.Validate();
+        if (TechnologyModelVersion == 2 && TechnologySnapshot is null)
+            throw new InvalidOperationException("Weighted technology requires a frozen type snapshot.");
         if (string.IsNullOrWhiteSpace(Id))
         {
             throw new ArgumentException("Type id cannot be empty.", nameof(Id));
@@ -61,6 +78,12 @@ public sealed class AircraftTypeDefinition
         }
 
         ResearchModifiers.Validate();
+        Fleet.LifecycleCalculator.ValidateDurability(ConstructionDurabilityLevel);
+        Fleet.LifecycleCalculator.ValidateServiceInterval(ServiceIntervalHours);
+        if (GuaranteedSupportMonths <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(GuaranteedSupportMonths));
+        }
     }
 }
 

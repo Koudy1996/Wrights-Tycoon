@@ -15,4 +15,11 @@ public sealed record FactoryMonthlyProductionReport(
     IReadOnlyDictionary<string, int> WarehouseUnitsByDesign,
     int TotalWarehouseUnits,
     double TotalFactoryMaintenanceExpenses,
-    double TotalActiveEquipmentExpenses);
+    double TotalActiveEquipmentExpenses)
+{
+    public double TotalPhysicalCapacityManDays { get; init; }
+    public double TotalStaffCapacityManDays { get; init; }
+    public double SupportProductionManDays { get; init; }
+    public double PhysicalCapacityUtilization { get; init; }
+    public bool UsesExternalEngineSupply { get; init; }
+}

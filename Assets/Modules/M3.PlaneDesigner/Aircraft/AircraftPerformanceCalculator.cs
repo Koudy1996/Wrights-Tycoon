@@ -8,6 +8,7 @@ using WrightTycoon.Core.Math;
 using WrightTycoon.Core.Physics;
 using WrightTycoon.Core.Production;
 using WrightTycoon.Core.Units;
+using WrightTycoon.Core.Fleet;
 
 namespace WrightTycoon.Core.Aircraft;
 
@@ -52,7 +53,10 @@ public sealed class AircraftPerformanceCalculator
         Airframe airframe,
         AircraftCategory category,
         AircraftNavigationEquipment navigationEquipment,
-        AircraftCategoryRoleRequirement roleModule)
+        AircraftCategoryRoleRequirement roleModule,
+        int constructionDurabilityLevel = 0,
+        int serviceIntervalHours = 1000,
+        AirframeTechnologyEffects? technologyEffects = null)
     {
         if (engine is null)
         {
@@ -64,22 +68,48 @@ public sealed class AircraftPerformanceCalculator
             throw new ArgumentNullException(nameof(airframe));
         }
 
+        LifecycleCalculator.ValidateDurability(constructionDurabilityLevel);
+        technologyEffects?.Validate();
+        LifecycleCalculator.ValidateServiceInterval(serviceIntervalHours);
+        var durabilityMassMultiplier = 1d + LifecycleBalance.StructuralMassPerDurabilityLevel * constructionDurabilityLevel;
+        var durabilityProductionMultiplier = 1d + LifecycleBalance.StructuralProductionPerDurabilityLevel * constructionDurabilityLevel;
+        var durabilityDragMultiplier = 1d + LifecycleBalance.StructuralDragPerDurabilityLevel * constructionDurabilityLevel;
         var categoryProfile = AircraftCategoryCatalog.GetProfile(category);
         var navigationEffects = AircraftNavigationEquipmentBalance.GetEffects(navigationEquipment);
         var precisionEffects = PrecisionEngineeringBalance.GetEffects(airframe.Parameters.PrecisionEngineeringLevel);
         var engineCount = airframe.Parameters.EngineCount;
         var wingAreaSquareMeters = System.Math.Max(airframe.Parameters.WingAreaSquareMeters, Numeric.Epsilon);
         var baseDragCoefficient = System.Math.Max(
-            airframe.Performance.DragCoefficient,
+            airframe.Performance.DragCoefficient * durabilityDragMultiplier,
             PlaneDesignerBalance.Performance.MinimumDragCoefficient);
         var wingPositionDragFactor = GetWingPositionSpeedDragFactor(airframe.Parameters.WingPosition);
+        var referenceDryMass = airframe.Performance.LandingGearReferenceStructureKilograms
+            + engine.Performance.Weight.Kilograms * engineCount
+            + PlaneDesignerBalance.Performance.EmptyWeightBaseSystemsKilograms
+            + engineCount * PlaneDesignerBalance.Performance.EmptyWeightPerEngineSystemsKilograms;
+        var landingGear = LandingGearCalculator.Calculate(referenceDryMass, airframe.Parameters.LandingGearType,
+            airframe.Performance.LandingGearSystemsTechnology, airframe.Performance.LandingGearBodyTechnology,
+            precisionEffects.WeightMultiplier, airframe.Performance.LandingGearDragAdjustment, durabilityMassMultiplier);
         var dragCoefficient = Numeric.Clamp(
             (baseDragCoefficient * wingPositionDragFactor) + navigationEffects.DragCoefficientDelta,
             PlaneDesignerBalance.Performance.MinimumDragCoefficient,
             PlaneDesignerBalance.Performance.SpeedCalculationMaximumDragCoefficient);
         var hasDeltaWingDragModifier = airframe.Parameters.WingShape == WingShape.Delta;
         var wingProfile = airframe.Parameters.WingProfile;
-        var liftCoefficient = Numeric.Clamp(
+        var modularProfile = airframe.Parameters.UseModularWingProfile;
+        // Both contributions below use wing planform area as their common reference.
+        // Legacy fixtures retain the old coefficient interpretation unchanged.
+        var modularBodyDragCoefficient = modularProfile
+            ? (dragCoefficient * airframe.Performance.AirframeFrontalAreaSquareMeters
+                + landingGear.CruiseDragAreaSquareMeters) / wingAreaSquareMeters
+            : 0d;
+        var legacyGearDragCoefficient = landingGear.CruiseDragAreaSquareMeters / wingAreaSquareMeters;
+        var modularWingDragCoefficient = modularProfile
+            ? airframe.Performance.WingProfileDragCoefficient * durabilityDragMultiplier * wingPositionDragFactor
+            : 0d;
+        var liftCoefficient = modularProfile
+            ? System.Math.Max(airframe.Performance.LiftCoefficient, Numeric.Epsilon)
+            : Numeric.Clamp(
             airframe.Performance.LiftCoefficient,
             PlaneDesignerBalance.Performance.MinimumLiftCoefficient,
             PlaneDesignerBalance.Performance.MaximumLiftCoefficient);
@@ -93,10 +123,11 @@ public sealed class AircraftPerformanceCalculator
             + (engineCount * PlaneDesignerBalance.Performance.EmptyWeightPerEngineSystemsKilograms)
             + (airframe.Parameters.CrewCount * PlaneDesignerBalance.Performance.EmptyWeightPerCrewSystemsKilograms);
         systemsMassKilograms *= CalculateSmallAircraftSystemsMassFactor(engine, airframe);
+        if (technologyEffects is not null) systemsMassKilograms /= technologyEffects.SystemsMass;
 
         // Category weight modifiers can be negative (for very light categories), so do not clamp.
         var categoryStructuralMassKilograms = categoryProfile.WeightModifierKilograms;
-        var emptyWeightKilograms = baseStructuralWithoutFuelKilograms
+        var emptyWeightKilograms = baseStructuralWithoutFuelKilograms * durabilityMassMultiplier
             + engineMassKilograms
             + systemsMassKilograms
             + categoryStructuralMassKilograms
@@ -108,13 +139,18 @@ public sealed class AircraftPerformanceCalculator
             var altitude = EvaluationAltitudes[index];
             var density = _atmosphereModel.GetDensityAtAltitude(altitude).KilogramsPerCubicMeter;
             var thrust = GetThrustAtAltitude(engine, altitude) * engineCount;
-            var maxSpeed = CalculateMaximumSpeedMetersPerSecond(
+            var maxSpeed = modularProfile
+                ? CalculateModularMaximumSpeedMetersPerSecond(thrust, density, wingAreaSquareMeters,
+                    modularBodyDragCoefficient, modularWingDragCoefficient, hasDeltaWingDragModifier,
+                    airframe.Parameters.WingDesignSpeedKph)
+                : CalculateMaximumSpeedMetersPerSecond(
                 thrust,
                 density,
                 wingAreaSquareMeters,
                 dragCoefficient,
                 hasDeltaWingDragModifier,
-                wingProfile);
+                wingProfile,
+                legacyGearDragCoefficient);
             maxSpeed += categoryProfile.SpeedModifierMetersPerSecond;
             speedPoints[index] = new AircraftPerformancePoint(altitude, System.Math.Max(0d, maxSpeed));
         }
@@ -123,6 +159,8 @@ public sealed class AircraftPerformanceCalculator
         var maximumSpeedKilometersPerHour = GetMaximumSpeedKilometersPerHour(speedPoints);
         var speedWeightFactor = CalculateSpeedWeightFactor(maximumSpeedKilometersPerHour);
         emptyWeightKilograms *= speedWeightFactor;
+        // Gear is sized independently and must not receive speed/material/technology factors again.
+        emptyWeightKilograms += landingGear.MassKilograms;
 
         var wetWeightKilograms = (emptyWeightKilograms * (1d + PlaneDesignerBalance.Performance.WetWeightMarginRatio))
             + fuelMassKilograms;
@@ -131,7 +169,7 @@ public sealed class AircraftPerformanceCalculator
         var seaLevelThrustPerEngine = GetThrustAtAltitude(engine, 0d);
         var totalSeaLevelThrust = seaLevelThrustPerEngine * engineCount;
         var runwayLengthMeters = GetRunwayLengthMeters(airframe.Parameters.RunwayType);
-        var takeoffLiftCoefficient = CalculateTakeoffLiftCoefficient(liftCoefficient);
+        var takeoffLiftCoefficient = modularProfile ? liftCoefficient : CalculateTakeoffLiftCoefficient(liftCoefficient);
         var maximumWeightKilograms = CalculateMaximumWeightKilograms(
             runwayLengthMeters,
             seaLevelDensity,
@@ -158,7 +196,7 @@ public sealed class AircraftPerformanceCalculator
             maximumWeightNewtons,
             cruiseDensity,
             wingAreaSquareMeters,
-            liftCoefficient);
+            modularProfile ? liftCoefficient * 0.55d : liftCoefficient);
         var maxSpeedAtCruise = System.Math.Max(0d, GetSpeedAtAltitude(speedPoints, cruiseAltitudeMeters));
         var minimumCruiseSpeedAtAltitude = System.Math.Min(
             PlaneDesignerBalance.Performance.MinimumCruiseSpeedMetersPerSecond,
@@ -168,11 +206,15 @@ public sealed class AircraftPerformanceCalculator
             minimumCruiseSpeedAtAltitude,
             maxSpeedAtCruise);
 
-        var cruiseDragCoefficient = ApplySpeedDependentWingDragModifiers(
+        // CLmax is a takeoff/stall capability, not a normal cruise operating coefficient.
+        var cruiseDragCoefficient = modularProfile
+            ? CalculateModularDragCoefficient(modularBodyDragCoefficient, modularWingDragCoefficient,
+                hasDeltaWingDragModifier, airframe.Parameters.WingDesignSpeedKph, optimalCruiseSpeedMetersPerSecond)
+            : ApplySpeedDependentWingDragModifiers(
             dragCoefficient,
             hasDeltaWingDragModifier,
             wingProfile,
-            optimalCruiseSpeedMetersPerSecond);
+                optimalCruiseSpeedMetersPerSecond) + legacyGearDragCoefficient;
         var requiredCruiseThrust = 0.5d
             * cruiseDensity
             * optimalCruiseSpeedMetersPerSecond
@@ -195,7 +237,8 @@ public sealed class AircraftPerformanceCalculator
         var bodyFrontalAreaSquareMeters = CalculateBodyFrontalAreaSquareMeters(maximumWeightKilograms, wingAreaSquareMeters);
         var totalFrontalAreaSquareMeters = (engine.Performance.EngineFrontalAreaSquareMeters * engineCount)
             + bodyFrontalAreaSquareMeters;
-        var totalDragAreaSquareMeters = cruiseDragCoefficient * totalFrontalAreaSquareMeters;
+        var totalDragAreaSquareMeters = cruiseDragCoefficient
+            * (modularProfile ? wingAreaSquareMeters : totalFrontalAreaSquareMeters);
 
         var maneuverability = Numeric.Clamp(
             airframe.Performance.Maneuverability - (maximumWeightKilograms * PlaneDesignerBalance.Performance.ManeuverabilityWeightPenaltyPerKilogram),
@@ -214,8 +257,10 @@ public sealed class AircraftPerformanceCalculator
             * ProductionEconomyBalance.GetRoleManDaysRate(roleModule);
         var navigationParts = CalculateNavigationParts(navigationEquipment, airframe.Performance.ProductionCost);
         var navigationManDays = CalculateNavigationManDays(navigationEquipment, airframe.Performance.ProductionManDays);
-        var unscaledAirframeProductionCost = airframe.Performance.ProductionCost + rolePartsAdjustment + navigationParts;
-        var unscaledAirframeProductionManDays = airframe.Performance.ProductionManDays + roleManDaysAdjustment + navigationManDays;
+        var durabilityParts = airframe.Performance.ProductionCost * (durabilityProductionMultiplier - 1d);
+        var durabilityManDays = airframe.Performance.ProductionManDays * (durabilityProductionMultiplier - 1d);
+        var unscaledAirframeProductionCost = airframe.Performance.ProductionCost + durabilityParts + rolePartsAdjustment + navigationParts;
+        var unscaledAirframeProductionManDays = airframe.Performance.ProductionManDays + durabilityManDays + roleManDaysAdjustment + navigationManDays;
         var unscaledEnginesProductionCost = engine.Performance.Cost * engineCount;
         var unscaledEnginesProductionManDays = engine.Performance.ProductionManDays * engineCount;
         var airframeProductionCost = unscaledAirframeProductionCost * precisionEffects.ProductionCostMultiplier;
@@ -235,7 +280,8 @@ public sealed class AircraftPerformanceCalculator
             navigationParts,
             "Navigation equipment",
             precisionEffects.ProductionCostMultiplier,
-            precisionEffects.Level);
+            precisionEffects.Level,
+            durabilityParts);
         var productionManDaysBreakdown = BuildAircraftProductionBreakdown(
             airframe.Performance.ProductionManDaysBreakdown,
             airframe.Performance.ProductionManDays,
@@ -247,7 +293,8 @@ public sealed class AircraftPerformanceCalculator
             navigationManDays,
             "Navigation equipment",
             precisionEffects.ProductionManDaysMultiplier,
-            precisionEffects.Level);
+            precisionEffects.Level,
+            durabilityManDays);
 
         return new AircraftPerformanceReport(
             Array.AsReadOnly(speedPoints),
@@ -273,7 +320,12 @@ public sealed class AircraftPerformanceCalculator
             airframeProductionCost,
             airframeProductionManDays,
             enginesProductionCost,
-            enginesProductionManDays);
+            enginesProductionManDays)
+        {
+            LandingGear = landingGear,
+            ExpectedLifeHours = LifecycleCalculator.CalculateExpectedLifeHours(
+                category, overallReliability, serviceIntervalHours, constructionDurabilityLevel),
+        };
     }
 
     private static ProductionBreakdown BuildAircraftProductionBreakdown(
@@ -287,9 +339,14 @@ public sealed class AircraftPerformanceCalculator
         double navigationAmount,
         string navigationLabel,
         double precisionMultiplier,
-        int precisionLevel)
+        int precisionLevel,
+        double durabilityAmount)
     {
         var items = new List<ProductionBreakdownItem>();
+        if (durabilityAmount > Numeric.Epsilon)
+        {
+            items.Add(new ProductionBreakdownItem("Construction durability", durabilityAmount));
+        }
         if (airframeBreakdown is null)
         {
             items.Add(new ProductionBreakdownItem("Airframe", airframeTotal));
@@ -383,16 +440,17 @@ public sealed class AircraftPerformanceCalculator
         double wingAreaSquareMeters,
         double dragCoefficient,
         bool hasDeltaWingDragModifier,
-        WingProfileType wingProfile)
+        WingProfileType wingProfile,
+        double gearDragCoefficient)
     {
         var hasSpeedDependentDragModifier = hasDeltaWingDragModifier || wingProfile == WingProfileType.Naca4DigitLight;
         if (!hasSpeedDependentDragModifier)
         {
-            return CalculateSpeedFromDragCoefficient(totalThrustNewtons, densityKilogramsPerCubicMeter, wingAreaSquareMeters, dragCoefficient);
+            return CalculateSpeedFromDragCoefficient(totalThrustNewtons, densityKilogramsPerCubicMeter, wingAreaSquareMeters, dragCoefficient + gearDragCoefficient);
         }
 
         // Fixed-point iteration resolves speed-dependent drag modifiers (delta and wing profile).
-        var effectiveDragCoefficient = dragCoefficient;
+        var effectiveDragCoefficient = dragCoefficient + gearDragCoefficient;
         var maximumSpeedMetersPerSecond = 0d;
         for (var iteration = 0; iteration < 4; iteration++)
         {
@@ -405,10 +463,55 @@ public sealed class AircraftPerformanceCalculator
                 dragCoefficient,
                 hasDeltaWingDragModifier,
                 wingProfile,
-                maximumSpeedMetersPerSecond);
+                maximumSpeedMetersPerSecond) + gearDragCoefficient;
         }
 
         return maximumSpeedMetersPerSecond;
+    }
+
+    private static double CalculateModularMaximumSpeedMetersPerSecond(
+        double totalThrustNewtons,
+        double densityKilogramsPerCubicMeter,
+        double wingAreaSquareMeters,
+        double bodyDragCoefficient,
+        double wingDragCoefficient,
+        bool hasDeltaWingDragModifier,
+        double designSpeedKph)
+    {
+        if (totalThrustNewtons <= 0d) return 0d;
+        var lower = 0d;
+        var upper = System.Math.Max(1d, CalculateSpeedFromDragCoefficient(totalThrustNewtons,
+            densityKilogramsPerCubicMeter, wingAreaSquareMeters, bodyDragCoefficient + wingDragCoefficient));
+        double DragAt(double speed) => 0.5d * densityKilogramsPerCubicMeter * wingAreaSquareMeters
+            * speed * speed * CalculateModularDragCoefficient(bodyDragCoefficient, wingDragCoefficient,
+                hasDeltaWingDragModifier, designSpeedKph, speed);
+        // The delta planform benefit can move the solution above the unmodified estimate.
+        while (DragAt(upper) < totalThrustNewtons) upper *= 2d;
+        for (var iteration = 0; iteration < 64; iteration++)
+        {
+            var middle = (lower + upper) * 0.5d;
+            if (DragAt(middle) < totalThrustNewtons) lower = middle;
+            else upper = middle;
+        }
+        return (lower + upper) * 0.5d;
+    }
+
+    private static double CalculateModularDragCoefficient(
+        double bodyDragCoefficient,
+        double wingDragCoefficient,
+        bool hasDeltaWingDragModifier,
+        double designSpeedKph,
+        double speedMetersPerSecond)
+    {
+        // The selected speed is a sea-level TAS design reference, kept fixed at altitude.
+        // Only the wing contribution receives profile-efficiency and overspeed effects;
+        // do not reuse legacy NACA/laminar bonuses or clamp away high-speed penalties.
+        var speedKph = speedMetersPerSecond * 3.6d;
+        var deltaFactor = hasDeltaWingDragModifier
+            ? 1d - CalculateDeltaWingHighSpeedDragReductionRatio(speedKph)
+            : 1d;
+        return System.Math.Max(0d, bodyDragCoefficient) + System.Math.Max(wingDragCoefficient, Numeric.Epsilon)
+            * deltaFactor * WingProfileCalculator.CalculateSpeedDragMultiplier(speedKph, designSpeedKph);
     }
 
     private static double CalculateSpeedFromDragCoefficient(
@@ -576,9 +679,11 @@ public sealed class AircraftPerformanceCalculator
         int engineCount,
         double categoryReliabilityModifierDelta)
     {
-        var multiEnginePenalty = 1d - ((1d - engineReliability) * engineCount * PlaneDesignerBalance.Performance.MultiEngineReliabilityPenaltyFactor);
+        // Extra engines must not multiply a surplus rating into an artificial reliability bonus.
+        var multiEnginePenalty = 1d - (System.Math.Max(0d, 1d - engineReliability) * engineCount * PlaneDesignerBalance.Performance.MultiEngineReliabilityPenaltyFactor)
+            + System.Math.Max(0d, engineReliability - 1d);
         var overall = (multiEnginePenalty * airframeReliabilityModifier) + categoryReliabilityModifierDelta;
-        return Numeric.Clamp(overall, 0.2d, 0.995d);
+        return System.Math.Max(0.2d, overall);
     }
 
     private static double CalculateSmallAircraftSystemsMassFactor(Engine engine, Airframe airframe)

@@ -70,7 +70,7 @@ public sealed partial class WrightTycoonLaunchRunner
         var parameters = engine.Parameters;
         var lines = BuildEngineParameterSummary(engine);
         lines.Add("Cooling and precision engineering improve reliability.");
-        lines.Add("Compression, boost, high RPM and extra complexity reduce reliability; the result is clamped to the allowed reliability range.");
+        lines.Add("Compression, boost, high RPM and extra complexity reduce reliability. Bonuses can raise the effective rating above 100%.");
         lines.Add($"Final engine reliability: {FormatUiNumber(engine.Performance.Reliability, "0.000")}.");
         return BuildTechnicalTooltip("designer.engine.reliability", "Engine Reliability Influences", lines);
     }
@@ -140,7 +140,7 @@ public sealed partial class WrightTycoonLaunchRunner
         {
             $"Wing area: {FormatUiNumber(parameters.WingAreaSquareMeters, "0.0")} m2.",
             $"Airframe drag coefficient: {FormatUiNumber(aircraft.Airframe.Performance.DragCoefficient, "0.0000")}.",
-            $"Wing: {HumanizeUiToken(parameters.WingPosition.ToString())}, {HumanizeUiToken(parameters.WingShape.ToString())}, {HumanizeUiToken(parameters.WingProfile.ToString())}.",
+            $"Wing: {HumanizeUiToken(parameters.WingPosition.ToString())}, {HumanizeUiToken(parameters.WingShape.ToString())}, {GetWingProfileDisplayName(parameters)}.",
             $"Navigation drag change: {FormatSignedNumber(navigation.DragCoefficientDelta, "0.0000")} Cd.",
             $"Category speed change: {FormatSignedNumber(category.SpeedModifierMetersPerSecond * 3.6d, "0.0")} km/h.",
             "At each altitude, speed is derived from total engine thrust, air density, wing area and effective drag; delta/profile and jet-envelope rules are then applied.",
@@ -291,7 +291,8 @@ public sealed partial class WrightTycoonLaunchRunner
             + (parameters.CrewCount * PlaneDesignerBalance.Performance.EmptyWeightPerCrewSystemsKilograms);
         var category = AircraftCategoryCatalog.GetProfile(aircraft.FamilyDefinition.Category);
         var navigation = AircraftNavigationEquipmentBalance.GetEffects(aircraft.TypeDefinition.NavigationEquipment);
-        var knownSubtotal = structureWithoutFuel + engines + nominalSystems + category.WeightModifierKilograms + navigation.ExtraWeightKilograms;
+        var knownSubtotal = structureWithoutFuel + engines + nominalSystems + category.WeightModifierKilograms + navigation.ExtraWeightKilograms
+            + (performance.LandingGear?.MassKilograms ?? 0d);
         var scalingResidual = performance.EmptyAircraftWeightKilograms - knownSubtotal;
         return BuildTechnicalTooltip(
             "designer.aircraft.empty-weight",
@@ -302,6 +303,7 @@ public sealed partial class WrightTycoonLaunchRunner
                 $"Engines: {FormatUiInteger(Math.Max(parameters.EngineCount, 1))} x {FormatUiNumber(aircraft.Engine.Performance.Weight.Kilograms, "0.0")} = {FormatUiNumber(engines, "0.0")} kg.",
                 $"Nominal systems (base + engines + {FormatUiInteger(parameters.CrewCount)} crew): {FormatUiNumber(nominalSystems, "0.0")} kg.",
                 $"Category structure: {FormatSignedNumber(category.WeightModifierKilograms, "0.0")} kg; navigation: {FormatSignedNumber(navigation.ExtraWeightKilograms, "0.0")} kg.",
+                $"Landing gear (included once): {FormatUiNumber(performance.LandingGear?.MassKilograms ?? 0d, "0.0")} kg.",
                 $"Aircraft-size and high-speed structural scaling: {FormatSignedNumber(scalingResidual, "0.0")} kg.",
                 $"Final empty weight: {FormatUiNumber(performance.EmptyAircraftWeightKilograms, "0.0")} kg.",
             });
@@ -338,7 +340,7 @@ public sealed partial class WrightTycoonLaunchRunner
                 $"Category change: {FormatSignedNumber(category.ReliabilityModifierDelta, "0.000")}; navigation change: {FormatSignedNumber(navigation.ReliabilityDelta, "0.000")}.",
                 $"After type research modifiers: {FormatUiNumber(aircraft.Performance.OverallReliability, "0.000")}.",
                 $"Company quality level {FormatUiInteger(_headquarters.CompanyQualityLevel)} adds up to {FormatSignedNumber(companyBonus, "0.000")}.",
-                $"Final displayed reliability (after cap): {FormatUiNumber(effective, "0.000")}.",
+                $"Final displayed reliability: {FormatUiNumber(effective, "0.000")}; bonuses may exceed 100%.",
             });
     }
 
@@ -353,7 +355,7 @@ public sealed partial class WrightTycoonLaunchRunner
             new[]
             {
                 $"Wing loading: {FormatUiNumber(wingLoading, "0.0")} kg/m2 from {FormatUiNumber(aircraft.Airframe.Performance.TotalWeight.Kilograms, "0.0")} kg / {FormatUiNumber(parameters.WingAreaSquareMeters, "0.0")} m2.",
-                $"Wing: {HumanizeUiToken(parameters.WingPosition.ToString())}, {HumanizeUiToken(parameters.WingShape.ToString())}, {HumanizeUiToken(parameters.WingProfile.ToString())}, aspect ratio {FormatUiNumber(parameters.WingAspectRatio, "0.0")}.",
+                $"Wing: {HumanizeUiToken(parameters.WingPosition.ToString())}, {HumanizeUiToken(parameters.WingShape.ToString())}, {GetWingProfileDisplayName(parameters)}, aspect ratio {FormatUiNumber(parameters.WingAspectRatio, "0.0")}.",
                 $"High-lift and tail controls: {HumanizeUiToken(parameters.FlapType.ToString())}, leading edge flaps {(parameters.HasLeadingEdgeFlaps ? "enabled" : "disabled")}, {HumanizeUiToken(parameters.TailType.ToString())} tail.",
                 $"Construction standard: {HumanizeUiToken(parameters.ConstructionStandard.ToString())}.",
                 $"Final airframe maneuverability: {FormatUiNumber(aircraft.Airframe.Performance.Maneuverability, "0.0")}.",

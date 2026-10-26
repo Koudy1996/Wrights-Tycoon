@@ -6,6 +6,7 @@ using WrightTycoon.Core.Engines;
 namespace WrightTycoon.Core.Tests.Aircraft;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class AircraftFamilyInstalledEngineTests
 {
     [Test]

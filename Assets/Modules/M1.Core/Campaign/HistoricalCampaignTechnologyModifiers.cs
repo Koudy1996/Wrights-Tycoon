@@ -1,4 +1,5 @@
 using WrightTycoon.Core.Balance;
+using Newtonsoft.Json;
 
 namespace WrightTycoon.Core.Campaign;
 
@@ -19,6 +20,7 @@ public readonly record struct HistoricalCampaignTechnologyModifiers
     {
     }
 
+    [JsonConstructor]
     public HistoricalCampaignTechnologyModifiers(
         double enginePerformanceMultiplier,
         double airframeEfficiencyMultiplier,

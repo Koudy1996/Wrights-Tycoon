@@ -34,4 +34,10 @@ public sealed class AirframeBuilder
         var definition = repository.GetById(definitionId);
         return Build(definition, parameters);
     }
+
+    public Airframe Build(AirframeDefinition definition, AirframeParameters parameters, AirframeTechnologyEffects effects)
+    {
+        if (effects is null) throw new ArgumentNullException(nameof(effects));
+        return new Airframe(definition, parameters, _calculator.Calculate(definition, parameters, null, effects));
+    }
 }

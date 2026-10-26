@@ -8,6 +8,7 @@ using WrightTycoon.Core.Production;
 namespace WrightTycoon.Core.Tests.Aircraft;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class DesignerTooltipTests
 {
     private static readonly Type RunnerType = Type.GetType(

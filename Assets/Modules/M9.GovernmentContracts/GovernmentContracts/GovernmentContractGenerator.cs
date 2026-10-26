@@ -12,15 +12,18 @@ public sealed class GovernmentContractGenerator : IGovernmentContractGenerator
     private readonly IGovernmentContractRandomProvider _random;
     private readonly GovernmentContractGeneratorOptions _options;
     private readonly IHistoricalCampaignContractModifierSource? _campaignModifierSource;
+    private readonly WrightTycoon.Core.Contracts.ContractPricingCalculator _economicPricing;
 
     public GovernmentContractGenerator(
         IGovernmentContractRandomProvider random,
         GovernmentContractGeneratorOptions? options = null,
-        IHistoricalCampaignContractModifierSource? campaignModifierSource = null)
+        IHistoricalCampaignContractModifierSource? campaignModifierSource = null,
+        Func<double>? reputationPriceMultiplierProvider = null)
     {
         _random = random ?? throw new ArgumentNullException(nameof(random));
         _options = options ?? new GovernmentContractGeneratorOptions();
         _campaignModifierSource = campaignModifierSource;
+        _economicPricing = new WrightTycoon.Core.Contracts.ContractPricingCalculator(campaignModifierSource, reputationPriceMultiplierProvider);
         _options.Validate();
     }
 
@@ -55,6 +58,16 @@ public sealed class GovernmentContractGenerator : IGovernmentContractGenerator
         var requirements = new GovernmentContractRequirements
         {
             RequiredAircraftType = aircraftType,
+            LifecycleModelVersion = WrightTycoon.Core.Contracts.LifecycleContractPolicy.CurrentLifecycleModelVersion,
+            MinimumExpectedLifeHours = WrightTycoon.Core.Contracts.LifecycleContractPolicy.RequiredLife(aircraftType),
+            MaximumServiceIntervalHours = WrightTycoon.Core.Fleet.LifecycleBalance.ServiceIntervalsHours[_random.NextIntInclusive(0, WrightTycoon.Core.Fleet.LifecycleBalance.ServiceIntervalsHours.Count - 1)],
+            MinimumSupportMonths = WrightTycoon.Core.Contracts.LifecycleContractPolicy.SupportOptionsMonths[_random.NextIntInclusive(0, WrightTycoon.Core.Contracts.LifecycleContractPolicy.SupportOptionsMonths.Count - 1)],
+            OperatingProfileId = WrightTycoon.Core.Contracts.LifecycleContractPolicy.Profile(aircraftType).Id,
+            UtilizationHoursPerMonth = WrightTycoon.Core.Contracts.LifecycleContractPolicy.Profile(aircraftType).UtilizationHoursPerMonth,
+            AverageFlightHours = WrightTycoon.Core.Contracts.LifecycleContractPolicy.Profile(aircraftType).AverageFlightHours,
+            ProcurementPreference = _random.NextDouble() < WrightTycoon.Core.Contracts.LifecycleContractPolicy.PurchasePriceShare
+                ? WrightTycoon.Core.Contracts.ProcurementPreference.PurchasePrice : WrightTycoon.Core.Contracts.ProcurementPreference.WholeLifeCost,
+            MaximumOperatingCostPerUnit = 1d, // Draft; the snapshot supplies the final operating limit.
             SpeedAltitudeBand = speedBand,
             MinimumMaximumSpeedMetersPerSecond = minimumSpeedMetersPerSecond,
             MinimumRangeKilometers = minimumRangeKilometers,
@@ -65,6 +78,10 @@ public sealed class GovernmentContractGenerator : IGovernmentContractGenerator
             MaximumRequiredRunwayLengthMeters = maximumRunwayLengthMeters,
         };
 
+        var priority = _options.BalancedPriorityShare > 0d && _random.NextDouble() < _options.BalancedPriorityShare
+            ? WrightTycoon.Core.Contracts.OperationalCostPriority.Balanced
+            : WrightTycoon.Core.Contracts.ContractPricingBalance.Priority(requirements.ProcurementPreference);
+        requirements = requirements.WithEconomics(_economicPricing.CreateEconomicSnapshot(requirements.AsCivilRequirements(), generatedOn, 1, priority));
         var contractId = $"{_options.ContractIdPrefix}.{generatedOn.Year:0000}{generatedOn.Month:00}.{contractSequence:0000}";
         return new GovernmentContract(contractId, generatedOn, requirements);
     }

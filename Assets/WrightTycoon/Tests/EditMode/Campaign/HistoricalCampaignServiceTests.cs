@@ -12,6 +12,7 @@ namespace WrightTycoon.Core.Tests.Campaign;
 public sealed class HistoricalCampaignServiceTests
 {
     [Test]
+    [Category("Extended")]
     public void Repository_RejectsArticlesThatExceedTheWordLimit()
     {
         var article = string.Join(" ", Enumerable.Repeat("word", HistoricalCampaignValidator.ArticleWordLimit + 1));
@@ -69,6 +70,7 @@ public sealed class HistoricalCampaignServiceTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Service_ReturnsTheNextUpcomingEventForTheCurrentDate()
     {
         var repository = new HistoricalCampaignJsonRepository();
@@ -185,6 +187,7 @@ public sealed class HistoricalCampaignServiceTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Repository_RejectsUnknownContractParameterUnlockTargets()
     {
         var repository = new HistoricalCampaignJsonRepository();
@@ -204,6 +207,7 @@ public sealed class HistoricalCampaignServiceTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Repository_RejectsUnsupportedEffectTypes()
     {
         var repository = new HistoricalCampaignJsonRepository();
@@ -223,6 +227,7 @@ public sealed class HistoricalCampaignServiceTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Repository_RejectsContractMixEffectWithoutBalanceKey()
     {
         var repository = new HistoricalCampaignJsonRepository();
@@ -242,6 +247,7 @@ public sealed class HistoricalCampaignServiceTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Repository_RejectsContractMixEffectWithInvalidTarget()
     {
         var repository = new HistoricalCampaignJsonRepository();
@@ -261,6 +267,7 @@ public sealed class HistoricalCampaignServiceTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Repository_RejectsEventsOutsideSupportedYearRange()
     {
         var repository = new HistoricalCampaignJsonRepository();

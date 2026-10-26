@@ -16,6 +16,141 @@ namespace WrightTycoon.Core.Tests.Contracts;
 [TestFixture]
 public sealed class ContractSystemTests
 {
+    private static WrightTycoon.Core.Fleet.ServiceOfferSnapshot FrozenOffer(int interval, int months, double price, double repair, double downtime) =>
+        LifecycleContractPolicy.ReferenceServiceOffer(0d, interval, months) with
+        { SparePartsPerService = 1, SparePartUnitPrice = price, ServicePricePerEvent = price,
+            ExpectedRepairCostPerHour = repair, DowntimeCostPerHour = downtime };
+
+    [Test]
+    public void OperationalCostAmortization_UsesAircraftLifetimeAndEffectiveReliabilityInsteadOfContractMinimum()
+    {
+        var aircraft = CreateAircraft(0.8d, 1000d, 100d, 90d, 80d, 500d, 2, 0d);
+        var requirements = new ContractRequirements { LifecycleModelVersion = 2, MaintenanceModelVersion = 2,
+            MinimumExpectedLifeHours = 1000d, MaximumOperatingCostPerUnit = 10000d,
+            ProcurementPreference = ProcurementPreference.WholeLifeCost };
+        var normal = LifecycleCostCalculator.QuoteForContract(aircraft, requirements, 100000d);
+        var improved = LifecycleCostCalculator.QuoteForContract(aircraft, requirements, 100000d, 0.95d);
+        var expected = WrightTycoon.Core.Fleet.LifecycleCalculator.CalculateExpectedLifeHours(aircraft.FamilyDefinition.Category,
+            0.8d, aircraft.TypeDefinition.ServiceIntervalHours, aircraft.TypeDefinition.ConstructionDurabilityLevel);
+        Assert.That(normal.ContractHours, Is.EqualTo((expected + requirements.MinimumExpectedLifeHours) / 2d));
+        Assert.That(normal.ContractHours, Is.GreaterThan(requirements.MinimumExpectedLifeHours));
+        Assert.That(improved.ContractHours, Is.GreaterThan(normal.ContractHours));
+        Assert.That(improved.PurchasePrice / improved.ContractHours, Is.LessThan(normal.PurchasePrice / normal.ContractHours));
+        var offer = new Contract("actual-life", "Buyer", 20, 12, requirements, 0, 100000d);
+        var evaluator = new ContractEvaluator(maintenanceOfferProvider: (_, _, _) =>
+            FrozenOffer(1000, 120, 0d, 0d, 0d));
+        Assert.That(evaluator.Evaluate(offer, aircraft).CanDeliver, Is.True,
+            "$100000 / actual 18000 h fits $10/h; amortizing over required 1000 h would incorrectly reject it.");
+    }
+    [Test]
+    public void OperationalCostRule_ExcludesIncidentalCostsForEveryLifecycleContract()
+    {
+        var aircraft = CreateAircraft(0.9d, 1000d, 100d, 90d, 80d, 500d, 2, 0d);
+        Contract Offer(int version) => new("operation-v" + version, "Buyer", 20, 12, new ContractRequirements
+        {
+            LifecycleModelVersion = version, MinimumExpectedLifeHours = 1000d, MinimumSupportMonths = 120,
+            MaximumOperatingCostPerUnit = 100101d, ProcurementPreference = ProcurementPreference.WholeLifeCost,
+        }, 0, 100000d);
+        var evaluator = new ContractEvaluator(maintenanceOfferProvider: (_, _, _) =>
+            FrozenOffer(1000, 120, 100d, 100d, 100d));
+        Assert.That(evaluator.Evaluate(Offer(2), aircraft).CanDeliver, Is.True);
+        Assert.That(evaluator.Evaluate(Offer(1), aircraft).CanDeliver, Is.True);
+        Assert.That(Offer(2).Requirements.MaximumOperationCostPerHour, Is.EqualTo(100.101d).Within(1e-9d));
+        var quote = new LifecycleCostQuote(100d, 200d, 300d, 1000d, 2000d, 3000d, 100d);
+        Assert.That(quote.OperationCosts, Is.EqualTo(600d));
+        Assert.That(quote.OperationCostsPerHour, Is.EqualTo(6d));
+        Assert.That(quote.TotalCost, Is.EqualTo(6600d));
+    }
+
+    [Test]
+    public void NewContractGeneration_UsesSharedDemandPolicyAndOnlyCurrentServiceIntervals()
+    {
+        var generator = new ContractGenerator(seed: 52);
+        for (var month = 0; month < 24; month++)
+        foreach (var contract in generator.GenerateMonthlyContracts(month))
+        {
+            var r = contract.Requirements;
+            var category = r.RequiredCategory!.Value;
+            Assert.That(r.LifecycleModelVersion, Is.EqualTo(2));
+            Assert.That(LifecycleContractPolicy.ServiceIntervalsHours, Has.Member(r.MaximumServiceIntervalHours));
+            Assert.That(r.MaximumServiceIntervalHours, Is.Not.EqualTo(8000));
+            Assert.That(LifecycleContractPolicy.SupportOptionsMonths, Has.Member(r.MinimumSupportMonths));
+            Assert.That(r.PricingModelVersion, Is.EqualTo(1));
+            Assert.That(r.MaximumOperatingCostPerUnit, Is.EqualTo(r.EconomicSnapshot!.AllowedOperationCostPerHour * r.MinimumExpectedLifeHours).Within(1e-6d));
+            var reference = LifecycleContractPolicy.ReferenceOperationQuote(category, LifecycleContractPolicy.ReferenceUnitProductionCost(category));
+            Assert.That(reference.ScheduledServiceCost, Is.GreaterThan(0d));
+            Assert.That(r.MaximumOperationCostPerHour, Is.EqualTo(r.EconomicSnapshot.AllowedOperationCostPerHour).Within(1e-6d));
+        }
+        Assert.That(LifecycleContractPolicy.PurchasePriceShare, Is.EqualTo(0.25d));
+    }
+    [Test]
+    [Category("Extended")]
+    public void LifecyclePricing_UsesKilogramsAndAppliesReputationOnceWithinBounds()
+    {
+        var aircraft = CreateAircraft(0.9d, 1000d, 100d, 90d, 80d, 500d, 2, 100d);
+        var operatingQuote = LifecycleCostCalculator.Quote(aircraft, 100d, 100000d);
+        Assert.That(operatingQuote.FuelCost, Is.EqualTo(9000d)); // 100 kg/h * 100 h * $0.90/kg avgas
+        var requirements = new ContractRequirements { MinimumReliability = 0.8d };
+        var baseline = new ContractPricingCalculator().CalculateQuote(requirements, 20);
+        var high = new ContractPricingCalculator(reputationPriceMultiplierProvider: () => 100d).CalculateQuote(requirements, 20);
+        var low = new ContractPricingCalculator(reputationPriceMultiplierProvider: () => 0d).CalculateQuote(requirements, 20);
+        Assert.That(high.UnitPrice, Is.EqualTo(baseline.UnitPrice * 1.15d).Within(0.02d));
+        Assert.That(low.UnitPrice, Is.EqualTo(baseline.UnitPrice * 0.85d).Within(0.02d));
+    }
+    [TestCase(0)]
+    [TestCase(1)]
+    [TestCase(2)]
+    [Category("Extended")]
+    public void LifecycleBoardSnapshot_PreservesRequirementsAndQuotedPrice(int savedVersion)
+    {
+        var generator = new ContractGenerator(seed: 44);
+        var board = new ContractBoard(generator, new ContractEvaluator());
+        board.AdvanceMonthAndGenerateContracts();
+        var before = board.OpenContracts[0];
+        var restored = new ContractBoard(generator, new ContractEvaluator());
+        var snapshot = board.CreateSnapshot();
+        snapshot.OpenContracts[0].Requirements.LifecycleModelVersion = savedVersion;
+        snapshot.OpenContracts[0].Requirements.EconomicSnapshot = null; // Explicit legacy fixture, independent of lifecycle schema.
+        restored.RestoreSnapshot(snapshot);
+        var after = restored.OpenContracts[0];
+        Assert.That(after.UnitPrice, Is.EqualTo(before.UnitPrice));
+        Assert.That(after.Requirements.LifecycleModelVersion, Is.EqualTo(savedVersion));
+        Assert.That(after.Requirements.MinimumExpectedLifeHours, Is.EqualTo(before.Requirements.MinimumExpectedLifeHours));
+        Assert.That(after.Requirements.MaximumServiceIntervalHours, Is.EqualTo(before.Requirements.MaximumServiceIntervalHours));
+        Assert.That(after.Requirements.MinimumSupportMonths, Is.EqualTo(before.Requirements.MinimumSupportMonths));
+        Assert.That(after.Requirements.ProcurementPreference, Is.EqualTo(before.Requirements.ProcurementPreference));
+        Assert.That(after.Requirements.MaximumOperatingCostPerUnit, Is.EqualTo(before.Requirements.MaximumOperatingCostPerUnit));
+        Assert.That(after.Requirements.OperatingProfileId, Is.EqualTo(before.Requirements.OperatingProfileId));
+        Assert.That(after.Requirements.MaximumRequiredRunwayLengthMeters, Is.EqualTo(before.Requirements.MaximumRequiredRunwayLengthMeters));
+    }
+    [Test]
+    public void LifecycleCost_CountsEveryServiceAndKeepsFuelOutsideServiceRevenue()
+    {
+        var quote = LifecycleCostCalculator.Calculate(2500d, 100000d, 20d, 2d,
+            FrozenOffer(500, 12, 1000d, 3d, 4d), 100d);
+        Assert.That(quote.FuelCost, Is.EqualTo(100000d));
+        Assert.That(quote.ScheduledServiceCost, Is.EqualTo(4000d));
+        Assert.That(quote.RepairCost, Is.EqualTo(7500d));
+        Assert.That(quote.DowntimeCost, Is.EqualTo(10000d));
+        Assert.That(quote.SupportRiskCost, Is.Zero);
+        Assert.That(quote.TotalCost, Is.EqualTo(quote.PurchasePrice + quote.OperatingCost));
+    }
+
+    [Test]
+    [Category("Extended")]
+    public void LifecycleEvaluator_RejectsInsufficientLifeButContractOwnsSupportAndPurchasePreferenceIgnoresOperatingBudget()
+    {
+        var aircraft = CreateAircraft(0.9d, 1000d, 100d, 90d, 80d, 500d, 2, 100d);
+        Contract ContractFor(double life, int support, ProcurementPreference preference) => new Contract("life", "Buyer", 5, 12,
+            new ContractRequirements { LifecycleModelVersion = 1, MinimumExpectedLifeHours = life,
+                MaximumServiceIntervalHours = 1000, MinimumSupportMonths = support,
+                MaximumOperatingCostPerUnit = 200000d, ProcurementPreference = preference }, 0, 100000d, 50000d, 1d);
+        var evaluator = new ContractEvaluator();
+        Assert.That(evaluator.Evaluate(ContractFor(10000d, 120, ProcurementPreference.PurchasePrice), aircraft).CanDeliver, Is.True);
+        Assert.That(evaluator.Evaluate(ContractFor(10000d, 120, ProcurementPreference.WholeLifeCost), aircraft).CanDeliver, Is.False);
+        Assert.That(evaluator.Evaluate(ContractFor(100000d, 120, ProcurementPreference.PurchasePrice), aircraft).CanDeliver, Is.False);
+        Assert.That(evaluator.Evaluate(ContractFor(10000d, 240, ProcurementPreference.PurchasePrice), aircraft).CanDeliver, Is.True);
+    }
     [Test]
     public void ContractBalance_ExposesEveryAircraftCategoryToGenerators()
     {
@@ -43,7 +178,7 @@ public sealed class ContractSystemTests
             var contract = contracts[index];
             Assert.That(contract.QuantityUnits, Is.InRange(5, 500));
             Assert.That(contract.DeadlineMonths, Is.InRange(6, 36));
-            Assert.That(contract.Requirements.DefinedRequirementCount, Is.InRange(6, 8));
+            Assert.That(contract.Requirements.DefinedRequirementCount, Is.InRange(9, 12));
             Assert.That(contract.Requirements.RequiredCategory.HasValue, Is.True);
             Assert.That(contract.Requirements.MaximumRequiredRunwayLengthMeters.HasValue, Is.True);
             Assert.That(contract.Requirements.MinimumRangeKilometers.HasValue, Is.True);
@@ -201,14 +336,14 @@ public sealed class ContractSystemTests
             {
                 smallOrders++;
                 Assert.That(contract.QuantityUnits, Is.InRange(options.SmallOrderMinQuantityUnits, options.SmallOrderMaxQuantityUnits));
-                Assert.That(contract.AppliedMarkup, Is.EqualTo(ResolveExpectedContractMarkup(ContractBalance.SmallOrderContractMarkup)).Within(1e-9));
+                Assert.That(contract.AppliedMarkup, Is.EqualTo(1.15d * 1.25d * ContractPricingBalance.QuantityMultiplier(contract.QuantityUnits) - 1d).Within(1e-6));
                 AssertRequirementBand(contract.Requirements, categoryProfile, options, monthIndex, expectLowBand: true);
             }
             else
             {
                 largeOrders++;
                 Assert.That(contract.QuantityUnits, Is.InRange(options.LargeOrderMinQuantityUnits, options.LargeOrderMaxQuantityUnits));
-                Assert.That(contract.AppliedMarkup, Is.EqualTo(ResolveExpectedContractMarkup(ContractBalance.LargeOrderContractMarkup)).Within(1e-9));
+                Assert.That(contract.AppliedMarkup, Is.EqualTo(1.15d * 1.25d * ContractPricingBalance.QuantityMultiplier(contract.QuantityUnits) - 1d).Within(1e-6));
                 AssertRequirementBand(contract.Requirements, categoryProfile, options, monthIndex, expectLowBand: false);
             }
         }
@@ -218,6 +353,7 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    [Category("Extended")]
     public void PricingCalculator_AppliesMarkupByOrderSize()
     {
         var calculator = new ContractPricingCalculator();
@@ -243,6 +379,7 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    [Category("Extended")]
     public void PricingCalculator_DoesNotPriceRunwayRequirement()
     {
         var calculator = new ContractPricingCalculator();
@@ -273,6 +410,7 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    [Category("Extended")]
     public void PricingCalculator_AppliesCampaignPriceMultiplierToMilitaryContracts()
     {
         var boostedModifiers = new HistoricalCampaignContractModifiers();
@@ -288,9 +426,9 @@ public sealed class ContractSystemTests
         };
 
         var quoted = calculator.CalculateQuote(requirements, quantityUnits: 60);
-        var expectedMarkup = ((1d + ContractBalance.SmallOrderContractMarkup)
+        var expectedMarkup = (((1d + ContractBalance.SmallOrderContractMarkup)
             * ContractBalance.CampaignPriceVietnamWar
-            * ContractBalance.ContractPriceMarginImprovementMultiplier) - 1d;
+            * ContractBalance.ContractPriceMarginImprovementMultiplier) - 1d) * ContractBalance.AdditionalMarginMultiplier;
 
         Assert.That(quoted.AppliedMarkup, Is.EqualTo(expectedMarkup).Within(1e-9));
         Assert.That(quoted.UnitPrice, Is.GreaterThan(quoted.EstimatedMinimumUnitCost));
@@ -518,6 +656,7 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Balance_ResolvesHistoricalRequirementDifficultyMultiplier_WithClampedYearsAndOffset()
     {
         var startYearMultiplier = ContractBalance.ResolveHistoricalCampaignRequirementDifficultyMultiplier(1946);
@@ -872,6 +1011,7 @@ public sealed class ContractSystemTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Board_RejectsInjectedContracts_WhenCreatedMonthDoesNotMatch()
     {
         var board = new ContractBoard(new StubGenerator(), new ContractEvaluator());
@@ -1449,7 +1589,7 @@ public sealed class ContractSystemTests
     }
 
     private static double ResolveExpectedContractMarkup(double baseMarkup) =>
-        ((1d + baseMarkup) * ContractBalance.ContractPriceMarginImprovementMultiplier) - 1d;
+        (((1d + baseMarkup) * ContractBalance.ContractPriceMarginImprovementMultiplier) - 1d) * ContractBalance.AdditionalMarginMultiplier;
 }
 
 

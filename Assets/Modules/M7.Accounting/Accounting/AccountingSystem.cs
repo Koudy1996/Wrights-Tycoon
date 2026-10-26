@@ -196,7 +196,9 @@ public sealed class AccountingSystem
                     transaction.Sequence,
                     transaction.MonthIndex,
                     date,
-                    transaction.Description.Trim(),
+                    transaction.Description.Trim() == "Fleet service costs."
+                        ? "Production of spare parts"
+                        : transaction.Description.Trim(),
                     transaction.Amount,
                     transaction.CashAfterTransaction,
                     Enum.IsDefined(typeof(AccountingTransactionKind), transaction.Kind)
@@ -245,9 +247,10 @@ public sealed class AccountingSystem
                 monthIndex,
                 date,
                 "Factory cost reversal (rebook).",
-                accumulator.Costs.TotalCosts);
+                accumulator.Costs.TotalCosts - accumulator.Costs.FleetServiceExpenses);
         }
 
+        costs = costs with { FleetServiceExpenses = accumulator.Costs.FleetServiceExpenses };
         accumulator.Costs = costs;
         accumulator.HasFactoryCostsBooked = true;
 
@@ -290,6 +293,28 @@ public sealed class AccountingSystem
         accumulator.SetInventory(inventoryByDesign);
 
         AppendTransaction(monthIndex, date, description.Trim(), income, AccountingTransactionKind.OperatingIncome);
+        accumulator.CashAfterTransactions = Cash;
+    }
+
+    public void UpdateInventorySnapshot(int monthIndex, SimulationDate date, IReadOnlyDictionary<string, InventoryValueEntry> inventory)
+    {
+        if (monthIndex < 0 || inventory is null) throw new ArgumentOutOfRangeException(nameof(monthIndex));
+        GetOrCreateAccumulator(monthIndex, date).SetInventory(inventory);
+    }
+
+    public void RegisterFleetService(int monthIndex, SimulationDate date, double revenue, double expense, string referenceId)
+    {
+        Numeric.ThrowIfNotFinite(revenue, nameof(revenue));
+        Numeric.ThrowIfNotFinite(expense, nameof(expense));
+        if (monthIndex < 0 || revenue < 0d || expense < 0d || string.IsNullOrWhiteSpace(referenceId))
+            throw new ArgumentOutOfRangeException(nameof(referenceId));
+        // A persisted transaction reference prevents rebilling after a repeated month/load.
+        if (_transactions.Exists(t => string.Equals(t.ReferenceId, referenceId, StringComparison.Ordinal))) return;
+        var accumulator = GetOrCreateAccumulator(monthIndex, date);
+        accumulator.Income += revenue;
+        accumulator.Costs = accumulator.Costs with { FleetServiceExpenses = accumulator.Costs.FleetServiceExpenses + expense };
+        AppendTransaction(monthIndex, date, "Fleet service income.", revenue, AccountingTransactionKind.OperatingIncome, referenceId);
+        AppendTransaction(monthIndex, date, "Production of spare parts", -expense, AccountingTransactionKind.OperatingExpense, referenceId);
         accumulator.CashAfterTransactions = Cash;
     }
 

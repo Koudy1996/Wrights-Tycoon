@@ -5,6 +5,7 @@ using NUnit.Framework;
 namespace WrightTycoon.Core.Tests.GovernmentContracts;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class GovernmentContractNotebookWindowTests
 {
     [Test]

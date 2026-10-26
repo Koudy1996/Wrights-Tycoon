@@ -5,6 +5,7 @@ using WrightTycoon.Game.Machines;
 namespace WrightTycoon.Game.Tests;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class MachineStatisticsLedgerTests
 {
     [Test]
@@ -34,6 +35,36 @@ public sealed class MachineStatisticsLedgerTests
 
         Assert.That(ledger.GetProducedEngineUnits("engine.shared"), Is.EqualTo(48));
         Assert.That(ledger.GetSoldEngineUnits("engine.shared"), Is.EqualTo(14));
+    }
+
+    [Test]
+    public void StandaloneMotorProduction_AndExternalAirframeAssemblyDoNotCountEnginesTwice()
+    {
+        var ledger = new MachineStatisticsLedger();
+        ledger.RegisterEngineProduction("engine.shared", 20);
+        ledger.RegisterProduction("type.a", "engine.shared", 2, 6, includeEngineProduction: false);
+        ledger.RegisterProduction("type.b", "engine.shared", 4, 2, includeEngineProduction: false);
+        Assert.That(ledger.GetProducedEngineUnits("engine.shared"), Is.EqualTo(20));
+        Assert.That(ledger.GetProducedAircraftUnits("type.a"), Is.EqualTo(6));
+        Assert.That(ledger.GetProducedAircraftUnits("type.b"), Is.EqualTo(2));
+        var restored = new MachineStatisticsLedger(); restored.RestoreSnapshot(ledger.CreateSnapshot());
+        Assert.That(restored.GetProducedEngineUnits("engine.shared"), Is.EqualTo(20));
+        Assert.That(restored.GetProducedAircraftUnits("type.a"), Is.EqualTo(6));
+    }
+
+    [Test]
+    public void ReplacementEngineSale_DoesNotCreateAircraftSalesOrAircraftRevenue()
+    {
+        var ledger = new MachineStatisticsLedger();
+        ledger.RegisterProduction("type.a", "engine.shared", 2, 3, includeEngineProduction: false);
+        ledger.RegisterEngineProduction("engine.shared", 10);
+        ledger.RegisterSale("type.a", "engine.shared", 2, 1, 100_000d);
+        ledger.RegisterEngineSale("engine.shared", 3);
+        Assert.That(ledger.GetSoldEngineUnits("engine.shared"), Is.EqualTo(5));
+        Assert.That(ledger.GetSoldAircraftUnits("type.a"), Is.EqualTo(1));
+        Assert.That(ledger.GetSalesRevenue("type.a"), Is.EqualTo(100_000d));
+        Assert.That(ledger.GetProducedEngineUnits("engine.shared"), Is.EqualTo(10));
+        Assert.That(ledger.SoldAircraftUnitsByDesignId.Count, Is.EqualTo(1));
     }
 
     [Test]

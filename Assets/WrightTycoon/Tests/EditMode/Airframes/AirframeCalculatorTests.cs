@@ -7,6 +7,7 @@ using WrightTycoon.Core.Physics;
 namespace WrightTycoon.Core.Tests.Airframes;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class AirframeCalculatorTests
 {
     [Test]
@@ -73,7 +74,7 @@ public sealed class AirframeCalculatorTests
     }
 
     [Test]
-    public void RetractableGear_ReducesDragCoefficient()
+    public void GearSelectionDoesNotChangeBodyGeometryOrNeutralSizingReference()
     {
         var calculator = new AirframeCalculator(new AerodynamicsCalculator(), new IsaAtmosphereModel());
         var definition = CreateDefinition();
@@ -85,7 +86,9 @@ public sealed class AirframeCalculatorTests
         var fixedReport = calculator.Calculate(definition, fixedGear);
         var retractableReport = calculator.Calculate(definition, retractable);
 
-        Assert.That(retractableReport.DragCoefficient, Is.LessThan(fixedReport.DragCoefficient));
+        Assert.That(retractableReport.DragCoefficient, Is.EqualTo(fixedReport.DragCoefficient));
+        Assert.That(retractableReport.AirframeFrontalAreaSquareMeters, Is.EqualTo(fixedReport.AirframeFrontalAreaSquareMeters));
+        Assert.That(retractableReport.LandingGearReferenceStructureKilograms, Is.EqualTo(fixedReport.LandingGearReferenceStructureKilograms));
     }
 
     [Test]

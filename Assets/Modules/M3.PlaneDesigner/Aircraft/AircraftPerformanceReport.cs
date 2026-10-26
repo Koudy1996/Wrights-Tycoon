@@ -32,6 +32,10 @@ public sealed record AircraftPerformanceReport(
     double EnginesProductionCost = 0d,
     double EnginesProductionManDays = 0d)
 {
+    public LandingGearReport? LandingGear { get; init; }
+
+    public double ExpectedLifeHours { get; init; }
+
     public double TotalLaborCost => ProductionEconomyBalance.CalculateLaborCost(TotalProductionManDays);
 
     public double CompleteProductionCost => ProductionEconomyBalance.CalculateCompleteCost(TotalProductionCost, TotalProductionManDays);

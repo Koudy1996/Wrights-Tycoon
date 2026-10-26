@@ -5,6 +5,7 @@ using WrightTycoon.Core.Balance;
 namespace WrightTycoon.Core.Tests;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class ProductionEconomyBalanceTests
 {
     [Test]

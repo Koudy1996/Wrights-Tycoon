@@ -266,6 +266,22 @@ public readonly record struct TypeResearchModifierEffects(
 
 public static class TypeResearchModifierCalculator
 {
+    // Each project retains its own 0..10 limit; engineering effects add across
+    // sources rather than clamping the combined total or multiplying discounts.
+    public static TypeResearchModifierEffects CalculateCombined(
+        TypeResearchModifierPoints? familyPoints,
+        TypeResearchModifierPoints? typePoints)
+    {
+        var family = Calculate(familyPoints);
+        var type = Calculate(typePoints);
+        return new TypeResearchModifierEffects(
+            family.ReliabilityDelta + type.ReliabilityDelta,
+            family.ProductionCostMultiplier + type.ProductionCostMultiplier - 1d,
+            family.ProductionManDaysMultiplier + type.ProductionManDaysMultiplier - 1d,
+            1d,
+            1d);
+    }
+
     public static TypeResearchModifierEffects Calculate(TypeResearchModifierPoints? points)
     {
         if (points is null)

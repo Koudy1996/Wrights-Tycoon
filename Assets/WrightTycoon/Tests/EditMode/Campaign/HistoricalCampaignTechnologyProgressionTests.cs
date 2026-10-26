@@ -42,6 +42,7 @@ public sealed class HistoricalCampaignTechnologyProgressionTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Progression_ClampsYearsOutsideSupportedRange()
     {
         var progression = new HistoricalCampaignTechnologyProgression();

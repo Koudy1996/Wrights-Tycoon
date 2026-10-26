@@ -22,12 +22,23 @@ public sealed class MachineStatisticsLedger
 
     public IReadOnlyDictionary<string, double> SalesRevenueByDesignId => _salesRevenueByDesignId;
 
-    public void RegisterProduction(string designId, string engineResearchId, int enginesPerAircraft, int aircraftUnits)
+    public void RegisterProduction(string designId, string engineResearchId, int enginesPerAircraft, int aircraftUnits, bool includeEngineProduction = true)
     {
         ValidateMachineEvent(designId, engineResearchId, enginesPerAircraft, aircraftUnits);
         var engineUnits = checked(enginesPerAircraft * aircraftUnits);
         AddUnits(_producedAircraftUnitsByDesignId, designId, aircraftUnits);
-        AddUnits(_producedEngineUnitsByResearchId, engineResearchId, engineUnits);
+        if (includeEngineProduction) AddUnits(_producedEngineUnitsByResearchId, engineResearchId, engineUnits);
+    }
+
+    public void RegisterEngineProduction(string engineResearchId, int units) => RegisterEngineUnits(_producedEngineUnitsByResearchId, engineResearchId, units);
+
+    public void RegisterEngineSale(string engineResearchId, int units) => RegisterEngineUnits(_soldEngineUnitsByResearchId, engineResearchId, units);
+
+    private static void RegisterEngineUnits(Dictionary<string, int> values, string id, int units)
+    {
+        if (string.IsNullOrWhiteSpace(id)) throw new ArgumentException("Engine ID is required.", nameof(id));
+        if (units <= 0) throw new ArgumentOutOfRangeException(nameof(units));
+        AddUnits(values, id, units);
     }
 
     public void RegisterSale(

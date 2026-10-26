@@ -12,6 +12,160 @@ namespace WrightTycoon.Core.Tests.GovernmentContracts;
 public sealed class GovernmentContractModuleTests
 {
     [Test]
+    public void LifecycleCandidateRequiresActualFrozenInstalledEngineTerms()
+    {
+        var metrics = new GovernmentContractAircraftMetrics(AircraftCategory.RegionalJet, 200d, 200d, 200d,
+            1000d, 1000d, .9d, 50d, 2, 1000d, 10000d,
+            new[] { AircraftCategory.RegionalJet }, ExpectedLifeHours: 20000d);
+        Assert.Throws<ArgumentException>(metrics.Validate);
+        Assert.Throws<InvalidOperationException>(() => metrics.CreateServiceOffer());
+    }
+
+    [Test]
+    public void OperationalCostAmortization_UsesGovernmentCandidateLifetimeInQuoteLimitAndFrozenOffer()
+    {
+        var requirements = new GovernmentContractRequirements
+        {
+            RequiredAircraftType = AircraftCategory.RegionalJet, MinimumMaximumSpeedMetersPerSecond = 100d,
+            MinimumRangeKilometers = 100d, MinimumCrewSize = 1, MaximumRequiredRunwayLengthMeters = 5000d,
+            LifecycleModelVersion = 2, MinimumExpectedLifeHours = 1000d, MaximumOperatingCostPerUnit = 1000d,
+            ProcurementPreference = WrightTycoon.Core.Contracts.ProcurementPreference.WholeLifeCost,
+        };
+        GovernmentContractAircraftMetrics Metrics(double life) => new(AircraftCategory.RegionalJet, 200d, 200d, 200d,
+            1000d, 1000d, 1d, 50d, 2, 1000d, 10000d, new[] { AircraftCategory.RegionalJet }, ExpectedLifeHours: life,
+            FuelBurnKilogramsPerHour: 0d, UnitProductionCost: 0d,
+            CombinedServiceOffer: WrightTycoon.Core.Contracts.LifecycleContractPolicy.ReferenceServiceOffer(0d));
+        var shortQuote = Metrics(2000d).QuoteForContract(requirements, 4000d);
+        var longQuote = Metrics(8000d).QuoteForContract(requirements, 4000d);
+        Assert.That(shortQuote.ContractHours, Is.EqualTo(1500d));
+        Assert.That(longQuote.ContractHours, Is.EqualTo(4500d));
+        Assert.That(longQuote.OperationCostsPerHour, Is.EqualTo(4000d / 4500d));
+        var evaluator = new GovernmentContractComplianceEvaluator();
+        GovernmentContractSubmissionCandidate Candidate(double life) => new("amortization", "Amortization", AircraftLifecycleStage.Completed, Metrics(life));
+        Assert.That(evaluator.Evaluate(requirements, Candidate(2000d), 4000d).IsSelectableInUi, Is.False);
+        Assert.That(evaluator.Evaluate(requirements, Candidate(8000d), 4000d).IsSelectableInUi, Is.True);
+        var contract = new GovernmentContract("locked-operation", new SimulationDate(2000, 1), requirements);
+        contract.Accept(new SimulationDate(2000, 1), Candidate(8000d), 0d);
+        contract.LockUnitPrice(4000d);
+        Assert.That(contract.LockedLifecycleCostQuote!.ContractHours, Is.EqualTo(4500d));
+        Assert.That(contract.LockedLifecycleCostQuote.OperationCostsPerHour, Is.EqualTo(4000d / 4500d));
+    }
+    [Test]
+    public void OperationalCostRule_ControlsEveryLifecycleGovernmentContract()
+    {
+        GovernmentContractRequirements Requirements(int version) => new()
+        {
+            RequiredAircraftType = AircraftCategory.RegionalJet, MinimumMaximumSpeedMetersPerSecond = 100d,
+            MinimumRangeKilometers = 100d, MinimumCrewSize = 1, MaximumRequiredRunwayLengthMeters = 5000d,
+            LifecycleModelVersion = version, MinimumExpectedLifeHours = 1000d,
+            MaximumOperatingCostPerUnit = 1000d, ProcurementPreference = WrightTycoon.Core.Contracts.ProcurementPreference.WholeLifeCost,
+        };
+        var quote = new WrightTycoon.Core.Contracts.LifecycleCostQuote(100d, 200d, 300d, 1000d, 1000d, 1000d, 1000d);
+        var candidate = new GovernmentContractSubmissionCandidate("operation", "Operational", AircraftLifecycleStage.Completed,
+            new GovernmentContractAircraftMetrics(AircraftCategory.RegionalJet, 200d, 200d, 200d, 1000d, 1000d,
+                0.9d, 50d, 2, 1000d, 10000d, new[] { AircraftCategory.RegionalJet }, ExpectedLifeHours: 2000d, CombinedServiceOffer: WrightTycoon.Core.Contracts.LifecycleContractPolicy.ReferenceServiceOffer(0d)));
+        var evaluator = new GovernmentContractComplianceEvaluator();
+        var current = evaluator.Evaluate(Requirements(2), candidate, 100d, quote);
+        var versionOne = evaluator.Evaluate(Requirements(1), candidate, 100d, quote);
+        Assert.That(current.IsSelectableInUi, Is.True);
+        Assert.That(versionOne.IsSelectableInUi, Is.True);
+        var currentBonus = current.ParameterBonuses[current.ParameterBonuses.Count - 1];
+        var versionOneBonus = versionOne.ParameterBonuses[versionOne.ParameterBonuses.Count - 1];
+        Assert.That(currentBonus.ActualValue, Is.EqualTo(0.6d));
+        Assert.That(currentBonus.RequiredValue, Is.EqualTo(1d));
+        Assert.That(currentBonus.BonusValue, Is.GreaterThan(0d));
+        Assert.That(versionOneBonus.ActualValue, Is.EqualTo(0.6d));
+        Assert.That(versionOneBonus.BonusValue, Is.EqualTo(currentBonus.BonusValue));
+        Assert.That(Requirements(2).MaximumOperationCostPerHour, Is.EqualTo(1d));
+    }
+
+    [TestCase(0, Category = "Extended")]
+    [TestCase(1, Category = "Extended")]
+    [TestCase(2)]
+    public void NewGovernmentGeneration_UsesOperationalCostVersionButSavedVersionIsNeverMigrated(int savedVersion)
+    {
+        var generator = new GovernmentContractGenerator(new DeterministicRandomProvider());
+        var board = new GovernmentContractBoard(generator, new DeterministicRandomProvider());
+        board.ProcessMonth(new SimulationDate(2000, 1));
+        var r = board.ActiveContract!.Requirements;
+        Assert.That(r.LifecycleModelVersion, Is.EqualTo(2));
+        Assert.That(WrightTycoon.Core.Contracts.LifecycleContractPolicy.ServiceIntervalsHours, Has.Member(r.MaximumServiceIntervalHours));
+        Assert.That(r.MaximumServiceIntervalHours, Is.Not.EqualTo(8000));
+        Assert.That(r.PricingModelVersion, Is.EqualTo(1));
+        Assert.That(r.MaximumOperatingCostPerUnit, Is.EqualTo(r.EconomicSnapshot!.AllowedOperationCostPerHour * r.MinimumExpectedLifeHours).Within(1e-6d));
+        var snapshot = board.CreateSnapshot();
+        snapshot.ActiveContract!.Requirements.LifecycleModelVersion = savedVersion;
+        snapshot.ActiveContract.Requirements.EconomicSnapshot = null; // Legacy economics must not be upgraded implicitly.
+        var restored = new GovernmentContractBoard(generator, new DeterministicRandomProvider());
+        restored.RestoreSnapshot(snapshot);
+        Assert.That(restored.ActiveContract!.Requirements.LifecycleModelVersion, Is.EqualTo(savedVersion));
+        Assert.That(restored.ActiveContract.Requirements.MaximumOperatingCostPerUnit, Is.EqualTo(r.MaximumOperatingCostPerUnit));
+    }
+    [Test]
+    public void LifecycleAcceptance_LocksPriceAndPreservesTermsAcrossSaveAndDelivery()
+    {
+        var requirements = new GovernmentContractRequirements
+        {
+            RequiredAircraftType = AircraftCategory.RegionalJet, MinimumMaximumSpeedMetersPerSecond = 100d,
+            MinimumRangeKilometers = 100d, MinimumCrewSize = 1, MaximumRequiredRunwayLengthMeters = 5000d,
+            LifecycleModelVersion = 1, MinimumExpectedLifeHours = 10000d, MinimumSupportMonths = 120,
+            MaximumServiceIntervalHours = 1000, MaximumOperatingCostPerUnit = 10000000d,
+            ProcurementPreference = WrightTycoon.Core.Contracts.ProcurementPreference.WholeLifeCost,
+        };
+        var reputation = 1d;
+        var pricing = new GovernmentContractPricingService(() => reputation);
+        var random = new DeterministicRandomProvider();
+        var generator = new StubGovernmentContractGenerator(requirements);
+        var board = new GovernmentContractBoard(generator, random, pricingService: pricing);
+        var date = new SimulationDate(2000, 1);
+        board.ProcessMonth(date);
+        var candidate = new GovernmentContractSubmissionCandidate("life", "Lifecycle", AircraftLifecycleStage.Completed,
+            new GovernmentContractAircraftMetrics(AircraftCategory.RegionalJet, 200d, 200d, 200d, 1000d, 1000d, 0.9d, 50d, 2, 1000d, 10000d,
+                new[] { AircraftCategory.RegionalJet }, 20000d, 1000, 180, 10d, 100000d,
+                CombinedServiceOffer: WrightTycoon.Core.Contracts.LifecycleContractPolicy.ReferenceServiceOffer(100000d, 1000, 180)));
+        Assert.That(board.TryAcceptActiveContract(date, candidate).IsAccepted, Is.True);
+        var locked = board.ActiveContract!.LockedUnitPrice;
+        Assert.That(board.ActiveContract.LockedServiceOffer!.GuaranteedSupportMonths, Is.EqualTo(120), "New acceptance uses the contract, not the candidate's design default of 180 months.");
+        reputation = 1.15d;
+        var restored = new GovernmentContractBoard(generator, new DeterministicRandomProvider(), pricingService: pricing);
+        var snapshot = board.CreateSnapshot();
+        restored.RestoreSnapshot(snapshot);
+        Assert.That(restored.ActiveContract!.LockedUnitPrice, Is.EqualTo(locked));
+        Assert.That(restored.ActiveContract.Requirements.MinimumExpectedLifeHours, Is.EqualTo(10000d));
+        for (var offset = 1; offset <= 6; offset++) restored.ProcessMonth(date.AddMonths(offset));
+        Assert.That(restored.ActiveDeliveryContract, Is.Not.Null);
+        Assert.That(restored.ActiveDeliveryContract!.UnitPrice, Is.EqualTo(locked));
+        Assert.That(restored.ActiveDeliveryContract.LifecycleAircraftMetrics!.Value.ExpectedLifeHours, Is.EqualTo(20000d));
+        Assert.That(restored.ActiveDeliveryContract.ServiceOffer!.GuaranteedSupportMonths, Is.EqualTo(120));
+        Assert.That(restored.ActiveDeliveryContract.ServiceOffer.MaintenanceModelVersion, Is.EqualTo(2));
+        Assert.That(restored.ActiveDeliveryContract.LifecycleAircraftMetrics.Value.MaintenanceModelVersion, Is.EqualTo(2));
+        board.RestoreSnapshot(restored.CreateSnapshot());
+        Assert.That(board.ActiveDeliveryContract!.LifecycleRequirements!.MinimumExpectedLifeHours, Is.EqualTo(10000d));
+        Assert.That(board.ActiveDeliveryContract.ServiceOffer!.ServiceIntervalHours, Is.EqualTo(1000));
+    }
+    [Test]
+    public void LifecycleProcurement_UsesLifetimeBudgetAndNeverWaivesTechnicalRequirements()
+    {
+        GovernmentContractRequirements Requirements(WrightTycoon.Core.Contracts.ProcurementPreference preference, double life = 10000d, int support = 120) => new()
+        {
+            RequiredAircraftType = AircraftCategory.RegionalJet, MinimumMaximumSpeedMetersPerSecond = 100d,
+            MinimumRangeKilometers = 100d, MinimumCrewSize = 1, MaximumRequiredRunwayLengthMeters = 5000d,
+            LifecycleModelVersion = 1, MinimumExpectedLifeHours = life, MinimumSupportMonths = support,
+            MaximumServiceIntervalHours = 1000, MaximumOperatingCostPerUnit = 1000000d, ProcurementPreference = preference,
+        };
+        GovernmentContractSubmissionCandidate Candidate(double fuel) => new("life", "Lifecycle", AircraftLifecycleStage.Completed,
+            new GovernmentContractAircraftMetrics(AircraftCategory.RegionalJet, 200d, 200d, 200d, 1000d, 1000d, 0.9d, 50d, 2, 1000d, 10000d,
+                new[] { AircraftCategory.RegionalJet }, 20000d, 1000, 120, fuel, 100000d,
+                CombinedServiceOffer: WrightTycoon.Core.Contracts.LifecycleContractPolicy.ReferenceServiceOffer(100000d)));
+        var evaluator = new GovernmentContractComplianceEvaluator();
+        var wholeLife = Requirements(WrightTycoon.Core.Contracts.ProcurementPreference.WholeLifeCost);
+        Assert.That(evaluator.Evaluate(wholeLife, Candidate(10d), 100000d).IsSelectableInUi, Is.True);
+        Assert.That(evaluator.Evaluate(wholeLife, Candidate(1000d), 100000d).IsSelectableInUi, Is.False);
+        Assert.That(evaluator.Evaluate(Requirements(WrightTycoon.Core.Contracts.ProcurementPreference.PurchasePrice), Candidate(1000d), 100000d).IsSelectableInUi, Is.True);
+        Assert.That(evaluator.Evaluate(Requirements(WrightTycoon.Core.Contracts.ProcurementPreference.PurchasePrice, 50000d), Candidate(10d)).IsSelectableInUi, Is.False);
+        Assert.That(evaluator.Evaluate(Requirements(WrightTycoon.Core.Contracts.ProcurementPreference.PurchasePrice, support: 240), Candidate(10d)).IsSelectableInUi, Is.True);
+    }
+    [Test]
     public void ProbabilityCalculator_ComputesProportionalAndCappedBonuses()
     {
         var halfBonus = GovernmentContractProbabilityCalculator.CalculateBonusByExcessRatio(0.25d);
@@ -102,6 +256,7 @@ public sealed class GovernmentContractModuleTests
     }
 
     [Test]
+    [Category("Extended")]
     public void PricingService_DoesNotPriceRunwayRequirement()
     {
         var service = new GovernmentContractPricingService();
@@ -137,19 +292,25 @@ public sealed class GovernmentContractModuleTests
     }
 
     [Test]
+    [Category("Extended")]
     public void PricingService_AppliesReleaseMarginImprovement()
     {
         var service = new GovernmentContractPricingService();
 
-        var quote = service.CalculateQuote(CreateRequirements(), 400);
-        var expectedMarkup = ((1d + GovernmentContractBalance.PricingMargin)
-            * GovernmentContractBalance.ContractPriceMarginImprovementMultiplier) - 1d;
+        var requirements = CreateRequirements();
+        var quote = service.CalculateQuote(requirements, 400);
+        var unroundedCost = new WrightTycoon.Core.Contracts.ContractPricingCalculator()
+            .EstimateMinimumUnitProductionCost(requirements.AsCivilRequirements());
+        var expectedMarkup = (((1d + GovernmentContractBalance.PricingMargin)
+            * GovernmentContractBalance.ContractPriceMarginImprovementMultiplier) - 1d) * GovernmentContractBalance.AdditionalMarginMultiplier;
 
         Assert.That(quote.AppliedMargin, Is.EqualTo(expectedMarkup).Within(1e-9d));
+        Assert.That(quote.EstimatedMinimumUnitCost,
+            Is.EqualTo(System.Math.Round(unroundedCost, 2, MidpointRounding.AwayFromZero)));
+        // The quote displays rounded cost, but applies markup before rounding its price.
         Assert.That(
             quote.UnitPrice,
-            Is.EqualTo(System.Math.Round(quote.EstimatedMinimumUnitCost * (1d + expectedMarkup), 2))
-                .Within(0.01d));
+            Is.EqualTo(System.Math.Round(unroundedCost * (1d + expectedMarkup), 2, MidpointRounding.AwayFromZero)));
     }
 
     [Test]
@@ -281,6 +442,7 @@ public sealed class GovernmentContractModuleTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Board_RejectsConceptAircraftSubmissions()
     {
         var random = new DeterministicRandomProvider();
@@ -485,7 +647,9 @@ public sealed class GovernmentContractModuleTests
             CrewSize: crew,
             RequiredRunwayLengthMeters: runway,
             DevelopmentCost: 200000d,
-            QualifiedAircraftTypes: new[] { AircraftCategory.BusinessVipJet, requirements.RequiredAircraftType });
+            QualifiedAircraftTypes: new[] { AircraftCategory.BusinessVipJet, requirements.RequiredAircraftType },
+            CombinedServiceOffer: WrightTycoon.Core.Contracts.LifecycleCostCalculator.CreateEngineLifecycleServiceOffer(
+                WrightTycoon.Core.Tests.Factories.AircraftProductionFactoryTests.CreateCatalogItem("government.fixture", 100, 2, 20).Aircraft));
 
         return new GovernmentContractSubmissionCandidate(
             "design.gov.test",

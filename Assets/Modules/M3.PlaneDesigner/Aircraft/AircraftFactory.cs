@@ -6,6 +6,9 @@ using WrightTycoon.Core.Data;
 using WrightTycoon.Core.Engines;
 using WrightTycoon.Core.Math;
 using WrightTycoon.Core.Research;
+using WrightTycoon.Core.Fleet;
+using WrightTycoon.Core.Production;
+using System.Collections.Generic;
 
 namespace WrightTycoon.Core.Aircraft;
 
@@ -97,17 +100,35 @@ public sealed class AircraftFactory
             ? _engineBuilder.Build(
                 engineDefinition,
                 variantEngine,
-                familyDefinition.InstalledEngineTechnologyModifiers.Value)
-            : _engineBuilder.Build(engineDefinition, variantEngine);
-        var airframe = _airframeBuilder.Build(airframeDefinition, variantAirframe);
+                familyDefinition.InstalledEngineTechnologyModifiers.Value,
+                familyDefinition.InstalledEngineResearchModifiers)
+            : _engineBuilder.Build(engineDefinition, variantEngine, familyDefinition.InstalledEngineResearchModifiers);
+        var technologyEffects = typeDefinition.TechnologyModelVersion == 2
+            ? AirframeTechnologyEffects.Resolve(
+                familyDefinition.TechnologySnapshot ?? throw new InvalidOperationException("Weighted technology requires a frozen family snapshot."),
+                typeDefinition.TechnologySnapshot!)
+            : null;
+        var airframe = technologyEffects is null
+            ? _airframeBuilder.Build(airframeDefinition, variantAirframe)
+            : _airframeBuilder.Build(airframeDefinition, variantAirframe, technologyEffects);
         var performance = _performanceCalculator.Calculate(
             engine,
             airframe,
             familyDefinition.Category,
             typeDefinition.NavigationEquipment,
-            ResolveRoleModule(typeDefinition));
-        var researchModifierEffects = TypeResearchModifierCalculator.Calculate(typeDefinition.ResearchModifiers);
+            ResolveRoleModule(typeDefinition),
+            typeDefinition.ConstructionDurabilityLevel,
+            typeDefinition.ServiceIntervalHours,
+            technologyEffects);
+        var researchModifierEffects = TypeResearchModifierCalculator.CalculateCombined(
+            familyDefinition.ResearchModifiers, typeDefinition.ResearchModifiers);
         performance = ApplyTypeResearchModifierEffects(performance, researchModifierEffects);
+        performance = performance with
+        {
+            ExpectedLifeHours = LifecycleCalculator.CalculateExpectedLifeHours(
+                familyDefinition.Category, performance.OverallReliability,
+                typeDefinition.ServiceIntervalHours, typeDefinition.ConstructionDurabilityLevel),
+        };
         var development = _developmentCostCalculator.Calculate(familyDefinition, baseEngine, variantEngine, baseAirframe, variantAirframe);
 
         return new Aircraft(familyDefinition, typeDefinition, engine, airframe, performance, development);
@@ -257,20 +278,33 @@ public sealed class AircraftFactory
         AircraftPerformanceReport performance,
         TypeResearchModifierEffects effects)
     {
-        var productionCost = System.Math.Max(0d, performance.TotalProductionCost * effects.ProductionCostMultiplier);
-        var productionManDays = System.Math.Max(0d, performance.TotalProductionManDays * effects.ProductionManDaysMultiplier);
-        var reliability = Numeric.Clamp(performance.OverallReliability + effects.ReliabilityDelta, 0.2d, 0.995d);
+        // Finished motors already carry their own research recipe. Aircraft
+        // engineering optimizes only the airframe, systems and assembly share.
+        var airframeCost = performance.AirframeProductionCost * effects.ProductionCostMultiplier;
+        var airframeManDays = performance.AirframeProductionManDays * effects.ProductionManDaysMultiplier;
+        var reliability = System.Math.Max(0.2d, performance.OverallReliability + effects.ReliabilityDelta);
 
         return performance with
         {
-            TotalProductionCost = productionCost,
-            TotalProductionManDays = productionManDays,
-            AirframeProductionCost = performance.AirframeProductionCost * effects.ProductionCostMultiplier,
-            AirframeProductionManDays = performance.AirframeProductionManDays * effects.ProductionManDaysMultiplier,
-            EnginesProductionCost = performance.EnginesProductionCost * effects.ProductionCostMultiplier,
-            EnginesProductionManDays = performance.EnginesProductionManDays * effects.ProductionManDaysMultiplier,
+            TotalProductionCost = airframeCost + performance.EnginesProductionCost,
+            TotalProductionManDays = airframeManDays + performance.EnginesProductionManDays,
+            AirframeProductionCost = airframeCost,
+            AirframeProductionManDays = airframeManDays,
+            CostBreakdown = AddResearchAdjustment(performance.CostBreakdown,
+                performance.TotalProductionCost, airframeCost - performance.AirframeProductionCost),
+            ProductionManDaysBreakdown = AddResearchAdjustment(performance.ProductionManDaysBreakdown,
+                performance.TotalProductionManDays, airframeManDays - performance.AirframeProductionManDays),
             OverallReliability = reliability,
         };
+    }
+
+    private static ProductionBreakdown AddResearchAdjustment(ProductionBreakdown? breakdown, double total, double adjustment)
+    {
+        var items = new List<ProductionBreakdownItem>();
+        if (breakdown is null) items.Add(new ProductionBreakdownItem("Aircraft", total));
+        else items.AddRange(breakdown.Items);
+        items.Add(new ProductionBreakdownItem("Family + type production optimization (airframe/assembly)", adjustment));
+        return new ProductionBreakdown(items);
     }
 }
 

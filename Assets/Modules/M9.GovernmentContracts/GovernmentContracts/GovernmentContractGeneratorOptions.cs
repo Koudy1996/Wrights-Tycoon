@@ -9,6 +9,7 @@ namespace WrightTycoon.Core.GovernmentContracts;
 
 public sealed class GovernmentContractGeneratorOptions
 {
+    public double BalancedPriorityShare { get; init; }
     public IReadOnlyList<AircraftCategory> RequestedAircraftTypes { get; init; } =
         ContractBalance.RequestedCategories.ToArray();
 
@@ -20,6 +21,8 @@ public sealed class GovernmentContractGeneratorOptions
 
     public void Validate()
     {
+        if (double.IsNaN(BalancedPriorityShare) || BalancedPriorityShare < 0d || BalancedPriorityShare > 1d)
+            throw new ArgumentOutOfRangeException(nameof(BalancedPriorityShare));
         if (RequestedAircraftTypes is null || RequestedAircraftTypes.Count == 0)
         {
             throw new InvalidOperationException("At least one requested aircraft type must be configured.");

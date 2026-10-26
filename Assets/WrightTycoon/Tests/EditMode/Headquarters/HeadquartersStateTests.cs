@@ -51,6 +51,7 @@ public sealed class HeadquartersStateTests
     }
 
     [Test]
+    [Category("Extended")]
     public void LegacyCompanyResearchPoints_PreserveTheEarnedBonusOnMigration()
     {
         Assert.That(HeadquartersBalance.MigrateLegacyCompanyResearchPoints(12), Is.EqualTo(24));
@@ -62,11 +63,12 @@ public sealed class HeadquartersStateTests
     }
 
     [Test]
-    public void CompanyReliability_IsGlobalBonusWithHardCap()
+    public void CompanyReliability_IsGlobalBonusThatCanExceedOneHundredPercent()
     {
         Assert.That(HeadquartersBalance.ApplyCompanyReliabilityBonus(0.80d, 3), Is.EqualTo(0.83d).Within(1e-9));
         Assert.That(HeadquartersBalance.ApplyCompanyReliabilityBonus(0.70d, 20), Is.EqualTo(0.90d).Within(1e-9));
-        Assert.That(HeadquartersBalance.ApplyCompanyReliabilityBonus(0.98d, 5), Is.EqualTo(0.995d).Within(1e-9));
+        Assert.That(HeadquartersBalance.ApplyCompanyReliabilityBonus(0.98d, 5), Is.EqualTo(1.03d).Within(1e-9));
+        Assert.That(HeadquartersBalance.ApplyCompanyReliabilityBonus(1.10d, 20), Is.EqualTo(1.30d).Within(1e-9));
     }
 
     [Test]

@@ -4,6 +4,7 @@ using WrightTycoon.Core.Presentation;
 namespace WrightTycoon.Core.Tests.Accounting;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class FinancialValueFormatterTests
 {
     [TestCase(0d, "0")]

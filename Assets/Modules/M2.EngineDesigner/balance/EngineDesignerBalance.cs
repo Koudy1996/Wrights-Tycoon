@@ -8,6 +8,8 @@ public static class EngineDesignerBalance
 {
     public static class Engine
     {
+        public const int AfterburnerAvailableFromYear = 1950;
+        public static bool IsAfterburnerAvailable(int year) => year >= AfterburnerAvailableFromYear;
         public const double MinimumReliability = 0.3d;
         public const double MaximumReliability = 0.9d;
 

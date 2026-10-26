@@ -9,6 +9,7 @@ using WrightTycoon.Core.Simulation;
 namespace WrightTycoon.Core.Tests.Categories;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class DemandNotebookTextTests
 {
     [TestCase(AircraftCategory.LightSportAndRecreational, "Ultralight construction")]

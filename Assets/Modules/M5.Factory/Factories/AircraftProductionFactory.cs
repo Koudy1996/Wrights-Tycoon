@@ -8,6 +8,12 @@ using WrightTycoon.Core.Simulation;
 
 namespace WrightTycoon.Core.Factories;
 
+public interface IExternalAircraftEngineSupply
+{
+    int AvailableEngines(string aircraftDesignId);
+    bool TryConsumeEngines(string aircraftDesignId, int units);
+}
+
 public enum FactoryEquipmentLocation
 {
     Stored = 0,
@@ -47,6 +53,8 @@ public sealed class FactoryEquipmentState
     public string DesignId { get; }
     public FactoryAutomationTier AutomationTier { get; }
     public double PurchaseCost { get; }
+    public FactoryBuildingSize BuildingSize { get; internal set; }
+    public double BaselineProductionManDays { get; internal set; }
     public string? FactoryId { get; internal set; }
     public string? LineId { get; internal set; }
     public int InstallationMonthsRemaining { get; internal set; }
@@ -88,9 +96,22 @@ public sealed class FactorySiteState
     public AircraftProductionLineState? Line { get; internal set; }
     public bool IsUnderConstruction => ConstructionMonthsRemaining > 0;
     public bool IsOperational => ConstructionMonthsRemaining == 0 && Line is not null;
+    public FactoryBuildingSize BuildingSize { get; internal set; }
+    public double LegacyCapacityMd { get; internal set; }
+    public bool NeedsLegacyCapacityMigration { get; internal set; }
+    public double BaselineAircraftManDays { get; internal set; }
+    public int WorkforceEmployeeLimit { get; internal set; } = int.MaxValue;
+    public int PartsAllocationPercent { get; internal set; } = 20;
+    public int ExpansionMonthsRemaining { get; internal set; }
+    public double BuildingCapacityManDays => System.Math.Max(FactoryBalance.GetBuildingCapacityManDays(BuildingSize), LegacyCapacityMd);
+    public double AvailableManDays => IsOperational && ExpansionMonthsRemaining == 0
+        ? System.Math.Min(BuildingCapacityManDays, WorkforceEmployeeLimit * EmployeeMd) : 0d;
+    public double PartsCapacityManDays => AvailableManDays * PartsAllocationPercent / 100d;
+    public double ProductionCapacityManDays => AvailableManDays - PartsCapacityManDays;
+    private const double EmployeeMd = FactoryBalance.EmployeeManDaysPerMonth;
 }
 
-public sealed class AircraftProductionFactory
+public sealed partial class AircraftProductionFactory
 {
     public const double EmployeeManDaysPerMonth = FactoryBalance.EmployeeManDaysPerMonth;
 
@@ -99,6 +120,20 @@ public sealed class AircraftProductionFactory
     private readonly Dictionary<string, int> _warehouseUnitsByDesign = new(StringComparer.Ordinal);
     private int _nextFactorySequence = 1;
     private int _nextEquipmentSequence = 1;
+    private IExternalAircraftEngineSupply? _externalEngineSupply;
+    private bool _externalEngineWorkMode;
+    public bool UsesExternalEngineSupply => _externalEngineWorkMode;
+    public IExternalAircraftEngineSupply? ExternalEngineSupply
+    {
+        get => _externalEngineSupply;
+        set
+        {
+            if (_externalEngineWorkMode != (value is not null) && Lines.Any(line => line.CarryOverManDays > Numeric.Epsilon))
+                throw new InvalidOperationException("Finish existing aircraft work in progress before changing engine supply mode.");
+            _externalEngineSupply = value;
+            _externalEngineWorkMode = value is not null;
+        }
+    }
 
     public IReadOnlyList<FactorySiteState> Factories => _factories.OrderBy(factory => factory.FactoryId, StringComparer.Ordinal).ToArray();
     public IReadOnlyList<AircraftProductionLineState> Lines => _factories.Where(factory => factory.Line is not null).Select(factory => factory.Line!).ToArray();
@@ -106,10 +141,29 @@ public sealed class AircraftProductionFactory
     public IReadOnlyDictionary<string, int> WarehouseUnitsByDesign => new Dictionary<string, int>(_warehouseUnitsByDesign, StringComparer.Ordinal);
     public int OperationalFactoryCount => _factories.Count(factory => factory.IsOperational);
     public int FactoriesUnderConstructionCount => _factories.Count(factory => factory.IsUnderConstruction);
+    /// <summary>Stock-driven gameplay policy; legacy monthly/batch API remains readable for old integrations.</summary>
+    public bool AutomaticStockReplenishment { get; set; }
+
+    public int GetRequestedAircraftUnits(string factoryId)
+    {
+        var site = GetFactory(factoryId);
+        if (site?.Line is null) return 0;
+        var equipment = GetEquipmentForFactory(factoryId);
+        if (equipment is null) return 0;
+        var requested = AutomaticStockReplenishment ? FactoryBalance.MaximumAircraftPerLinePerMonth : site.Line.MonthlyProductionTargetUnits;
+        if (!AutomaticStockReplenishment && site.Line.TotalProductionTargetUnits > 0)
+            requested = System.Math.Min(requested, System.Math.Max(0, site.Line.TotalProductionTargetUnits - site.Line.LifetimeProducedUnits));
+        if (GetAircraftStockTarget(equipment.DesignId) is { } target)
+            requested = System.Math.Min(requested, System.Math.Max(0, target - GetWarehouseUnits(equipment.DesignId)));
+        return requested;
+    }
 
     public bool TryStartFactoryConstruction(double availableCash, out double cost, out string message)
+        => TryStartFactoryConstruction(FactoryBuildingSize.Small, availableCash, out cost, out message);
+
+    public bool TryStartFactoryConstruction(FactoryBuildingSize size, double availableCash, out double cost, out string message)
     {
-        cost = FactoryBalance.FactoryConstructionCost;
+        cost = FactoryBalance.GetConstructionCost(size);
         if (availableCash < cost)
         {
             message = $"Factory construction requires {FinancialValueFormatter.FormatNumber(cost)} cash.";
@@ -121,10 +175,10 @@ public sealed class AircraftProductionFactory
         _factories.Add(new FactorySiteState(
             factoryId,
             $"Factory #{sequence}",
-            FactoryBalance.FactoryConstructionMonths,
+            FactoryBalance.GetConstructionMonths(size),
             0,
-            null));
-        message = $"Factory #{sequence} construction started. Completion in {FactoryBalance.FactoryConstructionMonths} months.";
+            null) { BuildingSize = size });
+        message = $"{size} factory #{sequence} construction started. Completion in {FactoryBalance.GetConstructionMonths(size)} months.";
         return true;
     }
 
@@ -132,6 +186,11 @@ public sealed class AircraftProductionFactory
     {
         foreach (var factory in _factories)
         {
+            if (factory.ExpansionMonthsRemaining > 0)
+            {
+                factory.ExpansionMonthsRemaining--;
+                if (factory.ExpansionMonthsRemaining == 0) factory.BuildingSize++;
+            }
             if (factory.IsUnderConstruction)
             {
                 factory.ConstructionMonthsRemaining--;
@@ -179,7 +238,7 @@ public sealed class AircraftProductionFactory
         ValidateDesignId(designId);
         Numeric.ThrowIfNotFinite(baselineTotalProductionManDays, nameof(baselineTotalProductionManDays));
         var factory = GetFactory(factoryId);
-        if (factory is null || !factory.IsOperational || factory.Line is null)
+        if (factory is null || !factory.IsOperational || factory.Line is null || factory.ExpansionMonthsRemaining > 0)
         {
             cost = 0d;
             message = "The selected factory must be operational before equipment can be purchased.";
@@ -192,8 +251,7 @@ public sealed class AircraftProductionFactory
             return false;
         }
 
-        var laborCost = System.Math.Max(baselineTotalProductionManDays, 0d) * ProductionEconomyBalance.LaborCostPerManDay;
-        cost = laborCost * FactoryBalance.GetPurchaseCostMultiplier(tier);
+        cost = FactoryBalance.GetEquipmentPurchaseCost(tier, factory.BuildingSize);
         if (availableCash < cost)
         {
             message = $"Equipment purchase requires {FinancialValueFormatter.FormatNumber(cost)} cash.";
@@ -211,6 +269,9 @@ public sealed class AircraftProductionFactory
             factory.Line.LineId,
             FactoryBalance.GetInitialInstallationMonths(tier));
         _equipmentById.Add(equipmentId, equipment);
+        equipment.BuildingSize = factory.BuildingSize;
+        equipment.BaselineProductionManDays = System.Math.Max(baselineTotalProductionManDays, Numeric.Epsilon);
+        factory.BaselineAircraftManDays = System.Math.Max(baselineTotalProductionManDays, Numeric.Epsilon);
         AssignLineDesign(factory.Line, normalizedDesignId, 0);
         message = equipment.InstallationMonthsRemaining == 0
             ? $"Equipment {equipmentId} purchased and ready in {factory.DisplayName}."
@@ -232,17 +293,15 @@ public sealed class AircraftProductionFactory
             message = "Equipment cannot be moved while installation is in progress.";
             return false;
         }
-        if (factory.Line.MonthlyProductionTargetUnits > 0)
-        {
-            message = "Set the production target to 0 before moving equipment to storage.";
-            return false;
-        }
+        // Carried labor and partial spare-part materials/work have already been charged.
+        // Cancel their unfinished output without a refund or any additional production expense.
+        _supportOrders.RemoveAll(order => order.FactoryId == factory.FactoryId);
 
         equipment.FactoryId = null;
         equipment.LineId = null;
         equipment.InstallationMonthsRemaining = 0;
         AssignLineDesign(factory.Line, null, 0);
-        message = $"Equipment moved from {factory.DisplayName} to the Central Equipment Depot at no cost.";
+        message = $"Equipment moved from {factory.DisplayName} to the Central Equipment Depot at no cost; paid work in progress was discarded without refund.";
         return true;
     }
 
@@ -270,6 +329,11 @@ public sealed class AircraftProductionFactory
             message = "The selected factory line already contains equipment.";
             return false;
         }
+        if (factory.ExpansionMonthsRemaining > 0 || factory.BuildingSize != equipment.BuildingSize)
+        {
+            message = $"Equipment requires an available {equipment.BuildingSize} factory of the same size.";
+            return false;
+        }
 
         cost = equipment.PurchaseCost * FactoryBalance.EquipmentReinstallationCostShare;
         if (availableCash < cost)
@@ -282,6 +346,7 @@ public sealed class AircraftProductionFactory
         equipment.LineId = factory.Line.LineId;
         equipment.InstallationMonthsRemaining = FactoryBalance.GetReinstallationMonths(equipment.AutomationTier);
         AssignLineDesign(factory.Line, equipment.DesignId, equipment.LifetimeProducedUnits);
+        factory.BaselineAircraftManDays = equipment.BaselineProductionManDays;
         message = $"Equipment reinstallation started in {factory.DisplayName} ({equipment.InstallationMonthsRemaining} months).";
         return true;
     }
@@ -324,15 +389,12 @@ public sealed class AircraftProductionFactory
     public double GetFactoryResaleValue(string factoryId)
     {
         var factory = GetFactory(factoryId);
-        if (factory is null || !factory.IsOperational) return 0d;
-        var years = factory.OperatingMonths / 12;
-        var share = System.Math.Max(
-            FactoryBalance.FactoryResaleMinimumShare,
-            FactoryBalance.FactoryResaleBaseShare - years * FactoryBalance.FactoryResaleAnnualDepreciationShare);
-        return FactoryBalance.FactoryConstructionCost * share;
+        return factory is null ? 0d : FactoryBalance.GetBuildingResaleValue(factory.BuildingSize,
+            factory.ConstructionMonthsRemaining, factory.ExpansionMonthsRemaining, factory.OperatingMonths);
     }
 
-    public double GetMonthlyFactoryMaintenance() => OperationalFactoryCount * FactoryBalance.FactoryMonthlyMaintenance;
+    public double GetMonthlyFactoryMaintenance() => _factories.Where(item => item.IsOperational)
+        .Sum(item => FactoryBalance.GetBuildingMonthlyMaintenance(item.BuildingSize));
 
     public double GetMonthlyActiveEquipmentCost()
     {
@@ -346,10 +408,17 @@ public sealed class AircraftProductionFactory
         });
     }
 
+    public double GetMonthlyEquipmentStorageCost() => _equipmentById.Values.Where(e => !e.IsInstalled)
+        .Sum(e => e.PurchaseCost * FactoryBalance.EquipmentMonthlyStorageCostShare);
+
     public int GetMaximumMonthlyOutput(string factoryId)
     {
+        var site = GetFactory(factoryId);
         var equipment = GetEquipmentForFactory(factoryId);
-        return equipment is null ? 0 : FactoryBalance.GetMaximumMonthlyOutput(equipment.AutomationTier);
+        if (equipment is null || site is null || site.BaselineAircraftManDays <= Numeric.Epsilon) return 0;
+        return System.Math.Max(1, (int)System.Math.Min(FactoryBalance.MaximumAircraftPerLinePerMonth,
+            System.Math.Ceiling(site.BuildingCapacityManDays / (site.BaselineAircraftManDays
+                * FactoryBalance.GetProductionManDayMultiplier(equipment.AutomationTier)))));
     }
 
     public bool TrySetMonthlyProductionTargetUnits(string factoryId, int requestedUnits, out int appliedUnits, out string message)
@@ -370,7 +439,7 @@ public sealed class AircraftProductionFactory
             return false;
         }
 
-        var maximum = FactoryBalance.GetMaximumMonthlyOutput(equipment.AutomationTier);
+        var maximum = GetMaximumMonthlyOutput(factory.FactoryId);
         appliedUnits = System.Math.Clamp(requestedUnits, 0, maximum);
         factory.Line.SetMonthlyProductionTargetUnits(appliedUnits);
         message = appliedUnits == requestedUnits
@@ -407,6 +476,7 @@ public sealed class AircraftProductionFactory
             stoppedLines++;
         }
 
+        if (AutomaticStockReplenishment && stoppedLines > 0) SetAircraftStockTarget(normalizedDesignId, 0);
         return stoppedLines;
     }
 
@@ -449,22 +519,28 @@ public sealed class AircraftProductionFactory
     {
         if (catalog is null) throw new ArgumentNullException(nameof(catalog));
         if (monthIndex < 0) throw new ArgumentOutOfRangeException(nameof(monthIndex));
+        if (_lastAircraftProductionMonth == monthIndex) throw new InvalidOperationException("Aircraft production for this month is already closed.");
         foreach (var item in catalog.Values) item.Validate();
+        PrepareProductionMonth(monthIndex, catalog);
+        _supportCatalogForMonth ??= catalog;
+        // Even voluntary reserves get their reserved share before any unused share is lent to aircraft.
+        RunSupportQueue(_supportCatalogForMonth ?? catalog, true);
+        RunSupportQueue(_supportCatalogForMonth ?? catalog, false);
 
         var lineReports = new List<LineProductionReport>();
         var engineReports = new List<EngineProductionReport>();
         var totalAvailableManDays = 0d;
         var totalUsedManDays = 0d;
         var totalProducedAircraft = 0;
-        var totalActiveEquipmentExpenses = 0d;
+        var totalActiveEquipmentExpenses = GetMonthlyEquipmentStorageCost();
 
         foreach (var factory in _factories.Where(item => item.IsOperational))
         {
             var line = factory.Line!;
             var equipment = GetEquipmentForFactory(factory.FactoryId);
-            var configuredTarget = line.MonthlyProductionTargetUnits;
+            var configuredTarget = AutomaticStockReplenishment ? GetRequestedAircraftUnits(factory.FactoryId) : line.MonthlyProductionTargetUnits;
             var carryIn = line.CarryOverManDays;
-            var availableManDays = carryIn;
+            var availableManDays = 0d;
             var producedUnits = 0;
             var usedManDays = 0d;
             var requiredEngines = 0;
@@ -481,9 +557,8 @@ public sealed class AircraftProductionFactory
 
             if (equipment is { IsReady: true } && configuredTarget > 0)
             {
-                activeEquipmentExpenses = GetEquipmentMonthlyActiveCost(equipment);
+                activeEquipmentExpenses = ChargeMonthlyEquipment(equipment);
                 totalActiveEquipmentExpenses += activeEquipmentExpenses;
-                equipment.CumulativeActiveEquipmentExpenses += activeEquipmentExpenses;
             }
 
             if (equipment is null || string.IsNullOrWhiteSpace(line.AssignedDesignId))
@@ -495,14 +570,16 @@ public sealed class AircraftProductionFactory
             else if (!equipment.IsReady)
             {
                 blocked = true;
-                status = $"Equipment installation in progress ({equipment.InstallationMonthsRemaining} months remaining). Planned output {configuredTarget}/{FactoryBalance.GetMaximumMonthlyOutput(equipment.AutomationTier)} is retained.";
+                status = AutomaticStockReplenishment
+                    ? $"Equipment installation in progress ({equipment.InstallationMonthsRemaining} months remaining). Stock replenishment starts when ready."
+                    : $"Equipment installation in progress ({equipment.InstallationMonthsRemaining} months remaining). Planned output {configuredTarget}/{FactoryBalance.GetMaximumMonthlyOutput(equipment.AutomationTier)} is retained.";
                 line.SetCarryOverWithoutProduction(0d);
             }
             else if (!catalog.TryGetValue(equipment.DesignId, out var catalogItem))
             {
                 blocked = true;
                 status = $"Aircraft type '{equipment.DesignId}' is not production-ready.";
-                line.SetCarryOverWithoutProduction(0d);
+                line.SetCarryOverWithoutProduction(carryIn);
             }
             else
             {
@@ -513,12 +590,15 @@ public sealed class AircraftProductionFactory
                         ? catalogItem.Aircraft.Performance.AirframeProductionManDays
                         : catalogItem.Aircraft.Airframe.Performance.ProductionManDays,
                     Numeric.Epsilon);
-                var airframeMd = baselineAirframeMd * multiplier;
-                var remaining = line.TotalProductionTargetUnits > 0
+                var baselineEngineMd = ExternalEngineSupply is null ? System.Math.Max(catalogItem.Aircraft.Performance.EnginesProductionManDays, 0d) : 0d;
+                var combinedMd = (baselineAirframeMd + baselineEngineMd) * multiplier;
+                var remaining = !AutomaticStockReplenishment && line.TotalProductionTargetUnits > 0
                     ? System.Math.Max(line.TotalProductionTargetUnits - line.LifetimeProducedUnits, 0)
                     : int.MaxValue;
-                var monthTarget = System.Math.Min(configuredTarget, FactoryBalance.GetMaximumMonthlyOutput(equipment.AutomationTier));
+                var monthTarget = configuredTarget;
                 monthTarget = System.Math.Min(monthTarget, remaining);
+                if (GetAircraftStockTarget(equipment.DesignId) is { } stockTarget)
+                    monthTarget = System.Math.Min(monthTarget, System.Math.Max(0, stockTarget - GetWarehouseUnits(equipment.DesignId)));
 
                 if (remaining <= 0)
                 {
@@ -528,42 +608,67 @@ public sealed class AircraftProductionFactory
                 }
                 else if (monthTarget <= 0)
                 {
-                    status = "No production target set.";
+                    status = GetAircraftStockTarget(equipment.DesignId).HasValue ? "Aircraft stock target reached; paid work retained." : "No production target set.";
                     line.SetCarryOverWithoutProduction(carryIn);
                 }
                 else
                 {
-                    var requiredMd = monthTarget * airframeMd;
-                    var employees = (int)System.Math.Ceiling(System.Math.Max(0d, requiredMd - carryIn) / EmployeeManDaysPerMonth);
-                    line.SetAutoAssignedEmployees(employees);
-                    availableManDays = carryIn + employees * EmployeeManDaysPerMonth;
-                    capacityUnits = System.Math.Min(
-                        (int)System.Math.Floor(availableManDays / airframeMd),
-                        FactoryBalance.GetMaximumMonthlyOutput(equipment.AutomationTier));
+                    var requiredMd = System.Math.Max(0d, monthTarget * combinedMd - carryIn);
+                    availableManDays = RemainingManDays(factory, false);
+                    usedManDays = System.Math.Min(requiredMd, availableManDays);
+                    var engineLimitedUnits = monthTarget;
+                    if (ExternalEngineSupply is not null)
+                    {
+                        var enginesPerAircraft = System.Math.Max(1, catalogItem.Aircraft.Airframe.Parameters.EngineCount);
+                        engineLimitedUnits = System.Math.Min(engineLimitedUnits,
+                            System.Math.Max(0, ExternalEngineSupply.AvailableEngines(equipment.DesignId)) / enginesPerAircraft);
+                    }
+                    var completableUnits = System.Math.Min(engineLimitedUnits,
+                        (int)System.Math.Floor((carryIn + usedManDays + Numeric.Epsilon) / combinedMd));
+                    // Only one physical factory-month may remain unfinished. Completed units free
+                    // room immediately; reserve/pay only work that can actually be performed.
+                    // Preserve already-paid legacy excess, but never add to it.
+                    var workBeforeLimit = System.Math.Max(0d,
+                        factory.BuildingCapacityManDays + completableUnits * combinedMd - carryIn);
+                    usedManDays = System.Math.Min(usedManDays, workBeforeLimit);
+                    if (carryIn > factory.BuildingCapacityManDays + Numeric.Epsilon)
+                        usedManDays = 0d;
+                    ReserveManDays(factory, usedManDays);
+                    var employees = (int)System.Math.Ceiling(usedManDays / EmployeeManDaysPerMonth);
+                    var engineShare = baselineEngineMd / (baselineAirframeMd + baselineEngineMd);
+                    engineEmployees = (int)System.Math.Floor(employees * engineShare);
+                    line.SetAutoAssignedEmployees(employees - engineEmployees);
+                    capacityUnits = (int)System.Math.Floor((carryIn + usedManDays + Numeric.Epsilon) / combinedMd);
                     producedUnits = System.Math.Min(monthTarget, capacityUnits);
-                    usedManDays = producedUnits * airframeMd;
-                    line.ApplyMonthResult(producedUnits, System.Math.Max(0d, availableManDays - usedManDays));
+                    if (ExternalEngineSupply is not null)
+                    {
+                        var engineCount = System.Math.Max(1, catalogItem.Aircraft.Airframe.Parameters.EngineCount);
+                        producedUnits = System.Math.Min(producedUnits, System.Math.Max(0, ExternalEngineSupply.AvailableEngines(equipment.DesignId)) / engineCount);
+                        if (producedUnits > 0 && !ExternalEngineSupply.TryConsumeEngines(equipment.DesignId, checked(producedUnits * engineCount)))
+                            throw new InvalidOperationException("External engine stock changed while completing aircraft.");
+                    }
+                    line.ApplyMonthResult(producedUnits, System.Math.Max(0d, carryIn + usedManDays - producedUnits * combinedMd));
                     equipment.LifetimeProducedUnits = line.LifetimeProducedUnits;
                     AddWarehouseUnits(equipment.DesignId, producedUnits);
                     status = $"Produced {producedUnits} aircraft using {equipment.AutomationTier}.";
-                    if (line.TotalProductionTargetUnits > 0 && line.LifetimeProducedUnits >= line.TotalProductionTargetUnits)
+                    if (line.CarryOverManDays >= factory.BuildingCapacityManDays - Numeric.Epsilon
+                        && usedManDays < System.Math.Min(requiredMd, availableManDays) - Numeric.Epsilon)
+                        status += " Unfinished-work limit reached (one factory-month); further work paused.";
+                    if (!AutomaticStockReplenishment && line.TotalProductionTargetUnits > 0 && line.LifetimeProducedUnits >= line.TotalProductionTargetUnits)
                     {
                         line.SetMonthlyProductionTargetUnits(0);
                         status += " Total target reached; line stopped.";
                     }
 
-                    requiredEngines = producedUnits * catalogItem.Aircraft.Airframe.Parameters.EngineCount;
-                    var baselineEngineMdTotal = System.Math.Max(catalogItem.Aircraft.Performance.EnginesProductionManDays, 0d) * producedUnits;
-                    if (requiredEngines > 0)
+                    requiredEngines = ExternalEngineSupply is null ? producedUnits * catalogItem.Aircraft.Airframe.Parameters.EngineCount : 0;
+                    var baselineEngineMdTotal = baselineEngineMd * producedUnits;
+                    if (baselineEngineMd > 0d && usedManDays > 0d)
                     {
                         var engineMd = System.Math.Max(
                             catalogItem.Aircraft.Performance.EnginesProductionManDays /
                             System.Math.Max(catalogItem.Aircraft.Airframe.Parameters.EngineCount, 1),
                             Numeric.Epsilon) * multiplier;
-                        var totalEngineMd = requiredEngines * engineMd;
-                        engineEmployees = (int)System.Math.Ceiling(totalEngineMd / EmployeeManDaysPerMonth);
-                        var engineCapacity = (int)System.Math.Floor(engineEmployees * EmployeeManDaysPerMonth / engineMd);
-                        engineDiscarded = System.Math.Max(0, engineCapacity - requiredEngines);
+                        engineDiscarded = 0;
                         engineReports.Add(new EngineProductionReport(
                             line.LineId,
                             catalogItem.Aircraft.Engine.Definition.DisplayName,
@@ -571,8 +676,8 @@ public sealed class AircraftProductionFactory
                             requiredEngines,
                             engineDiscarded,
                             engineEmployees,
-                            totalEngineMd,
-                            engineEmployees * EmployeeManDaysPerMonth));
+                            usedManDays * engineShare,
+                            availableManDays * engineShare));
                     }
 
                     var baselinePlaneEmployees = (int)System.Math.Ceiling(producedUnits * baselineAirframeMd / EmployeeManDaysPerMonth);
@@ -614,6 +719,9 @@ public sealed class AircraftProductionFactory
                 activeEquipmentExpenses));
         }
 
+        // Reuse capacity left after aircraft reach their actual monthly/stock target.
+        RunSupportQueue(_supportCatalogForMonth ?? catalog, true, borrowUnusedProduction: true);
+        RunSupportQueue(_supportCatalogForMonth ?? catalog, false, borrowUnusedProduction: true);
         var engineFactoryReport = new EngineFactoryProductionReport(
             engineReports,
             engineReports.Sum(item => item.RequiredEngines),
@@ -623,6 +731,8 @@ public sealed class AircraftProductionFactory
             engineReports.Sum(item => item.RequiredManDays),
             engineReports.Sum(item => item.CapacityManDays));
         var warehouse = new Dictionary<string, int>(_warehouseUnitsByDesign, StringComparer.Ordinal);
+        _lastAircraftProductionMonth = monthIndex;
+        var physicalCapacity = _factories.Where(item => item.IsOperational && item.ExpansionMonthsRemaining == 0).Sum(item => item.BuildingCapacityManDays);
         return new FactoryMonthlyProductionReport(
             monthIndex,
             date,
@@ -634,8 +744,16 @@ public sealed class AircraftProductionFactory
             totalProducedAircraft,
             warehouse,
             warehouse.Values.Sum(),
-            OperationalFactoryCount * FactoryBalance.FactoryMonthlyMaintenance,
-            totalActiveEquipmentExpenses);
+            GetMonthlyFactoryMaintenance(),
+            totalActiveEquipmentExpenses)
+        {
+            TotalPhysicalCapacityManDays = physicalCapacity,
+            UsesExternalEngineSupply = ExternalEngineSupply is not null,
+            TotalStaffCapacityManDays = _factories.Sum(item => item.AvailableManDays),
+            SupportProductionManDays = LastSupportReport.UsedManDays,
+            PhysicalCapacityUtilization = physicalCapacity <= Numeric.Epsilon ? 0d
+                : Numeric.Clamp((totalUsedManDays + LastSupportReport.UsedManDays) / physicalCapacity, 0d, 1d),
+        };
     }
 
     public FactoryStateSnapshot CreateSnapshot()
@@ -644,7 +762,10 @@ public sealed class AircraftProductionFactory
         {
             NextFactorySequence = _nextFactorySequence,
             NextEquipmentSequence = _nextEquipmentSequence,
+            UsesExternalEngineSupply = UsesExternalEngineSupply,
+            AutomaticStockReplenishment = AutomaticStockReplenishment,
         };
+        WriteSupportSnapshot(snapshot);
         foreach (var factory in _factories)
         {
             snapshot.Factories.Add(new FactorySiteSnapshot
@@ -653,6 +774,14 @@ public sealed class AircraftProductionFactory
                 DisplayName = factory.DisplayName,
                 ConstructionMonthsRemaining = factory.ConstructionMonthsRemaining,
                 OperatingMonths = factory.OperatingMonths,
+                BuildingSize = (int)factory.BuildingSize,
+                CapacitySchemaVersion = 2,
+                LegacyCapacityMd = factory.LegacyCapacityMd,
+                NeedsLegacyCapacityMigration = factory.NeedsLegacyCapacityMigration,
+                BaselineAircraftManDays = factory.BaselineAircraftManDays,
+                WorkforceEmployeeLimit = factory.WorkforceEmployeeLimit,
+                PartsAllocationPercent = factory.PartsAllocationPercent,
+                ExpansionMonthsRemaining = factory.ExpansionMonthsRemaining,
                 Line = factory.Line is null ? null : CreateLineSnapshot(factory.Line),
             });
         }
@@ -668,6 +797,8 @@ public sealed class AircraftProductionFactory
                 DesignId = equipment.DesignId,
                 AutomationTier = (int)equipment.AutomationTier,
                 PurchaseCost = equipment.PurchaseCost,
+                BuildingSize = (int)equipment.BuildingSize,
+                BaselineProductionManDays = equipment.BaselineProductionManDays,
                 FactoryId = equipment.FactoryId,
                 LineId = equipment.LineId,
                 InstallationMonthsRemaining = equipment.InstallationMonthsRemaining,
@@ -687,6 +818,8 @@ public sealed class AircraftProductionFactory
         _factories.Clear();
         _equipmentById.Clear();
         _warehouseUnitsByDesign.Clear();
+        AutomaticStockReplenishment = snapshot.AutomaticStockReplenishment;
+        RestoreSupportSnapshot(snapshot);
         _nextFactorySequence = System.Math.Max(snapshot.NextFactorySequence, 1);
         _nextEquipmentSequence = System.Math.Max(snapshot.NextEquipmentSequence, 1);
 
@@ -706,6 +839,17 @@ public sealed class AircraftProductionFactory
                     constructionMonths,
                     System.Math.Max(item.OperatingMonths, 0),
                     line));
+                var restoredSite = _factories[_factories.Count - 1];
+                restoredSite.BuildingSize = (FactoryBuildingSize)System.Math.Clamp(item.BuildingSize, 0, 2);
+                // Apply the capacity rebalance to migrated buildings once, without changing paid WIP.
+                restoredSite.LegacyCapacityMd = System.Math.Max(0d, item.LegacyCapacityMd)
+                    * (item.CapacitySchemaVersion < 2 ? FactoryBalance.CapacityReductionMultiplier : 1d);
+                restoredSite.NeedsLegacyCapacityMigration = item.CapacitySchemaVersion == 0 || item.NeedsLegacyCapacityMigration;
+                if (item.CapacitySchemaVersion == 0 && line is not null) line.SetCarryOverWithoutProduction(0d);
+                restoredSite.BaselineAircraftManDays = System.Math.Max(0d, item.BaselineAircraftManDays);
+                restoredSite.WorkforceEmployeeLimit = item.CapacitySchemaVersion == 0 ? int.MaxValue : System.Math.Max(0, item.WorkforceEmployeeLimit);
+                restoredSite.PartsAllocationPercent = item.PartsAllocationPercent == 0 ? 20 : System.Math.Clamp(item.PartsAllocationPercent, 1, 100);
+                restoredSite.ExpansionMonthsRemaining = System.Math.Max(0, item.ExpansionMonthsRemaining);
             }
         }
         else if (snapshot.HasFactoryAsset)
@@ -722,6 +866,8 @@ public sealed class AircraftProductionFactory
                 System.Math.Max(snapshot.FactoryOperatingMonths, 0),
                 line));
             _nextFactorySequence = System.Math.Max(_nextFactorySequence, 2);
+            _factories[_factories.Count - 1].NeedsLegacyCapacityMigration = true;
+            if (line is not null) line.SetCarryOverWithoutProduction(0d);
         }
 
         if (snapshot.Equipment is not null)
@@ -755,11 +901,19 @@ public sealed class AircraftProductionFactory
                     System.Math.Max(item.CumulativeActualLaborExpenses, 0d),
                     System.Math.Max(item.CumulativeActiveEquipmentExpenses, 0d));
                 _equipmentById.Add(equipmentId, equipment);
+                // Old stored equipment has no recoverable factory location; treat it as Small.
+                equipment.BuildingSize = item.BuildingSize.HasValue
+                    ? (FactoryBuildingSize)System.Math.Clamp(item.BuildingSize.Value, 0, 2)
+                    : factory?.BuildingSize ?? FactoryBuildingSize.Small;
+                equipment.BaselineProductionManDays = item.BaselineProductionManDays > 0d
+                    ? item.BaselineProductionManDays : factory?.BaselineAircraftManDays > 0d
+                    ? factory.BaselineAircraftManDays : equipment.PurchaseCost / FactoryBalance.GetPurchaseCostMultiplier(tier)
+                        / ProductionEconomyBalance.LaborCostPerManDay;
                 if (factory?.Line is not null)
                 {
                     factory.Line.AssignDesign(equipment.DesignId);
-                    var maximum = FactoryBalance.GetMaximumMonthlyOutput(equipment.AutomationTier);
-                    factory.Line.SetMonthlyProductionTargetUnits(System.Math.Min(factory.Line.MonthlyProductionTargetUnits, maximum));
+                    if (factory.BaselineAircraftManDays <= Numeric.Epsilon)
+                        factory.BaselineAircraftManDays = equipment.BaselineProductionManDays;
                 }
             }
         }

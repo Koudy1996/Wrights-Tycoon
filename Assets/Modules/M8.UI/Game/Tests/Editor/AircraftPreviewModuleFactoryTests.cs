@@ -9,6 +9,7 @@ using WrightTycoon.Game.UI;
 namespace WrightTycoon.Game.Tests;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class AircraftPreviewModuleFactoryTests
 {
     private GameObject _root = null!;

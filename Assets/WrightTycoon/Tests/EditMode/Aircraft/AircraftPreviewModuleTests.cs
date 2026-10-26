@@ -7,6 +7,7 @@ using WrightTycoon.Core.Engines;
 namespace WrightTycoon.Core.Tests.Aircraft;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class AircraftPreviewModuleTests
 {
     private static readonly Type FactoryType = Type.GetType(

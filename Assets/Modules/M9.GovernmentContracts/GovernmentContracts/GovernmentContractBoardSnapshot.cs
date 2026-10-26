@@ -20,6 +20,9 @@ public sealed class GovernmentContractBoardSnapshot
 
 public sealed class GovernmentContractSnapshot
 {
+    public double? LockedUnitPrice { get; set; }
+    public WrightTycoon.Core.Fleet.ServiceOfferSnapshot? LockedServiceOffer { get; set; }
+    public WrightTycoon.Core.Contracts.LifecycleCostQuote? LockedLifecycleCostQuote { get; set; }
     public string ContractId { get; set; } = string.Empty;
 
     public int GeneratedOnYear { get; set; }
@@ -43,6 +46,16 @@ public sealed class GovernmentContractSnapshot
 
 public sealed class GovernmentContractRequirementsSnapshot
 {
+    public WrightTycoon.Core.Contracts.ContractEconomicSnapshot? EconomicSnapshot { get; set; }
+    public int LifecycleModelVersion { get; set; }
+    public double MinimumExpectedLifeHours { get; set; }
+    public int MaximumServiceIntervalHours { get; set; } = 1000;
+    public int MinimumSupportMonths { get; set; } = 120;
+    public double UtilizationHoursPerMonth { get; set; } = 100d;
+    public double AverageFlightHours { get; set; } = 2d;
+    public string OperatingProfileId { get; set; } = "civil";
+    public WrightTycoon.Core.Contracts.ProcurementPreference ProcurementPreference { get; set; }
+    public double MaximumOperatingCostPerUnit { get; set; }
     public AircraftCategory RequiredAircraftType { get; set; }
 
     public GovernmentContractSpeedAltitudeBand SpeedAltitudeBand { get; set; }
@@ -77,6 +90,15 @@ public sealed class GovernmentContractSubmissionCandidateSnapshot
 
 public sealed class GovernmentContractAircraftMetricsSnapshot
 {
+    public double ExpectedLifeHours { get; set; } = 0d;
+    public int ServiceIntervalHours { get; set; } = 1000;
+    public int GuaranteedSupportMonths { get; set; } = 120;
+    public double FuelBurnKilogramsPerHour { get; set; } = 0d;
+    public double UnitProductionCost { get; set; } = 0d;
+    public double FuelPricePerKilogram { get; set; } = WrightTycoon.Core.Contracts.LifecycleCostCalculator.DefaultFuelPricePerKilogram;
+    public double? ServicePricePerEvent { get; set; }
+    public int MaintenanceModelVersion { get; set; } = 2;
+    public WrightTycoon.Core.Fleet.ServiceOfferSnapshot? CombinedServiceOffer { get; set; }
     // Retained for backward compatibility with saves created before modular categories.
     public AircraftCategory AircraftType { get; set; }
 
@@ -144,6 +166,10 @@ public sealed class GovernmentContractParameterBonusSnapshot
 
 public sealed class GovernmentDeliveryContractSnapshot
 {
+    public WrightTycoon.Core.Fleet.ServiceOfferSnapshot? ServiceOffer { get; set; }
+    public WrightTycoon.Core.Contracts.LifecycleCostQuote? LifecycleCostQuote { get; set; }
+    public GovernmentContractRequirementsSnapshot? LifecycleRequirements { get; set; }
+    public GovernmentContractAircraftMetricsSnapshot? LifecycleAircraftMetrics { get; set; }
     public string DeliveryId { get; set; } = string.Empty;
 
     public string GovernmentContractId { get; set; } = string.Empty;

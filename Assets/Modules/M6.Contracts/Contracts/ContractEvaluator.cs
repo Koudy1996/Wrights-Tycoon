@@ -15,13 +15,19 @@ public sealed class ContractEvaluator : IContractEvaluator
 {
     private readonly Func<int>? _qualificationYearProvider;
     private readonly Func<int>? _companyQualityLevelProvider;
+    private readonly Func<WrightTycoon.Core.Aircraft.Aircraft, double>? _fuelPriceProvider;
+    private readonly Func<WrightTycoon.Core.Aircraft.Aircraft, ContractRequirements, double, WrightTycoon.Core.Fleet.ServiceOfferSnapshot>? _maintenanceOfferProvider;
 
     public ContractEvaluator(
         Func<int>? qualificationYearProvider = null,
-        Func<int>? companyQualityLevelProvider = null)
+        Func<int>? companyQualityLevelProvider = null,
+        Func<WrightTycoon.Core.Aircraft.Aircraft, ContractRequirements, double, WrightTycoon.Core.Fleet.ServiceOfferSnapshot>? maintenanceOfferProvider = null,
+        Func<WrightTycoon.Core.Aircraft.Aircraft, double>? fuelPriceProvider = null)
     {
         _qualificationYearProvider = qualificationYearProvider;
         _companyQualityLevelProvider = companyQualityLevelProvider;
+        _maintenanceOfferProvider = maintenanceOfferProvider;
+        _fuelPriceProvider = fuelPriceProvider;
     }
 
     public ContractEvaluationReport Evaluate(Contract contract, WrightTycoon.Core.Aircraft.Aircraft aircraft)
@@ -158,6 +164,22 @@ public sealed class ContractEvaluator : IContractEvaluator
             }
         }
 
+        if (requirements.LifecycleModelVersion > 0)
+        {
+            var reliability = HeadquartersBalance.ApplyCompanyReliabilityBonus(aircraft.Performance.OverallReliability, _companyQualityLevelProvider?.Invoke() ?? 0);
+            var life = WrightTycoon.Core.Fleet.LifecycleCalculator.CalculateExpectedLifeHours(aircraft.FamilyDefinition.Category,
+                reliability, aircraft.TypeDefinition.ServiceIntervalHours, aircraft.TypeDefinition.ConstructionDurabilityLevel);
+            if (life + Numeric.Epsilon < requirements.MinimumExpectedLifeHours) unmetRequirements.Add("Expected life is below contractual minimum.");
+            if (aircraft.TypeDefinition.ServiceIntervalHours < requirements.MinimumServiceIntervalHours) unmetRequirements.Add("Service interval is below contractual minimum.");
+            var offer = _maintenanceOfferProvider?.Invoke(aircraft, requirements, reliability)
+                ?? LifecycleCostCalculator.CreateContractServiceOffer(aircraft, requirements, reliability);
+            var quote = LifecycleCostCalculator.Calculate(LifecycleCostCalculator.ExpectedOperatingLifeHours(requirements.MinimumExpectedLifeHours, life), contract.UnitPrice,
+                aircraft.Performance.AverageCruiseFuelBurnKilogramsPerHour, _fuelPriceProvider?.Invoke(aircraft) ?? LifecycleCostCalculator.FuelPricePerKilogram(aircraft),
+                offer, requirements.UtilizationHoursPerMonth);
+            if ((requirements.PricingModelVersion > 0 || requirements.ProcurementPreference == ProcurementPreference.WholeLifeCost)
+                && quote.OperationCostsPerHour > requirements.MaximumOperationCostPerHour + Numeric.Epsilon)
+                unmetRequirements.Add("Operational costs exceed customer budget.");
+        }
         return new ContractEvaluationReport(unmetRequirements);
     }
 

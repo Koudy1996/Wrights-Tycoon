@@ -77,6 +77,7 @@ public static class ContractBalance
     public const double SmallOrderContractMarkup = 0.25d;
     public const double LargeOrderContractMarkup = 0.18d;
     public const double ContractPriceMarginImprovementMultiplier = 1.05d;
+    public const double AdditionalMarginMultiplier = 1.10d;
     public const double CampaignAdjustedMarkupFloor = 0.02d;
     public const int CampaignWeightedCategoryPoolBaseCopies = 4;
     public const int CampaignWeightedCategoryPoolMinimumCopies = 1;
@@ -258,21 +259,21 @@ public static class ContractBalance
 
     public static (double Min, double Max) ResolveReferenceStructuralIndexRange(AircraftCategory category) => category switch
     {
-        AircraftCategory.LightSportAndRecreational => (15.6d, 35d),
-        AircraftCategory.LightMultiRolePiston => (25d, 75d),
-        AircraftCategory.TurbopropRegional => (75d, 180d),
-        AircraftCategory.RegionalJet => (120d, 375d),
-        AircraftCategory.MediumTransportNarrowBody => (180d, 700d),
-        AircraftCategory.HeavyTransportWideBody => (850d, 1500d),
-        AircraftCategory.SpecialCivil => (35d, 375d),
-        AircraftCategory.BusinessVipJet => (35d, 180d),
-        AircraftCategory.MilitaryTactical => (75d, 375d),
-        AircraftCategory.MilitaryStrategicSupport => (375d, 1150d),
-        AircraftCategory.LightCargo => (35d, 75d),
-        AircraftCategory.MediumCargo => (120d, 375d),
-        AircraftCategory.HeavyCargo => (375d, 1150d),
-        AircraftCategory.LongRangeCargo => (750d, 1500d),
-        AircraftCategory.Bomber => (375d, 1150d),
+        AircraftCategory.LightSportAndRecreational => (20d, 40d),
+        AircraftCategory.LightMultiRolePiston => (30d, 80d),
+        AircraftCategory.TurbopropRegional => (85d, 180d),
+        AircraftCategory.RegionalJet => (105d, 330d),
+        AircraftCategory.MediumTransportNarrowBody => (170d, 600d),
+        AircraftCategory.HeavyTransportWideBody => (650d, 1200d),
+        AircraftCategory.SpecialCivil => (40d, 300d),
+        AircraftCategory.BusinessVipJet => (80d, 250d),
+        AircraftCategory.MilitaryTactical => (110d, 370d),
+        AircraftCategory.MilitaryStrategicSupport => (375d, 950d),
+        AircraftCategory.LightCargo => (40d, 75d),
+        AircraftCategory.MediumCargo => (120d, 350d),
+        AircraftCategory.HeavyCargo => (375d, 900d),
+        AircraftCategory.LongRangeCargo => (750d, 1200d),
+        AircraftCategory.Bomber => (350d, 900d),
         _ => (ProductionEconomyBalance.Airframe.ReferenceStructuralIndex, 180d),
     };
 

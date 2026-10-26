@@ -105,6 +105,8 @@ public sealed class Contract
         }
 
         Requirements.Validate();
+        if (Requirements.EconomicSnapshot is { } economic && System.Math.Abs(UnitPrice - economic.OfferedUnitPrice) > .005d)
+            throw new InvalidOperationException("Contract price differs from its economic snapshot.");
     }
 
     public void MarkDelivered(int deliveredMonthIndex)

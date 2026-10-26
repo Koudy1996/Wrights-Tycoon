@@ -9,6 +9,7 @@ namespace WrightTycoon.Core.Contracts;
 
 public sealed class ContractGeneratorOptions
 {
+    public double BalancedPriorityShare { get; init; }
     public int MinContractsPerMonth { get; init; } = ContractBalance.MinContractsPerMonth;
 
     public int MaxContractsPerMonth { get; init; } = ContractBalance.MaxContractsPerMonth;
@@ -69,6 +70,8 @@ public sealed class ContractGeneratorOptions
 
     public void Validate()
     {
+        if (double.IsNaN(BalancedPriorityShare) || BalancedPriorityShare < 0d || BalancedPriorityShare > 1d)
+            throw new ArgumentOutOfRangeException(nameof(BalancedPriorityShare));
         ValidateRange(MinContractsPerMonth, MaxContractsPerMonth, nameof(MinContractsPerMonth), nameof(MaxContractsPerMonth));
         ValidateRange(MinQuantityUnits, MaxQuantityUnits, nameof(MinQuantityUnits), nameof(MaxQuantityUnits));
         ValidateRange(SmallOrderMinQuantityUnits, SmallOrderMaxQuantityUnits, nameof(SmallOrderMinQuantityUnits), nameof(SmallOrderMaxQuantityUnits));

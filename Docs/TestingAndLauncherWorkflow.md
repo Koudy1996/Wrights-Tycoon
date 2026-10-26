@@ -4,7 +4,7 @@ Use `Scripts/WrightTycoonWorkflow.cmd` as the default test and launcher entry po
 
 ## Daily validation
 
-Run the complete EditMode suite once after a coherent code change:
+Run the curated Launcher EditMode suite once after a coherent code change (target 250-400 cases):
 
 ```powershell
 .\Scripts\WrightTycoonWorkflow.cmd -Action Test
@@ -24,7 +24,7 @@ Use an incremental checkpoint when launchers need to reflect the current code:
 
 This workflow:
 
-1. Runs the complete EditMode suite.
+1. Runs the complete curated Launcher EditMode suite, excluding the NUnit `Extended` category, with graphics on an isolated, non-active Windows desktop.
 2. Builds Windows and macOS in one Unity process.
 3. Reuses Unity and player build caches.
 4. Validates packaged historical campaign assets.
@@ -53,7 +53,15 @@ Clean release mode deletes the previous platform output, requests `BuildOptions.
 
 ## Useful options
 
-- `-SkipTests`: build without repeating a test suite that already passed for the same working tree.
+- `-TestSuite Launcher` (default): the curated update gate; newly added tests run unless explicitly categorized `Extended`.
+- `-TestSuite Full`: all EditMode tests, including extended matrices and compatibility checks.
+- `-Action Test -TestSuite Extended`: only extended checks; cannot be used as the sole gate for a launcher build.
+- `-GraphicsTests`: run graphics-enabled tests on a separate hidden Windows desktop, so IMGUI interaction tests execute without stealing focus. Checkpoint and Release enable this automatically. A plain `-Action Test` remains headless unless this switch is supplied.
+
+  Isolation is enforced by `Scripts/IsolatedGraphicsProcess.cs`: Unity and its utility windows belong to a uniquely named desktop that is never activated. The workflow never switches the user's desktop. A process job cleans up descendants on completion, timeout or workflow termination. Isolation failures stop the workflow; there is no visible fallback. Evidence is written to `Logs/Workflow/graphics-isolation-*.log`.
+
+  Verify the isolation helper with `powershell -NoProfile -ExecutionPolicy Bypass -File Scripts/Test-IsolatedGraphicsProcess.ps1`. It creates a real test window on the isolated desktop, checks the input desktop is unchanged, and checks error propagation and timeout cleanup.
+- `-SkipTests`: build without repeating the complete Launcher or Full suite that already passed for the same working tree. An Extended-only pass is insufficient.
 - `-SkipSmoke`: skip the Windows built-player readiness check.
 - `-UnityPath <path>`: use an editor outside the standard Unity Hub installation path.
 
@@ -75,6 +83,9 @@ Prefer `All Launchers` when both platforms are required. It prepares the project
 
 ## Workflow policy
 
+- The normal update gate deliberately excludes broad parameter matrices, old compatibility fixtures, preview geometry, cosmetic formatting, and secondary validations. These are available via Full/Extended rather than deleted merely to reduce the count. See `Docs/TestSuiteScope.md` for scope and the audit baseline.
+- The Launcher suite is a risk-based selection, not a promise that all former coverage remains in each update. Do not consolidate unrelated scenarios into a single test or cap the discovered tests to manufacture a lower count.
+- Zero executed/passed tests or a non-passing run fails the workflow. An out-of-budget Launcher count produces a review warning, not silent truncation.
 - During implementation: open Unity and run relevant EditMode tests.
 - Before a normal commit: run `-Action Test`.
 - When launchers are explicitly requested: run `-Action Checkpoint -Platform All`.

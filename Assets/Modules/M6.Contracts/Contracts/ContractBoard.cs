@@ -222,7 +222,18 @@ public sealed class ContractBoard
     {
         return new ContractRequirementsSnapshot
         {
+            EconomicSnapshot = requirements.EconomicSnapshot,
             RequiredCategory = requirements.RequiredCategory,
+            LifecycleModelVersion = requirements.LifecycleModelVersion,
+            MaintenanceModelVersion = requirements.MaintenanceModelVersion,
+            MinimumExpectedLifeHours = requirements.MinimumExpectedLifeHours,
+            MaximumServiceIntervalHours = requirements.MaximumServiceIntervalHours,
+            MinimumSupportMonths = requirements.MinimumSupportMonths,
+            UtilizationHoursPerMonth = requirements.UtilizationHoursPerMonth,
+            AverageFlightHours = requirements.AverageFlightHours,
+            OperatingProfileId = requirements.OperatingProfileId,
+            ProcurementPreference = requirements.ProcurementPreference,
+            MaximumOperatingCostPerUnit = requirements.MaximumOperatingCostPerUnit,
             MinimumReliability = requirements.MinimumReliability,
             MaximumTotalWeightKilograms = requirements.MaximumTotalWeightKilograms,
             MinimumRangeKilometers = requirements.MinimumRangeKilometers,
@@ -232,6 +243,7 @@ public sealed class ContractBoard
             MinimumSpeedAltitudeMeters = requirements.MinimumSpeed?.AltitudeMeters,
             MinimumSpeedMetersPerSecond = requirements.MinimumSpeed?.MinimumSpeedMetersPerSecond,
             MaximumFuelConsumptionKilogramsPerHour = requirements.MaximumFuelConsumptionKilogramsPerHour,
+            MaximumRequiredRunwayLengthMeters = requirements.MaximumRequiredRunwayLengthMeters,
         };
     }
 
@@ -302,6 +314,17 @@ public sealed class ContractBoard
         var requirements = new ContractRequirements
         {
             RequiredCategory = snapshot.RequiredCategory,
+            EconomicSnapshot = snapshot.EconomicSnapshot,
+            LifecycleModelVersion = snapshot.LifecycleModelVersion,
+            MaintenanceModelVersion = snapshot.MaintenanceModelVersion,
+            MinimumExpectedLifeHours = snapshot.MinimumExpectedLifeHours,
+            MaximumServiceIntervalHours = snapshot.MaximumServiceIntervalHours,
+            MinimumSupportMonths = snapshot.MinimumSupportMonths,
+            UtilizationHoursPerMonth = snapshot.UtilizationHoursPerMonth,
+            AverageFlightHours = snapshot.AverageFlightHours,
+            OperatingProfileId = snapshot.OperatingProfileId,
+            ProcurementPreference = snapshot.ProcurementPreference,
+            MaximumOperatingCostPerUnit = snapshot.MaximumOperatingCostPerUnit,
             MinimumReliability = snapshot.MinimumReliability,
             MaximumTotalWeightKilograms = snapshot.MaximumTotalWeightKilograms,
             MinimumRangeKilometers = snapshot.MinimumRangeKilometers,
@@ -310,6 +333,7 @@ public sealed class ContractBoard
             MinimumManeuverability = snapshot.MinimumManeuverability,
             MinimumCrew = snapshot.MinimumCrew,
             MaximumFuelConsumptionKilogramsPerHour = snapshot.MaximumFuelConsumptionKilogramsPerHour,
+            MaximumRequiredRunwayLengthMeters = snapshot.MaximumRequiredRunwayLengthMeters,
         };
 
         requirements.Validate();

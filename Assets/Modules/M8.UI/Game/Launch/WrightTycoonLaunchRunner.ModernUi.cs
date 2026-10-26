@@ -340,19 +340,33 @@ public sealed partial class WrightTycoonLaunchRunner
             const float horizontalPadding = 9f;
             var contentWidth = Mathf.Max(1f, cardRect.width - (horizontalPadding * 2f));
             var contentX = cardRect.x + horizontalPadding;
+            var textX = contentX;
+            var textWidth = contentWidth;
+            if (item.Icon != ModernKpiIcon.None)
+            {
+                const float iconSize = 26f;
+                const float iconTextGap = 8f;
+                DrawModernKpiIcon(
+                    new Rect(contentX, cardRect.y + 16f, iconSize, iconSize),
+                    item.Icon,
+                    ResolveModernKpiIconColor(item.Icon));
+                textX += iconSize + iconTextGap;
+                textWidth = Mathf.Max(1f, contentWidth - iconSize - iconTextGap);
+            }
+
             var labelStyle = CreateFittedSingleLineKpiStyle(
                 WrightTycoonUiTheme.DesignerKpiLabelStyleName,
                 item.Label,
-                contentWidth,
+                textWidth,
                 8);
             var valueStyle = CreateFittedSingleLineKpiStyle(
                 WrightTycoonUiTheme.DesignerKpiValueStyleName,
                 item.Value,
-                contentWidth,
+                textWidth,
                 12);
 
-            GUI.Label(new Rect(contentX, cardRect.y + 10f, contentWidth, 18f), item.Label, labelStyle);
-            GUI.Label(new Rect(contentX, cardRect.y + 32f, contentWidth, 34f), item.Value, valueStyle);
+            GUI.Label(new Rect(textX, cardRect.y + 10f, textWidth, 18f), item.Label, labelStyle);
+            GUI.Label(new Rect(textX, cardRect.y + 32f, textWidth, 34f), item.Value, valueStyle);
 
             if (!string.IsNullOrWhiteSpace(item.Delta))
             {
@@ -362,10 +376,157 @@ public sealed partial class WrightTycoonLaunchRunner
                     wordWrap = false,
                 };
                 GUI.Label(
-                    new Rect(contentX, cardRect.y + 76f, contentWidth, 24f),
+                    new Rect(textX, cardRect.y + 76f, textWidth, 24f),
                     item.Delta,
                     badgeStyle);
             }
+        }
+    }
+
+    private static Color ResolveModernKpiIconColor(ModernKpiIcon icon) => icon switch
+    {
+        ModernKpiIcon.Power => new Color(0.48f, 0.70f, 0.98f, 1f),
+        ModernKpiIcon.Reliability => new Color(0.43f, 0.81f, 0.53f, 1f),
+        ModernKpiIcon.Weight => new Color(0.91f, 0.71f, 0.34f, 1f),
+        ModernKpiIcon.PartsCost => new Color(0.68f, 0.57f, 0.82f, 1f),
+        ModernKpiIcon.CompleteCost => new Color(0.79f, 0.63f, 0.88f, 1f),
+        ModernKpiIcon.SpecificFuel => new Color(0.38f, 0.76f, 0.82f, 1f),
+        ModernKpiIcon.Speed => new Color(0.48f, 0.70f, 0.98f, 1f),
+        ModernKpiIcon.Range => new Color(0.35f, 0.78f, 0.70f, 1f),
+        ModernKpiIcon.Payload => new Color(0.91f, 0.71f, 0.34f, 1f),
+        ModernKpiIcon.Maneuverability => new Color(0.91f, 0.48f, 0.38f, 1f),
+        _ => WrightTycoonUiTheme.TextMuted,
+    };
+
+    private static void DrawModernKpiIcon(Rect rect, ModernKpiIcon icon, Color color)
+    {
+        Vector2 Point(float x, float y) => new(rect.x + (rect.width * x), rect.y + (rect.height * y));
+
+        switch (icon)
+        {
+            case ModernKpiIcon.Power:
+                DrawModernIconPolyline(color, 2.2f,
+                    Point(0.58f, 0.03f), Point(0.22f, 0.52f), Point(0.48f, 0.52f),
+                    Point(0.36f, 0.97f), Point(0.79f, 0.39f), Point(0.53f, 0.39f),
+                    Point(0.58f, 0.03f));
+                break;
+            case ModernKpiIcon.Reliability:
+                DrawModernIconPolyline(color, 2.1f,
+                    Point(0.50f, 0.05f), Point(0.85f, 0.20f), Point(0.82f, 0.58f),
+                    Point(0.68f, 0.81f), Point(0.50f, 0.95f), Point(0.32f, 0.81f),
+                    Point(0.18f, 0.58f), Point(0.15f, 0.20f), Point(0.50f, 0.05f));
+                DrawModernIconPolyline(color, 2f,
+                    Point(0.31f, 0.50f), Point(0.45f, 0.64f), Point(0.70f, 0.36f));
+                break;
+            case ModernKpiIcon.Weight:
+                DrawModernIconArc(rect, color, 2f, 0.50f, 0.30f, 0.17f, 0.18f, 180f, 360f, 8);
+                DrawModernIconPolyline(color, 2.1f,
+                    Point(0.34f, 0.30f), Point(0.22f, 0.86f), Point(0.78f, 0.86f),
+                    Point(0.66f, 0.30f), Point(0.34f, 0.30f));
+                break;
+            case ModernKpiIcon.PartsCost:
+                DrawModernIconCircle(rect, color, 2f, 0.50f, 0.50f, 0.23f, 12);
+                DrawModernIconCircle(rect, color, 2f, 0.50f, 0.50f, 0.09f, 10);
+                for (var index = 0; index < 8; index++)
+                {
+                    var angle = index * Mathf.PI * 0.25f;
+                    var direction = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+                    var center = Point(0.50f, 0.50f);
+                    DrawLine(center + (direction * rect.width * 0.27f), center + (direction * rect.width * 0.42f), color, 2.4f);
+                }
+                break;
+            case ModernKpiIcon.CompleteCost:
+                DrawModernIconArc(rect, color, 2f, 0.50f, 0.23f, 0.31f, 0.13f, 0f, 360f, 16);
+                DrawModernIconArc(rect, color, 2f, 0.50f, 0.45f, 0.31f, 0.13f, 0f, 180f, 8);
+                DrawModernIconArc(rect, color, 2f, 0.50f, 0.67f, 0.31f, 0.13f, 0f, 180f, 8);
+                DrawLine(Point(0.19f, 0.23f), Point(0.19f, 0.68f), color, 2f);
+                DrawLine(Point(0.81f, 0.23f), Point(0.81f, 0.68f), color, 2f);
+                break;
+            case ModernKpiIcon.SpecificFuel:
+                DrawModernIconPolyline(color, 2.1f,
+                    Point(0.50f, 0.04f), Point(0.26f, 0.39f), Point(0.20f, 0.58f),
+                    Point(0.25f, 0.77f), Point(0.36f, 0.90f), Point(0.50f, 0.95f),
+                    Point(0.64f, 0.90f), Point(0.75f, 0.77f), Point(0.80f, 0.58f),
+                    Point(0.74f, 0.39f), Point(0.50f, 0.04f));
+                DrawLine(Point(0.58f, 0.75f), Point(0.68f, 0.62f), color, 1.7f);
+                break;
+            case ModernKpiIcon.Speed:
+                DrawModernIconArc(rect, color, 2.1f, 0.50f, 0.62f, 0.39f, 0.39f, 180f, 360f, 12);
+                DrawLine(Point(0.16f, 0.78f), Point(0.84f, 0.78f), color, 2.1f);
+                DrawLine(Point(0.50f, 0.62f), Point(0.73f, 0.38f), color, 2.2f);
+                DrawModernIconCircle(rect, color, 2f, 0.50f, 0.62f, 0.05f, 8);
+                break;
+            case ModernKpiIcon.Range:
+                DrawModernIconCircle(rect, color, 2.1f, 0.50f, 0.38f, 0.30f, 14);
+                DrawModernIconCircle(rect, color, 1.8f, 0.50f, 0.38f, 0.09f, 10);
+                DrawModernIconPolyline(color, 2.1f,
+                    Point(0.25f, 0.55f), Point(0.50f, 0.94f), Point(0.75f, 0.55f));
+                break;
+            case ModernKpiIcon.Payload:
+                DrawModernIconPolyline(color, 2.1f,
+                    Point(0.14f, 0.30f), Point(0.50f, 0.12f), Point(0.86f, 0.30f),
+                    Point(0.86f, 0.79f), Point(0.50f, 0.95f), Point(0.14f, 0.79f),
+                    Point(0.14f, 0.30f), Point(0.50f, 0.48f), Point(0.86f, 0.30f));
+                DrawLine(Point(0.50f, 0.48f), Point(0.50f, 0.95f), color, 2.1f);
+                DrawLine(Point(0.32f, 0.21f), Point(0.68f, 0.39f), color, 1.8f);
+                break;
+            case ModernKpiIcon.Maneuverability:
+                DrawModernIconPolyline(color, 2.1f,
+                    Point(0.08f, 0.58f), Point(0.36f, 0.47f), Point(0.48f, 0.10f),
+                    Point(0.58f, 0.07f), Point(0.59f, 0.43f), Point(0.87f, 0.54f),
+                    Point(0.88f, 0.64f), Point(0.58f, 0.59f), Point(0.45f, 0.90f),
+                    Point(0.36f, 0.88f), Point(0.39f, 0.57f), Point(0.08f, 0.66f),
+                    Point(0.08f, 0.58f));
+                break;
+        }
+    }
+
+    private static void DrawModernIconPolyline(Color color, float thickness, params Vector2[] points)
+    {
+        for (var index = 1; index < points.Length; index++)
+        {
+            DrawLine(points[index - 1], points[index], color, thickness);
+        }
+    }
+
+    private static void DrawModernIconCircle(
+        Rect rect,
+        Color color,
+        float thickness,
+        float centerX,
+        float centerY,
+        float radius,
+        int segments)
+    {
+        DrawModernIconArc(rect, color, thickness, centerX, centerY, radius, radius, 0f, 360f, segments);
+    }
+
+    private static void DrawModernIconArc(
+        Rect rect,
+        Color color,
+        float thickness,
+        float centerX,
+        float centerY,
+        float radiusX,
+        float radiusY,
+        float startDegrees,
+        float endDegrees,
+        int segments)
+    {
+        Vector2 PointAt(float degrees)
+        {
+            var radians = degrees * Mathf.Deg2Rad;
+            return new Vector2(
+                rect.x + (rect.width * (centerX + (Mathf.Cos(radians) * radiusX))),
+                rect.y + (rect.height * (centerY + (Mathf.Sin(radians) * radiusY))));
+        }
+
+        var previous = PointAt(startDegrees);
+        for (var index = 1; index <= segments; index++)
+        {
+            var current = PointAt(Mathf.Lerp(startDegrees, endDegrees, index / (float)segments));
+            DrawLine(previous, current, color, thickness);
+            previous = current;
         }
     }
 
@@ -462,32 +623,38 @@ public sealed partial class WrightTycoonLaunchRunner
                 current.OutputKind == EngineOutputKind.PowerKilowatts ? "POWER @ 0m" : "THRUST @ 0m",
                 $"{FormatUiNumber(currentOutput, "0")} {outputUnit}",
                 outputDelta,
-                outputTone),
+                outputTone,
+                ModernKpiIcon.Power),
             new ModernKpiItem(
                 "RELIABILITY",
                 $"{FormatUiNumber(current.Reliability * 100d, "0.0")}%",
                 reliabilityDelta,
-                reliabilityTone),
+                reliabilityTone,
+                ModernKpiIcon.Reliability),
             new ModernKpiItem(
                 "WEIGHT",
                 $"{FormatUiNumber(current.Weight.Kilograms, "0")} kg",
                 weightDelta,
-                weightTone),
+                weightTone,
+                ModernKpiIcon.Weight),
             new ModernKpiItem(
                 "PARTS COST",
                 FormatCurrency(current.Cost),
                 costDelta,
-                costTone),
+                costTone,
+                ModernKpiIcon.PartsCost),
             new ModernKpiItem(
                 "COMPLETE COST",
                 FormatCurrency(current.CompleteProductionCost),
                 completeCostDelta,
-                completeCostTone),
+                completeCostTone,
+                ModernKpiIcon.CompleteCost),
             new ModernKpiItem(
                 "SPECIFIC FUEL",
                 $"{FormatUiNumber(currentSpecificFuelConsumption, "0.0000")} {specificFuelUnit}",
                 specificFuelDelta,
-                specificFuelTone));
+                specificFuelTone,
+                ModernKpiIcon.SpecificFuel));
     }
 
     private static double ResolveEngineSpecificFuelConsumption(Engine engine)
@@ -813,18 +980,35 @@ public sealed partial class WrightTycoonLaunchRunner
         Neutral = 4,
     }
 
+    private enum ModernKpiIcon
+    {
+        None = 0,
+        Power = 1,
+        Reliability = 2,
+        Weight = 3,
+        PartsCost = 4,
+        CompleteCost = 5,
+        SpecificFuel = 6,
+        Speed = 7,
+        Range = 8,
+        Payload = 9,
+        Maneuverability = 10,
+    }
+
     private readonly struct ModernKpiItem
     {
         public ModernKpiItem(
             string label,
             string value,
             string? delta = null,
-            ModernUiTone deltaTone = ModernUiTone.Neutral)
+            ModernUiTone deltaTone = ModernUiTone.Neutral,
+            ModernKpiIcon icon = ModernKpiIcon.None)
         {
             Label = label ?? string.Empty;
             Value = value ?? string.Empty;
             Delta = delta;
             DeltaTone = deltaTone;
+            Icon = icon;
         }
 
         public string Label { get; }
@@ -834,5 +1018,7 @@ public sealed partial class WrightTycoonLaunchRunner
         public string? Delta { get; }
 
         public ModernUiTone DeltaTone { get; }
+
+        public ModernKpiIcon Icon { get; }
     }
 }

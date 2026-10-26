@@ -7,13 +7,13 @@ using WrightTycoon.Core.Math;
 using WrightTycoon.Core.Physics;
 using WrightTycoon.Core.Production;
 using WrightTycoon.Core.Units;
+using WrightTycoon.Core.Fleet;
 
 namespace WrightTycoon.Core.Engines;
 
 public sealed class EngineCalculator : IEngineCalculator
 {
     private const double MinimumReliability = EngineDesignerBalance.Engine.MinimumReliability;
-    private const double MaximumReliability = EngineDesignerBalance.Engine.MaximumReliability;
     private const int PistonCylinderMin = EngineDesignerBalance.Engine.PistonCylinderMin;
     private const int PistonCylinderMax = EngineDesignerBalance.Engine.PistonCylinderMax;
     private const double PistonCompressionMin = EngineDesignerBalance.Engine.PistonCompressionMin;
@@ -84,24 +84,38 @@ public sealed class EngineCalculator : IEngineCalculator
             fuelReferenceSeaLevelOutput,
             effectiveTechnologyModifiers);
 
-        var reliability = Numeric.Clamp(
-            CalculateReliability(definition, effectiveParameters) * precisionEffects.ReliabilityMultiplier,
+        var reliability = System.Math.Max(
             MinimumReliability,
-            MaximumReliability);
+            CalculateReliability(definition, effectiveParameters) * precisionEffects.ReliabilityMultiplier);
         var unadjustedWeight = CalculateWeight(definition, effectiveParameters, seaLevelOutput, outputKind);
-        var weight = Mass.FromKilograms(unadjustedWeight.Kilograms * precisionEffects.WeightMultiplier);
+        var referenceWeight = Mass.FromKilograms(unadjustedWeight.Kilograms * precisionEffects.WeightMultiplier);
+        var weight = Mass.FromKilograms(referenceWeight.Kilograms
+            * (1d + effectiveParameters.DurabilityLevel * EngineMaintenancePolicy.DurabilityMassPerLevel));
         var costBreakdown = CalculateCostBreakdown(
             definition,
             effectiveParameters,
             seaLevelOutput,
             outputKind,
-            weight,
+            referenceWeight,
             precisionEffects);
         var productionManDaysBreakdown = CalculateProductionManDaysBreakdown(
             definition,
             effectiveParameters,
-            weight,
+            referenceWeight,
             precisionEffects);
+        if (effectiveParameters.DurabilityLevel > 0)
+        {
+            costBreakdown = new ProductionBreakdown(costBreakdown.Items.Concat(new[]
+            {
+                new ProductionBreakdownItem("Engine durability", costBreakdown.Total
+                    * effectiveParameters.DurabilityLevel * EngineMaintenancePolicy.DurabilityProductionPerLevel),
+            }));
+            productionManDaysBreakdown = new ProductionBreakdown(productionManDaysBreakdown.Items.Concat(new[]
+            {
+                new ProductionBreakdownItem("Engine durability", productionManDaysBreakdown.Total
+                    * effectiveParameters.DurabilityLevel * EngineMaintenancePolicy.DurabilityProductionPerLevel),
+            }));
+        }
         var cost = costBreakdown.Total;
         var productionMd = productionManDaysBreakdown.Total;
         var engineCoreDiameterMeters = CalculateEngineCoreDiameterMeters(definition.EngineType, effectiveParameters);
@@ -403,7 +417,7 @@ public sealed class EngineCalculator : IEngineCalculator
             - cylinderPenalty
             - complexityPenalty
             + coolingBonus;
-        return Numeric.Clamp(reliability, MinimumReliability, MaximumReliability);
+        return System.Math.Max(MinimumReliability, reliability);
     }
     private static Mass CalculateWeight(
         EngineDefinition definition,

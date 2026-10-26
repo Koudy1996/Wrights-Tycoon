@@ -50,7 +50,7 @@ public sealed class FactoryAccountingCalculator
                 ? aircraft.Performance.EnginesProductionCost
                 : aircraft.Airframe.Parameters.EngineCount * aircraft.Engine.Performance.Cost;
             variablePlaneBuildExpenses += producedUnits * airframeParts;
-            variableEngineBuildExpenses += producedUnits * engineParts;
+            if (!report.UsesExternalEngineSupply) variableEngineBuildExpenses += producedUnits * engineParts;
         }
 
         var variableEngineStaffExpenses = report.EngineFactoryReport.TotalAutoAssignedEmployees

@@ -40,7 +40,6 @@ public static class HeadquartersBalance
 {
     public const int MaximumCompanyQualityLevel = 20;
     public const double ReliabilityBonusPerQualityLevel = 0.01d;
-    public const double MaximumAircraftReliability = 0.995d;
 
     public static double GetResearchFundingMonthlyCost(CompanyResearchFundingLevel level) => level switch
     {
@@ -97,9 +96,7 @@ public static class HeadquartersBalance
         System.Math.Clamp(qualityLevel, 0, MaximumCompanyQualityLevel) * ReliabilityBonusPerQualityLevel;
 
     public static double ApplyCompanyReliabilityBonus(double baseReliability, int qualityLevel) =>
-        System.Math.Min(
-            MaximumAircraftReliability,
-            System.Math.Max(0d, baseReliability) + GetCompanyReliabilityBonus(qualityLevel));
+        System.Math.Max(0d, baseReliability) + GetCompanyReliabilityBonus(qualityLevel);
 
     public static HeadquartersUpgradeDefinition GetNextUpgrade(HeadquartersFacility facility, int currentLevel)
     {

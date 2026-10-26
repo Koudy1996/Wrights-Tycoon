@@ -34,6 +34,7 @@ public sealed class WingAreaPayloadOptimizerTests
     }
 
     [Test]
+    [Category("Extended")]
     public void SkipsInvalidAircraftCandidatesAndPreservesUsefulError()
     {
         var result = WingAreaPayloadOptimizer.FindSmallestMeetingPayload(

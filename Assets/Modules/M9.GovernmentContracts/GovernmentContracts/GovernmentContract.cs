@@ -39,6 +39,26 @@ public sealed class GovernmentContract
     public GovernmentContractSubmissionCandidate? AcceptedSubmission { get; private set; }
 
     public double UpfrontFundingGranted { get; private set; }
+    public double? LockedUnitPrice { get; private set; }
+    public WrightTycoon.Core.Fleet.ServiceOfferSnapshot? LockedServiceOffer { get; private set; }
+    public WrightTycoon.Core.Contracts.LifecycleCostQuote? LockedLifecycleCostQuote { get; private set; }
+    public void LockUnitPrice(double unitPrice, WrightTycoon.Core.Fleet.ServiceOfferSnapshot? serviceOffer = null,
+        WrightTycoon.Core.Contracts.LifecycleCostQuote? lifecycleCostQuote = null)
+    {
+        if (Requirements.EconomicSnapshot is { } economic && System.Math.Abs(unitPrice - economic.OfferedUnitPrice) > .005d)
+            throw new InvalidOperationException("Government price differs from its economic snapshot.");
+        WrightTycoon.Core.Fleet.LifecycleCalculator.RequireFiniteNonNegative(unitPrice, nameof(unitPrice));
+        if (LockedUnitPrice.HasValue) throw new InvalidOperationException("Price is already locked.");
+        LockedUnitPrice = unitPrice;
+        if (Requirements.LifecycleModelVersion > 0 && AcceptedSubmission is not null)
+        {
+            var metrics = AcceptedSubmission.Metrics;
+            LockedServiceOffer = serviceOffer ?? metrics.CreateServiceOffer();
+            LockedLifecycleCostQuote = lifecycleCostQuote ?? WrightTycoon.Core.Contracts.LifecycleCostCalculator.Calculate(
+                WrightTycoon.Core.Contracts.LifecycleCostCalculator.ExpectedOperatingLifeHours(Requirements.MinimumExpectedLifeHours, metrics.ExpectedLifeHours), unitPrice, metrics.FuelBurnKilogramsPerHour,
+                metrics.FuelPricePerKilogram, LockedServiceOffer, Requirements.UtilizationHoursPerMonth);
+        }
+    }
 
     public GovernmentContractEvaluationResult? EvaluationResult { get; private set; }
 

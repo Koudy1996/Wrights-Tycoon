@@ -2,6 +2,10 @@ using System;
 using WrightTycoon.Core.Campaign;
 using WrightTycoon.Core.Data;
 using WrightTycoon.Core.Physics;
+using WrightTycoon.Core.Aircraft;
+using WrightTycoon.Core.Research;
+using WrightTycoon.Core.Production;
+using System.Linq;
 
 namespace WrightTycoon.Core.Engines;
 
@@ -31,10 +35,39 @@ public sealed class EngineBuilder
         EngineDefinition definition,
         EngineParameters parameters,
         HistoricalCampaignTechnologyModifiers? technologyModifiers)
+        => Build(definition, parameters, technologyModifiers, null);
+
+    public Engine Build(
+        EngineDefinition definition,
+        EngineParameters parameters,
+        TypeResearchModifierPoints researchModifiers)
+        => Build(definition, parameters, _technologyModifierSource?.GetCurrentModifiers(), researchModifiers);
+
+    public Engine Build(
+        EngineDefinition definition,
+        EngineParameters parameters,
+        HistoricalCampaignTechnologyModifiers? technologyModifiers,
+        TypeResearchModifierPoints? researchModifiers)
     {
         var report = _calculator.Calculate(definition, parameters, _atmosphereModel, technologyModifiers);
+        var effects = TypeResearchModifierCalculator.Calculate(researchModifiers);
+        // Always build from raw parameters, never from a previously modified report.
+        report = new EnginePerformanceReport(
+            report.OutputKind,
+            report.AltitudePerformance,
+            System.Math.Max(0d, report.Reliability + effects.ReliabilityDelta),
+            report.Weight,
+            report.Cost * effects.ProductionCostMultiplier,
+            report.ProductionManDays * effects.ProductionManDaysMultiplier,
+            report.EngineLengthMeters,
+            report.EngineFrontalAreaSquareMeters,
+            ScaleBreakdown(report.CostBreakdown, effects.ProductionCostMultiplier),
+            ScaleBreakdown(report.ProductionManDaysBreakdown, effects.ProductionManDaysMultiplier));
         return new Engine(definition, parameters, report);
     }
+
+    private static ProductionBreakdown ScaleBreakdown(ProductionBreakdown breakdown, double multiplier) =>
+        new(breakdown.Items.Select(item => new ProductionBreakdownItem(item.Label, item.Amount * multiplier)));
 
     public Engine BuildFromRepository(string definitionId, EngineParameters parameters, IEngineDefinitionRepository repository)
     {

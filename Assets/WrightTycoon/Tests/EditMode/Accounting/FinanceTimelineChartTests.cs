@@ -5,6 +5,7 @@ using NUnit.Framework;
 namespace WrightTycoon.Core.Tests.Accounting;
 
 [TestFixture]
+[Category("Extended")]
 public sealed class FinanceTimelineChartTests
 {
     [TestCase(0d, "0")]

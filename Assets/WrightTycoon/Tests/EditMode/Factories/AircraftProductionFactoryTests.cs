@@ -16,6 +16,36 @@ namespace WrightTycoon.Core.Tests.Factories;
 public sealed class AircraftProductionFactoryTests
 {
     [Test]
+    public void ActiveAutomaticFactoryStoresEquipmentAndDiscardsOnlyUnfinishedWork()
+    {
+        var network = BuildOperationalFactoryNetwork(2);
+        var source = network.Factories[0].FactoryId;
+        var target = network.Factories[1].FactoryId;
+        network.TryPurchaseAndInstallEquipment(source, "type", FactoryAutomationTier.HandBuilt, 100d, double.MaxValue, out _, out _);
+        var snapshot = network.CreateSnapshot();
+        snapshot.AutomaticStockReplenishment = true;
+        snapshot.AircraftStockTargets["type"] = 1000;
+        snapshot.WarehouseEntries.Add(new FactoryWarehouseEntrySnapshot { DesignId = "type", Units = 7 });
+        snapshot.Factories[0].Line!.CarryOverManDays = 100d;
+        snapshot.Factories[0].Line!.MonthlyProductionTargetUnits = 1000;
+        snapshot.SupportWorkOrders.Add(new FactorySupportWorkOrderSnapshot
+        { DesignId = "type", FactoryId = source, RemainingUnits = 100, CompletedManDays = 5d,
+            UnitManDays = 10d, UnitMaterialCost = 20d, UnitOverheadCost = 2d });
+        network.RestoreSnapshot(snapshot);
+        Assert.That(network.TryStoreInstalledEquipment(source, out _), Is.True);
+        Assert.That(network.TryStoreInstalledEquipment(source, out _), Is.False);
+        var equipmentId = network.Equipment.Single().EquipmentId;
+        network.RestoreSnapshot(network.CreateSnapshot());
+        Assert.That(network.Factories[0].Line!.CarryOverManDays, Is.Zero);
+        Assert.That(network.Factories[0].Line!.AssignedDesignId, Is.Null);
+        Assert.That(network.CreateSnapshot().SupportWorkOrders, Is.Empty);
+        Assert.That(network.GetWarehouseUnits("type"), Is.EqualTo(7));
+        Assert.That(network.TryReinstallEquipment(equipmentId, target, double.MaxValue, out _, out _), Is.True);
+        Assert.That(network.Factories[1].Line!.CarryOverManDays, Is.Zero);
+        Assert.That(network.CreateSnapshot().SupportWorkOrders, Is.Empty);
+    }
+
+    [Test]
     public void FactoryConstruction_CostDurationAndMaintenanceMatchBalance()
     {
         var network = new AircraftProductionFactory();
@@ -49,6 +79,7 @@ public sealed class AircraftProductionFactoryTests
     [TestCase(FactoryAutomationTier.MechanizedCells, 0.78d, 50, 140d)]
     [TestCase(FactoryAutomationTier.AutomatedLine, 0.65d, 75, 300d)]
     [TestCase(FactoryAutomationTier.SophisticatedLine, 0.50d, 100, 455d)]
+    [Category("Extended")]
     public void AutomationTier_UsesConfiguredEconomics(FactoryAutomationTier tier, double mdMultiplier, int maxOutput, double costMultiplier)
     {
         Assert.That(FactoryBalance.GetProductionManDayMultiplier(tier), Is.EqualTo(mdMultiplier));
@@ -57,13 +88,57 @@ public sealed class AircraftProductionFactoryTests
     }
 
     [Test]
-    public void SophisticatedLine_GrossLaborBreakEvenVersusHandBuilt_IsNineHundredUnits()
+    public void SophisticatedLine_GrossLaborBreakEvenUsesFixedEquipmentPrices()
     {
         const double laborCost = 16_000d;
-        var premium = laborCost * (FactoryBalance.GetPurchaseCostMultiplier(FactoryAutomationTier.SophisticatedLine)
-            - FactoryBalance.GetPurchaseCostMultiplier(FactoryAutomationTier.HandBuilt));
+        var premium = FactoryBalance.GetEquipmentPurchaseCost(FactoryAutomationTier.SophisticatedLine, FactoryBuildingSize.Small)
+            - FactoryBalance.GetEquipmentPurchaseCost(FactoryAutomationTier.HandBuilt, FactoryBuildingSize.Small);
         var savingPerUnit = laborCost * (1d - FactoryBalance.GetProductionManDayMultiplier(FactoryAutomationTier.SophisticatedLine));
-        Assert.That(premium / savingPerUnit, Is.EqualTo(900d));
+        Assert.That(premium / savingPerUnit, Is.EqualTo(11_125d));
+    }
+
+    [TestCase(FactoryAutomationTier.HandBuilt, 1_000_000d)]
+    [TestCase(FactoryAutomationTier.JigsAndFixtures, 8_000_000d)]
+    [TestCase(FactoryAutomationTier.MechanizedCells, 25_000_000d)]
+    [TestCase(FactoryAutomationTier.AutomatedLine, 55_000_000d)]
+    [TestCase(FactoryAutomationTier.SophisticatedLine, 90_000_000d)]
+    [Category("Extended")]
+    public void EquipmentPriceDependsOnlyOnTierAndBuildingSize(FactoryAutomationTier tier, double smallPrice)
+    {
+        foreach (var size in new[] { FactoryBuildingSize.Small, FactoryBuildingSize.Medium, FactoryBuildingSize.Large })
+        {
+            var multiplier = size == FactoryBuildingSize.Small ? 1 : size == FactoryBuildingSize.Medium ? 3 : 9;
+            var state = new FactoryStateSnapshot();
+            state.Factories.Add(new FactorySiteSnapshot { FactoryId = "s", BuildingSize = (int)size, CapacitySchemaVersion = 1, Line = new FactoryLineSnapshot() });
+            foreach (var md in new[] { 10d, 10_000d })
+            {
+                var network = new AircraftProductionFactory(); network.RestoreSnapshot(state);
+                Assert.That(network.TryPurchaseAndInstallEquipment("s", "type", tier, md, double.MaxValue, out var cost, out _), Is.True);
+                Assert.That(cost, Is.EqualTo(smallPrice * multiplier));
+                Assert.That(network.Equipment[0].BuildingSize, Is.EqualTo(size));
+                Assert.That(network.Equipment[0].BaselineProductionManDays, Is.EqualTo(md));
+            }
+        }
+    }
+
+    [Test]
+    [Category("Extended")]
+    public void StoredEquipmentRetainsSizeRecipeAndPriceAcrossSaveAndRejectsOtherSizes()
+    {
+        var network = BuildOperationalFactoryNetwork(2);
+        network.TryPurchaseAndInstallEquipment(network.Factories[0].FactoryId, "type", FactoryAutomationTier.HandBuilt, 123d, double.MaxValue, out _, out _);
+        Assert.That(network.TryStartFactoryExpansion(network.Factories[0].FactoryId, double.MaxValue, out _, out _), Is.False);
+        Assert.That(network.TryStoreInstalledEquipment(network.Factories[0].FactoryId, out _), Is.True);
+        var snapshot = network.CreateSnapshot(); snapshot.Factories[1].BuildingSize = (int)FactoryBuildingSize.Large;
+        network.RestoreSnapshot(snapshot);
+        var equipment = network.Equipment[0];
+        Assert.That(network.GetMonthlyEquipmentStorageCost(), Is.EqualTo(100d));
+        Assert.That(network.TryReinstallEquipment(equipment.EquipmentId, network.Factories[1].FactoryId, double.MaxValue, out _, out _), Is.False);
+        Assert.That(network.TryReinstallEquipment(equipment.EquipmentId, network.Factories[0].FactoryId, 29_999d, out _, out _), Is.False);
+        Assert.That(network.TryReinstallEquipment(equipment.EquipmentId, network.Factories[0].FactoryId, 30_000d, out var fee, out _), Is.True);
+        Assert.That(fee, Is.EqualTo(30_000d));
+        Assert.That(network.Factories[0].BaselineAircraftManDays, Is.EqualTo(123d));
+        Assert.That(network.GetMonthlyEquipmentStorageCost(), Is.Zero);
     }
 
     [Test]
@@ -78,6 +153,25 @@ public sealed class AircraftProductionFactoryTests
             FactoryAutomationTier.AutomatedLine, md, double.MaxValue, out _, out _), Is.True);
         Assert.That(network.Equipment.Count, Is.EqualTo(2));
         Assert.That(network.Equipment.Select(item => item.EquipmentId).Distinct().Count(), Is.EqualTo(2));
+    }
+
+    [Test]
+    [Category("Extended")]
+    public void LegacyEquipmentInfersInstalledSizeWithoutRepricing()
+    {
+        var snapshot = new FactoryStateSnapshot();
+        snapshot.Factories.Add(new FactorySiteSnapshot { FactoryId = "medium", BuildingSize = 1, CapacitySchemaVersion = 1,
+            BaselineAircraftManDays = 321d, Line = new FactoryLineSnapshot() });
+        snapshot.Equipment.Add(new FactoryEquipmentSnapshot { EquipmentId = "old", DesignId = "type", FactoryId = "medium", PurchaseCost = 12345d });
+        var network = new AircraftProductionFactory(); network.RestoreSnapshot(snapshot);
+        Assert.That(network.Equipment[0].BuildingSize, Is.EqualTo(FactoryBuildingSize.Medium));
+        Assert.That(network.Equipment[0].PurchaseCost, Is.EqualTo(12345d));
+        Assert.That(network.TryStoreInstalledEquipment("medium", out _), Is.True);
+        network.RestoreSnapshot(network.CreateSnapshot());
+        Assert.That(network.Equipment[0].BuildingSize, Is.EqualTo(FactoryBuildingSize.Medium));
+        Assert.That(network.TryReinstallEquipment("old", "medium", double.MaxValue, out var cost, out _), Is.True);
+        Assert.That(cost, Is.EqualTo(12345d * .03d));
+        Assert.That(network.Factories[0].BaselineAircraftManDays, Is.EqualTo(321d));
     }
 
     [Test]
@@ -101,12 +195,13 @@ public sealed class AircraftProductionFactoryTests
         Assert.That(equipment.InstallationMonthsRemaining, Is.EqualTo(3));
     }
 
-    [TestCase(FactoryAutomationTier.HandBuilt, 10)]
-    [TestCase(FactoryAutomationTier.JigsAndFixtures, 25)]
-    [TestCase(FactoryAutomationTier.MechanizedCells, 50)]
-    [TestCase(FactoryAutomationTier.AutomatedLine, 75)]
-    [TestCase(FactoryAutomationTier.SophisticatedLine, 100)]
-    public void MonthlyTarget_IsClampedToInstalledTierCapacity(FactoryAutomationTier tier, int expectedMaximum)
+    [TestCase(FactoryAutomationTier.HandBuilt, 115)]
+    [TestCase(FactoryAutomationTier.JigsAndFixtures, 128)]
+    [TestCase(FactoryAutomationTier.MechanizedCells, 147)]
+    [TestCase(FactoryAutomationTier.AutomatedLine, 177)]
+    [TestCase(FactoryAutomationTier.SophisticatedLine, 230)]
+    [Category("Extended")]
+    public void MonthlyTarget_IsClampedToPhysicalCombinedMdCapacity(FactoryAutomationTier tier, int expectedMaximum)
     {
         var item = CreateCatalogItem($"design.{tier}", 100d, 1, 10d);
         var network = BuildOperationalFactoryNetwork();
@@ -128,15 +223,15 @@ public sealed class AircraftProductionFactoryTests
         network.TryPurchaseAndInstallEquipment(factory.FactoryId, item.DesignId, FactoryAutomationTier.AutomatedLine,
             TotalProductionManDays(item), double.MaxValue, out _, out _);
         network.TrySetMonthlyProductionTargetUnits(factory.FactoryId, 90, out var applied, out _);
-        Assert.That(applied, Is.EqualTo(75));
+        Assert.That(applied, Is.EqualTo(90));
         var blocked = network.SimulateMonth(catalog, 0, SimulationDate.WrightTycoonStart);
         Assert.That(blocked.TotalAircraftProduced, Is.Zero);
-        Assert.That(factory.Line!.MonthlyProductionTargetUnits, Is.EqualTo(75));
+        Assert.That(factory.Line!.MonthlyProductionTargetUnits, Is.EqualTo(90));
         for (var month = 0; month < FactoryBalance.GetInitialInstallationMonths(FactoryAutomationTier.AutomatedLine); month++)
             network.AdvanceMonth();
-        Assert.That(factory.Line.MonthlyProductionTargetUnits, Is.EqualTo(75));
+        Assert.That(factory.Line.MonthlyProductionTargetUnits, Is.EqualTo(90));
         var produced = network.SimulateMonth(catalog, 1, SimulationDate.WrightTycoonStart.NextMonth());
-        Assert.That(produced.TotalAircraftProduced, Is.EqualTo(75));
+        Assert.That(produced.TotalAircraftProduced, Is.EqualTo(90));
     }
 
     [Test]
@@ -198,7 +293,7 @@ public sealed class AircraftProductionFactoryTests
         restored.RestoreSnapshot(network.CreateSnapshot());
         Assert.That(restored.Factories.Count, Is.EqualTo(2));
         Assert.That(restored.Equipment[0].FactoryId, Is.EqualTo(restored.Factories[1].FactoryId));
-        Assert.That(restored.Factories[1].Line!.MonthlyProductionTargetUnits, Is.EqualTo(50));
+        Assert.That(restored.Factories[1].Line!.MonthlyProductionTargetUnits, Is.EqualTo(449));
         Assert.That(restored.GetWarehouseUnits(item.DesignId), Is.EqualTo(7));
     }
 
@@ -232,6 +327,7 @@ public sealed class AircraftProductionFactoryTests
     }
 
     [Test]
+    [Category("Extended")]
     public void LegacySingletonSnapshot_MigratesToFactoryOneAndCentralDepot()
     {
         var legacy = new FactoryStateSnapshot
@@ -252,7 +348,7 @@ public sealed class AircraftProductionFactoryTests
         restored.RestoreSnapshot(legacy);
         Assert.That(restored.Factories.Single().FactoryId, Is.EqualTo("factory.001"));
         Assert.That(restored.Factories.Single().Line!.LineId, Is.EqualTo("factory.001.line.1"));
-        Assert.That(restored.Factories.Single().Line!.MonthlyProductionTargetUnits, Is.EqualTo(10));
+        Assert.That(restored.Factories.Single().Line!.MonthlyProductionTargetUnits, Is.EqualTo(100));
         Assert.That(restored.Equipment.Count(item => item.Location == FactoryEquipmentLocation.Stored), Is.EqualTo(1));
     }
 
@@ -268,12 +364,12 @@ public sealed class AircraftProductionFactoryTests
         network.TryStoreInstalledEquipment(first.FactoryId, out _);
         for (var month = 0; month < 24; month++) network.AdvanceMonth();
         Assert.That(network.TrySellFactory(second.FactoryId, out var income, out _), Is.True);
-        Assert.That(income, Is.EqualTo(80_000_000d * 0.53d));
+        Assert.That(income, Is.EqualTo(80_000_000d * 0.88d));
         Assert.That(network.Factories.Count, Is.EqualTo(1));
         Assert.That(network.Equipment.Count, Is.EqualTo(1));
     }
 
-    private static AircraftProductionFactory BuildOperationalFactoryNetwork(int count = 1)
+    internal static AircraftProductionFactory BuildOperationalFactoryNetwork(int count = 1)
     {
         var network = new AircraftProductionFactory();
         for (var index = 0; index < count; index++) network.TryStartFactoryConstruction(double.MaxValue, out _, out _);
@@ -284,7 +380,7 @@ public sealed class AircraftProductionFactoryTests
     private static double TotalProductionManDays(FactoryAircraftTypeCatalogItem item) =>
         item.Aircraft.Performance.AirframeProductionManDays + item.Aircraft.Performance.EnginesProductionManDays;
 
-    private static FactoryAircraftTypeCatalogItem CreateCatalogItem(string designId, double airframeMd, int engineCount, double enginesMd)
+    internal static FactoryAircraftTypeCatalogItem CreateCatalogItem(string designId, double airframeMd, int engineCount, double enginesMd)
     {
         var engineDefinition = new EngineDefinition { Id = $"eng.{designId}", DisplayName = "Engine", EngineType = EngineType.Radial };
         var engine = new Engine(engineDefinition,

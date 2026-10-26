@@ -48,9 +48,27 @@ public readonly struct GovernmentContractAircraftMetrics
         int CrewSize,
         double RequiredRunwayLengthMeters,
         double DevelopmentCost,
-        IReadOnlyList<AircraftCategory>? QualifiedAircraftTypes)
+        IReadOnlyList<AircraftCategory>? QualifiedAircraftTypes,
+        double ExpectedLifeHours = 0d,
+        int ServiceIntervalHours = 1000,
+        int GuaranteedSupportMonths = 120,
+        double FuelBurnKilogramsPerHour = 0d,
+        double UnitProductionCost = 0d,
+        double FuelPricePerKilogram = WrightTycoon.Core.Contracts.LifecycleCostCalculator.DefaultFuelPricePerKilogram,
+        double? ServicePricePerEvent = null,
+        int MaintenanceModelVersion = 2,
+        WrightTycoon.Core.Fleet.ServiceOfferSnapshot? CombinedServiceOffer = null)
     {
         this.AircraftType = AircraftType;
+        this.ExpectedLifeHours = ExpectedLifeHours;
+        this.ServiceIntervalHours = ServiceIntervalHours;
+        this.GuaranteedSupportMonths = GuaranteedSupportMonths;
+        this.FuelBurnKilogramsPerHour = FuelBurnKilogramsPerHour;
+        this.UnitProductionCost = UnitProductionCost;
+        this.FuelPricePerKilogram = FuelPricePerKilogram;
+        this.ServicePricePerEvent = ServicePricePerEvent;
+        this.MaintenanceModelVersion = MaintenanceModelVersion;
+        this.CombinedServiceOffer = CombinedServiceOffer;
         this.MaximumSpeedLowAltitudeMetersPerSecond = MaximumSpeedLowAltitudeMetersPerSecond;
         this.MaximumSpeedMediumAltitudeMetersPerSecond = MaximumSpeedMediumAltitudeMetersPerSecond;
         this.MaximumSpeedHighAltitudeMetersPerSecond = MaximumSpeedHighAltitudeMetersPerSecond;
@@ -68,6 +86,32 @@ public readonly struct GovernmentContractAircraftMetrics
 
     // Legacy single-category value retained for old snapshots; eligibility uses explicit metrics.
     public AircraftCategory AircraftType { get; }
+    public double ExpectedLifeHours { get; }
+    public int ServiceIntervalHours { get; }
+    public int GuaranteedSupportMonths { get; }
+    public double FuelBurnKilogramsPerHour { get; }
+    public double UnitProductionCost { get; }
+    public double FuelPricePerKilogram { get; }
+    public double? ServicePricePerEvent { get; }
+    public int MaintenanceModelVersion { get; }
+    public WrightTycoon.Core.Fleet.ServiceOfferSnapshot? CombinedServiceOffer { get; }
+
+    public WrightTycoon.Core.Fleet.ServiceOfferSnapshot CreateServiceOffer()
+    {
+        if (MaintenanceModelVersion != 2)
+            throw new InvalidOperationException("Only separate airframe and installed-engine maintenance is supported.");
+        return CombinedServiceOffer ?? throw new InvalidOperationException("Combined engine maintenance terms are missing.");
+    }
+
+    public WrightTycoon.Core.Fleet.ServiceOfferSnapshot CreateContractServiceOffer(GovernmentContractRequirements requirements) =>
+        requirements.LifecycleModelVersion > 0
+            ? CreateServiceOffer() with { GuaranteedSupportMonths = requirements.MinimumSupportMonths }
+            : CreateServiceOffer();
+
+    public WrightTycoon.Core.Contracts.LifecycleCostQuote QuoteForContract(GovernmentContractRequirements requirements, double purchasePrice) =>
+        WrightTycoon.Core.Contracts.LifecycleCostCalculator.Calculate(WrightTycoon.Core.Contracts.LifecycleCostCalculator.ExpectedOperatingLifeHours(requirements.MinimumExpectedLifeHours, ExpectedLifeHours),
+            purchasePrice, FuelBurnKilogramsPerHour, FuelPricePerKilogram,
+            CreateContractServiceOffer(requirements), requirements.UtilizationHoursPerMonth);
 
     public double MaximumSpeedLowAltitudeMetersPerSecond { get; }
 
@@ -104,6 +148,25 @@ public readonly struct GovernmentContractAircraftMetrics
 
     public void Validate()
     {
+        if (MaintenanceModelVersion != 2)
+            throw new ArgumentOutOfRangeException(nameof(MaintenanceModelVersion));
+        if (ExpectedLifeHours > 0d || CombinedServiceOffer is not null)
+        {
+            if (CombinedServiceOffer is null || CombinedServiceOffer.MaintenanceModelVersion != 2)
+                throw new ArgumentException("Combined engine maintenance terms are required.");
+            CombinedServiceOffer.Validate();
+        }
+        WrightTycoon.Core.Fleet.LifecycleCalculator.RequireFiniteNonNegative(ExpectedLifeHours, nameof(ExpectedLifeHours));
+        WrightTycoon.Core.Fleet.LifecycleCalculator.RequireFiniteNonNegative(FuelBurnKilogramsPerHour, nameof(FuelBurnKilogramsPerHour));
+        WrightTycoon.Core.Fleet.LifecycleCalculator.RequireFiniteNonNegative(UnitProductionCost, nameof(UnitProductionCost));
+        WrightTycoon.Core.Fleet.LifecycleCalculator.RequireFiniteNonNegative(FuelPricePerKilogram, nameof(FuelPricePerKilogram));
+        if (ServicePricePerEvent.HasValue)
+            WrightTycoon.Core.Fleet.LifecycleCalculator.RequireFiniteNonNegative(ServicePricePerEvent.Value, nameof(ServicePricePerEvent));
+        if (ExpectedLifeHours > 0d)
+        {
+            WrightTycoon.Core.Fleet.LifecycleCalculator.ValidateServiceInterval(ServiceIntervalHours);
+            if (GuaranteedSupportMonths <= 0) throw new ArgumentOutOfRangeException(nameof(GuaranteedSupportMonths));
+        }
         _ = AircraftCategoryCatalog.GetProfile(AircraftType);
 
         Numeric.ThrowIfNotFinite(MaximumSpeedLowAltitudeMetersPerSecond, nameof(MaximumSpeedLowAltitudeMetersPerSecond));
@@ -133,9 +196,9 @@ public readonly struct GovernmentContractAircraftMetrics
             throw new ArgumentOutOfRangeException(nameof(PayloadKilograms), "Payload must be >= 0.");
         }
 
-        if (Reliability < 0d || Reliability > 1d)
+        if (double.IsNaN(Reliability) || double.IsInfinity(Reliability) || Reliability < 0d)
         {
-            throw new ArgumentOutOfRangeException(nameof(Reliability), "Reliability must be within [0, 1].");
+            throw new ArgumentOutOfRangeException(nameof(Reliability), "Reliability must be finite and nonnegative.");
         }
 
         if (Maneuverability < 0d)

@@ -43,6 +43,12 @@ public sealed class AircraftFamilyDefinition
 
     public HistoricalCampaignTechnologyModifiers? InstalledEngineTechnologyModifiers { get; init; }
 
+    public AirframeTechnologySnapshot? TechnologySnapshot { get; init; }
+
+    public TypeResearchModifierPoints ResearchModifiers { get; init; } = new();
+
+    public TypeResearchModifierPoints InstalledEngineResearchModifiers { get; init; } = new();
+
     public EngineParameters BaseEngineParameters { get; init; } = new();
 
     public AirframeParameters BaseAirframeParameters { get; init; } = new();
@@ -132,11 +138,32 @@ public sealed class AircraftFamilyDefinition
         }
 
         BaseEngineParameters.Validate();
+        TechnologySnapshot?.Validate();
         BaseAirframeParameters.Validate();
+        if (ResearchModifiers is null) throw new ArgumentNullException(nameof(ResearchModifiers));
+        if (InstalledEngineResearchModifiers is null) throw new ArgumentNullException(nameof(InstalledEngineResearchModifiers));
+        ResearchModifiers.Validate();
+        InstalledEngineResearchModifiers.Validate();
     }
 
     public AircraftFamilyDefinition WithInstalledEngineTechnologyModifiers(
         HistoricalCampaignTechnologyModifiers? modifiers) =>
+        CopyWithModifiers(modifiers, ResearchModifiers, InstalledEngineResearchModifiers);
+
+    public AircraftFamilyDefinition WithTechnologySnapshot(AirframeTechnologySnapshot? snapshot) =>
+        CopyWithModifiers(InstalledEngineTechnologyModifiers, ResearchModifiers, InstalledEngineResearchModifiers, snapshot, true);
+
+    public AircraftFamilyDefinition WithResearchModifiers(TypeResearchModifierPoints? modifiers) =>
+        CopyWithModifiers(InstalledEngineTechnologyModifiers, modifiers, InstalledEngineResearchModifiers);
+
+    public AircraftFamilyDefinition WithInstalledEngineResearchModifiers(TypeResearchModifierPoints? modifiers) =>
+        CopyWithModifiers(InstalledEngineTechnologyModifiers, ResearchModifiers, modifiers);
+
+    private AircraftFamilyDefinition CopyWithModifiers(
+        HistoricalCampaignTechnologyModifiers? modifiers,
+        TypeResearchModifierPoints? researchModifiers,
+        TypeResearchModifierPoints? engineResearchModifiers,
+        AirframeTechnologySnapshot? snapshot = null, bool replaceSnapshot = false) =>
         new()
         {
             Id = Id,
@@ -155,6 +182,9 @@ public sealed class AircraftFamilyDefinition
             LockedWingShape = LockedWingShape,
             LockedWingPosition = LockedWingPosition,
             Category = Category,
+            TechnologySnapshot = replaceSnapshot ? snapshot : TechnologySnapshot,
+            ResearchModifiers = researchModifiers?.Clone() ?? new(),
+            InstalledEngineResearchModifiers = engineResearchModifiers?.Clone() ?? new(),
             InstalledEngineTechnologyModifiers = modifiers.HasValue
                 ? HistoricalCampaignTechnologyModifiers.Sanitize(modifiers.Value)
                 : null,
@@ -168,7 +198,8 @@ public sealed class AircraftFamilyDefinition
         string engineDefinitionId,
         EngineType engineType,
         EngineParameters engineParameters,
-        HistoricalCampaignTechnologyModifiers? technologyModifiers = null)
+        HistoricalCampaignTechnologyModifiers? technologyModifiers = null,
+        TypeResearchModifierPoints? researchModifiers = null)
     {
         if (string.IsNullOrWhiteSpace(engineDefinitionId))
         {
@@ -210,6 +241,9 @@ public sealed class AircraftFamilyDefinition
             LockedWingShape = LockedWingShape,
             LockedWingPosition = LockedWingPosition,
             Category = Category,
+            TechnologySnapshot = TechnologySnapshot,
+            ResearchModifiers = ResearchModifiers.Clone(),
+            InstalledEngineResearchModifiers = researchModifiers?.Clone() ?? new(),
             InstalledEngineTechnologyModifiers = technologyModifiers.HasValue
                 ? HistoricalCampaignTechnologyModifiers.Sanitize(technologyModifiers.Value)
                 : null,

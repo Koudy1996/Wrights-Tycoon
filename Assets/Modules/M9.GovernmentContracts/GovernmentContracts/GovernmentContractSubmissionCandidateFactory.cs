@@ -43,7 +43,9 @@ public static class GovernmentContractSubmissionCandidateFactory
         WrightTycoon.Core.Aircraft.Aircraft aircraft,
         GovernmentContractDevelopmentPriceBreakdown? developmentPriceBreakdown = null,
         int? qualificationYear = null,
-        int companyQualityLevel = 0)
+        int companyQualityLevel = 0,
+        WrightTycoon.Core.Fleet.ServiceOfferSnapshot? combinedServiceOffer = null,
+        double? fuelPricePerKilogram = null)
     {
         if (aircraft is null)
         {
@@ -54,7 +56,7 @@ public static class GovernmentContractSubmissionCandidateFactory
         var qualifiedCategories = qualificationYear.HasValue
             ? qualificationEvaluator.GetQualifiedCategories(aircraft, qualificationYear.Value)
             : qualificationEvaluator.GetQualifiedCategories(aircraft);
-        var metrics = BuildMetrics(aircraft, qualifiedCategories, companyQualityLevel);
+        var metrics = BuildMetrics(aircraft, qualifiedCategories, companyQualityLevel, combinedServiceOffer, fuelPricePerKilogram);
         return new GovernmentContractSubmissionCandidate(
             designId,
             displayName,
@@ -66,7 +68,9 @@ public static class GovernmentContractSubmissionCandidateFactory
     private static GovernmentContractAircraftMetrics BuildMetrics(
         WrightTycoon.Core.Aircraft.Aircraft aircraft,
         IReadOnlyList<AircraftCategory> qualifiedCategories,
-        int companyQualityLevel)
+        int companyQualityLevel,
+        WrightTycoon.Core.Fleet.ServiceOfferSnapshot? combinedServiceOffer = null,
+        double? fuelPricePerKilogram = null)
     {
         var lowSpeed = GetSpeedAtAltitude(aircraft.Performance, GovernmentContractBalance.SpeedAltitudeLowMeters);
         var mediumSpeed = GetSpeedAtAltitude(aircraft.Performance, GovernmentContractBalance.SpeedAltitudeMediumMeters);
@@ -76,6 +80,8 @@ public static class GovernmentContractSubmissionCandidateFactory
             aircraft.TypeDefinition.NavigationEquipment,
             aircraft.Performance.RangeKilometers);
         var legacyAircraftType = ResolveLegacyAircraftType(aircraft.FamilyDefinition.Category, qualifiedCategories);
+        var service = combinedServiceOffer ?? WrightTycoon.Core.Contracts.LifecycleCostCalculator.CreateEngineLifecycleServiceOffer(
+            aircraft, HeadquartersBalance.ApplyCompanyReliabilityBonus(aircraft.Performance.OverallReliability, companyQualityLevel));
 
         return new GovernmentContractAircraftMetrics(
             legacyAircraftType,
@@ -91,7 +97,18 @@ public static class GovernmentContractSubmissionCandidateFactory
             aircraft.Airframe.Parameters.CrewCount,
             runwayLength,
             aircraft.Development.DevelopmentCost,
-            qualifiedCategories);
+            qualifiedCategories,
+            WrightTycoon.Core.Fleet.LifecycleCalculator.CalculateExpectedLifeHours(aircraft.FamilyDefinition.Category,
+                HeadquartersBalance.ApplyCompanyReliabilityBonus(aircraft.Performance.OverallReliability, companyQualityLevel),
+                aircraft.TypeDefinition.ServiceIntervalHours, aircraft.TypeDefinition.ConstructionDurabilityLevel),
+            aircraft.TypeDefinition.ServiceIntervalHours,
+            aircraft.TypeDefinition.GuaranteedSupportMonths,
+            aircraft.Performance.AverageCruiseFuelBurnKilogramsPerHour,
+            aircraft.Performance.CompleteProductionCost,
+            fuelPricePerKilogram ?? WrightTycoon.Core.Contracts.LifecycleCostCalculator.FuelPricePerKilogram(aircraft),
+            service.ServicePricePerEvent,
+            MaintenanceModelVersion: 2,
+            CombinedServiceOffer: service);
     }
 
     private static double GetSpeedAtAltitude(

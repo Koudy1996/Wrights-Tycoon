@@ -9,4 +9,5 @@ public enum GovernmentContractParameter
     CrewSize = 4,
     RunwayLength = 5,
     Maneuverability = 6,
+    WholeLifeCost = 7,
 }

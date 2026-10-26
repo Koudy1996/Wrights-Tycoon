@@ -21,6 +21,14 @@ public sealed class AirframeParameters
 
     public WingProfileType WingProfile { get; set; } = WingProfileType.Standard;
 
+    public bool UseModularWingProfile { get; set; }
+
+    public double WingDesignSpeedKph { get; set; } = 350d;
+
+    public double WingPayloadAgility { get; set; }
+
+    public double WingProfileEfficiency { get; set; } = 50d;
+
     public double WingAspectRatio { get; set; } = PlaneDesignerBalance.Airframe.WingAspectRatioDefault;
 
     public double WingAreaSquareMeters { get; set; } = 28d;
@@ -59,6 +67,10 @@ public sealed class AirframeParameters
             WingPosition = WingPosition,
             WingShape = WingShape,
             WingProfile = WingProfile,
+            UseModularWingProfile = UseModularWingProfile,
+            WingDesignSpeedKph = WingDesignSpeedKph,
+            WingPayloadAgility = WingPayloadAgility,
+            WingProfileEfficiency = WingProfileEfficiency,
             WingAspectRatio = WingAspectRatio,
             WingAreaSquareMeters = WingAreaSquareMeters,
             TailType = TailType,
@@ -77,6 +89,7 @@ public sealed class AirframeParameters
 
     public void Validate()
     {
+        WingProfileCalculator.ValidateInputs(this);
         if (EngineCount < 1 || EngineCount > 6)
         {
             throw new ArgumentOutOfRangeException(nameof(EngineCount), "Engine count must be within [1, 6].");

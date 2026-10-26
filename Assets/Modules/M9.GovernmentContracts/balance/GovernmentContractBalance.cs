@@ -22,6 +22,7 @@ public static class GovernmentContractBalance
 
     public const double PricingMargin = 0.35d;
     public const double ContractPriceMarginImprovementMultiplier = 1.05d;
+    public const double AdditionalMarginMultiplier = 1.10d;
     public const double TopThirdLowerBoundFactor = 0.66d;
 
     public const double SpeedAltitudeLowMeters = 0d;

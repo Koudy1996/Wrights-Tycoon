@@ -27,8 +27,8 @@ public sealed class GovernmentContractBoard
     {
         _generator = generator ?? throw new ArgumentNullException(nameof(generator));
         _random = random ?? throw new ArgumentNullException(nameof(random));
-        _complianceEvaluator = complianceEvaluator ?? new GovernmentContractComplianceEvaluator();
         _pricingService = pricingService ?? new GovernmentContractPricingService();
+        _complianceEvaluator = complianceEvaluator ?? new GovernmentContractComplianceEvaluator(_pricingService);
     }
 
     public GovernmentContract? ActiveContract { get; private set; }
@@ -205,6 +205,8 @@ public sealed class GovernmentContractBoard
             : submission.Metrics.DevelopmentCost;
         var upfrontFunding = eligibleDevelopmentPrice * GovernmentContractBalance.UpfrontFundingShare;
         ActiveContract.Accept(currentDate, submission, upfrontFunding);
+        ActiveContract.LockUnitPrice(_pricingService.CalculateQuote(ActiveContract.Requirements, 1).UnitPrice,
+            submission.Metrics.CreateContractServiceOffer(ActiveContract.Requirements));
 
         return new GovernmentContractAcceptanceResult(
             true,
@@ -476,7 +478,8 @@ public sealed class GovernmentContractBoard
         var acceptedSubmission = contract.AcceptedSubmission
             ?? throw new InvalidOperationException("Accepted contract does not contain selected submission.");
 
-        var compliance = _complianceEvaluator.Evaluate(contract.Requirements, acceptedSubmission);
+        var compliance = _complianceEvaluator.Evaluate(contract.Requirements, acceptedSubmission, contract.LockedUnitPrice, contract.LockedLifecycleCostQuote,
+            serviceIntervalAlreadyAccepted: true);
         if (!compliance.IsSelectableInUi)
         {
             return new GovernmentContractEvaluationResult(
@@ -524,6 +527,7 @@ public sealed class GovernmentContractBoard
         var deliveryId = $"{evaluatedContract.ContractId}.delivery";
         var endsOn = currentDate.AddMonths(GovernmentContractBalance.DeliveryContractDurationYears * 12);
 
+        var unitPrice = evaluatedContract.LockedUnitPrice ?? quote.UnitPrice;
         return new GovernmentDeliveryContract(
             deliveryId,
             evaluatedContract.ContractId,
@@ -531,8 +535,12 @@ public sealed class GovernmentContractBoard
             currentDate,
             endsOn,
             totalUnits,
-            quote.UnitPrice,
-            quote.TotalContractValue);
+            unitPrice,
+            unitPrice * totalUnits,
+            evaluatedContract.Requirements,
+            acceptedSubmission.Metrics,
+            evaluatedContract.LockedServiceOffer,
+            evaluatedContract.LockedLifecycleCostQuote);
     }
 
     private static GovernmentContractSnapshot CreateSnapshot(GovernmentContract contract)
@@ -545,6 +553,9 @@ public sealed class GovernmentContractBoard
             Status = contract.Status,
             Requirements = CreateSnapshot(contract.Requirements),
             UpfrontFundingGranted = contract.UpfrontFundingGranted,
+            LockedUnitPrice = contract.LockedUnitPrice,
+            LockedServiceOffer = contract.LockedServiceOffer,
+            LockedLifecycleCostQuote = contract.LockedLifecycleCostQuote,
         };
 
         if (contract.AcceptedOn.HasValue)
@@ -570,7 +581,17 @@ public sealed class GovernmentContractBoard
     {
         return new GovernmentContractRequirementsSnapshot
         {
+            EconomicSnapshot = requirements.EconomicSnapshot,
             RequiredAircraftType = requirements.RequiredAircraftType,
+            LifecycleModelVersion = requirements.LifecycleModelVersion,
+            MinimumExpectedLifeHours = requirements.MinimumExpectedLifeHours,
+            MaximumServiceIntervalHours = requirements.MaximumServiceIntervalHours,
+            MinimumSupportMonths = requirements.MinimumSupportMonths,
+            UtilizationHoursPerMonth = requirements.UtilizationHoursPerMonth,
+            AverageFlightHours = requirements.AverageFlightHours,
+            OperatingProfileId = requirements.OperatingProfileId,
+            ProcurementPreference = requirements.ProcurementPreference,
+            MaximumOperatingCostPerUnit = requirements.MaximumOperatingCostPerUnit,
             SpeedAltitudeBand = requirements.SpeedAltitudeBand,
             MinimumMaximumSpeedMetersPerSecond = requirements.MinimumMaximumSpeedMetersPerSecond,
             MinimumRangeKilometers = requirements.MinimumRangeKilometers,
@@ -599,6 +620,15 @@ public sealed class GovernmentContractBoard
         var snapshot = new GovernmentContractAircraftMetricsSnapshot
         {
             AircraftType = metrics.AircraftType,
+            ExpectedLifeHours = metrics.ExpectedLifeHours,
+            ServiceIntervalHours = metrics.ServiceIntervalHours,
+            GuaranteedSupportMonths = metrics.GuaranteedSupportMonths,
+            FuelBurnKilogramsPerHour = metrics.FuelBurnKilogramsPerHour,
+            UnitProductionCost = metrics.UnitProductionCost,
+            FuelPricePerKilogram = metrics.FuelPricePerKilogram,
+            ServicePricePerEvent = metrics.ServicePricePerEvent,
+            MaintenanceModelVersion = metrics.MaintenanceModelVersion,
+            CombinedServiceOffer = metrics.CombinedServiceOffer,
             UsesDynamicCategoryQualification = true,
             MaximumSpeedLowAltitudeMetersPerSecond = metrics.MaximumSpeedLowAltitudeMetersPerSecond,
             MaximumSpeedMediumAltitudeMetersPerSecond = metrics.MaximumSpeedMediumAltitudeMetersPerSecond,
@@ -675,6 +705,10 @@ public sealed class GovernmentContractBoard
             TotalUnitsRequired = deliveryContract.TotalUnitsRequired,
             DeliveredUnits = deliveryContract.DeliveredUnits,
             UnitPrice = deliveryContract.UnitPrice,
+            ServiceOffer = deliveryContract.ServiceOffer,
+            LifecycleCostQuote = deliveryContract.LifecycleCostQuote,
+            LifecycleRequirements = deliveryContract.LifecycleRequirements is null ? null : CreateSnapshot(deliveryContract.LifecycleRequirements),
+            LifecycleAircraftMetrics = deliveryContract.LifecycleAircraftMetrics.HasValue ? CreateSnapshot(deliveryContract.LifecycleAircraftMetrics.Value) : null,
             TotalContractValue = deliveryContract.TotalContractValue,
             Status = deliveryContract.Status,
             CompletionBonusGranted = deliveryContract.CompletionBonusGranted,
@@ -716,6 +750,7 @@ public sealed class GovernmentContractBoard
             var acceptedOn = CreateDate(snapshot.AcceptedOnYear.Value, snapshot.AcceptedOnMonth.Value);
             var acceptedSubmission = RestoreSubmission(snapshot.AcceptedSubmission);
             contract.Accept(acceptedOn, acceptedSubmission, snapshot.UpfrontFundingGranted);
+            if (snapshot.LockedUnitPrice.HasValue) contract.LockUnitPrice(snapshot.LockedUnitPrice.Value, snapshot.LockedServiceOffer, snapshot.LockedLifecycleCostQuote);
         }
 
         if (snapshot.Status == GovernmentContractStatus.Evaluated)
@@ -742,6 +777,16 @@ public sealed class GovernmentContractBoard
         return new GovernmentContractRequirements
         {
             RequiredAircraftType = snapshot.RequiredAircraftType,
+            EconomicSnapshot = snapshot.EconomicSnapshot,
+            LifecycleModelVersion = snapshot.LifecycleModelVersion,
+            MinimumExpectedLifeHours = snapshot.MinimumExpectedLifeHours,
+            MaximumServiceIntervalHours = snapshot.MaximumServiceIntervalHours,
+            MinimumSupportMonths = snapshot.MinimumSupportMonths,
+            UtilizationHoursPerMonth = snapshot.UtilizationHoursPerMonth,
+            AverageFlightHours = snapshot.AverageFlightHours,
+            OperatingProfileId = snapshot.OperatingProfileId,
+            ProcurementPreference = snapshot.ProcurementPreference,
+            MaximumOperatingCostPerUnit = snapshot.MaximumOperatingCostPerUnit,
             SpeedAltitudeBand = snapshot.SpeedAltitudeBand,
             MinimumMaximumSpeedMetersPerSecond = snapshot.MinimumMaximumSpeedMetersPerSecond,
             MinimumRangeKilometers = snapshot.MinimumRangeKilometers,
@@ -793,7 +838,16 @@ public sealed class GovernmentContractBoard
             snapshot.CrewSize,
             snapshot.RequiredRunwayLengthMeters,
             snapshot.DevelopmentCost,
-            qualifiedTypes);
+            qualifiedTypes,
+            snapshot.ExpectedLifeHours,
+            snapshot.ServiceIntervalHours,
+            snapshot.GuaranteedSupportMonths,
+            snapshot.FuelBurnKilogramsPerHour,
+            snapshot.UnitProductionCost,
+            snapshot.FuelPricePerKilogram,
+            snapshot.ServicePricePerEvent,
+            snapshot.MaintenanceModelVersion,
+            snapshot.CombinedServiceOffer);
     }
 
     private static GovernmentContractDevelopmentPriceBreakdown RestoreBreakdown(
@@ -863,7 +917,11 @@ public sealed class GovernmentContractBoard
             endsOn,
             snapshot.TotalUnitsRequired,
             snapshot.UnitPrice,
-            snapshot.TotalContractValue);
+            snapshot.TotalContractValue,
+            snapshot.LifecycleRequirements is null ? null : RestoreRequirements(snapshot.LifecycleRequirements),
+            snapshot.LifecycleAircraftMetrics is null ? (GovernmentContractAircraftMetrics?)null : RestoreMetrics(snapshot.LifecycleAircraftMetrics),
+            snapshot.ServiceOffer,
+            snapshot.LifecycleCostQuote);
 
         var deliveredUnits = snapshot.DeliveredUnits;
         if (deliveredUnits > 0)

@@ -94,6 +94,7 @@ public sealed class LoanState
         RemainingMonths = remainingMonths;
         MonthsSinceOrigination = monthsSinceOrigination;
         NextDueMonthIndex = nextDueMonthIndex;
+        OriginationMonthIndex = System.Math.Max(0, nextDueMonthIndex - monthsSinceOrigination - 1);
         LastProcessedMonthIndex = lastProcessedMonthIndex;
         ScheduledPayment = scheduledPayment;
         RepaymentMode = repaymentMode;
@@ -112,6 +113,7 @@ public sealed class LoanState
     public int RemainingMonths { get; internal set; }
     public int MonthsSinceOrigination { get; internal set; }
     public int NextDueMonthIndex { get; internal set; }
+    public int OriginationMonthIndex { get; internal set; }
     public int LastProcessedMonthIndex { get; internal set; }
     public double ScheduledPayment { get; internal set; }
     public LoanRepaymentMode RepaymentMode { get; }
@@ -152,7 +154,7 @@ public sealed class LoanPortfolio
         var liquidityScore = averageOperatingCosts <= 0.01d
             ? 25d
             : 25d * Clamp01(unencumberedCash / (12d * averageOperatingCosts));
-        var nextDebtService = GetNextScheduledDebtService();
+        var nextDebtService = GetNextScheduledDebtService(context.CurrentMonthIndex + 1);
         var debtServiceCoverageScore = nextDebtService <= 0.01d
             ? 30d
             : 30d * Clamp01(System.Math.Max(averageOperatingProfit, 0d) / nextDebtService / 2d);
@@ -183,20 +185,16 @@ public sealed class LoanPortfolio
             LoanBalance.MaximumCreditLimit,
             System.Math.Max(0d, baseCapacity * LoanBalance.GetCreditLimitMultiplier(rating)));
         var availableCredit = System.Math.Max(0d, creditLimit - outstanding);
-        var activeStandardLoans = _loans.Count(loan => !loan.IsClosed && !loan.IsEmergency);
         var standardAvailable = rating != CompanyCreditRating.E
             && !HasActiveEmergencyLoan
-            && activeStandardLoans < LoanBalance.MaximumStandardActiveLoans
             && availableCredit >= LoanBalance.MinimumPrincipal;
         var message = standardAvailable
             ? "Standard financing is available."
             : HasActiveEmergencyLoan
                 ? "Standard financing is unavailable while emergency financing is active."
-                : activeStandardLoans >= LoanBalance.MaximumStandardActiveLoans
-                    ? $"Maximum of {LoanBalance.MaximumStandardActiveLoans} active standard loans reached."
-                    : rating == CompanyCreditRating.E
-                        ? "Company rating E is not eligible for standard financing."
-                        : "Available credit is below the minimum loan amount.";
+                : rating == CompanyCreditRating.E
+                    ? "Company rating E is not eligible for standard financing."
+                    : "Available credit is below the minimum loan amount.";
         var annualRate = rating == CompanyCreditRating.E ? 0d : LoanBalance.GetBaseAnnualInterestRate(rating);
         return new LoanCreditAssessment(
             healthScore,
@@ -277,6 +275,17 @@ public sealed class LoanPortfolio
         return true;
     }
 
+    public bool TryBuildFactoryConstructionOffer(double principal, LoanCreditAssessment assessment, out LoanOffer? offer, out string message)
+    {
+        if (!TryBuildStandardOffer(principal, LoanBalance.FactoryConstructionTermMonths, LoanRepaymentMode.Amortized, assessment, out offer, out message) || offer is null)
+            return false;
+        var rate = System.Math.Max(0d, offer.AnnualInterestRate - LoanBalance.FactoryConstructionRateDiscount);
+        var payment = LoanBalance.RoundMoney(LoanBalance.CalculateAmortizedPayment(principal, rate, offer.TermMonths));
+        offer = offer with { AnnualInterestRate = rate, ScheduledMonthlyPayment = payment,
+            EstimatedTotalInterest = LoanBalance.RoundMoney(System.Math.Max(0d, payment * offer.TermMonths - principal)) };
+        return true;
+    }
+
     public LoanState AcceptStandardOffer(LoanOffer offer, int currentMonthIndex)
     {
         if (offer is null) throw new ArgumentNullException(nameof(offer));
@@ -301,13 +310,30 @@ public sealed class LoanPortfolio
         return loan;
     }
 
+    public LoanState AcceptFactoryConstructionOffer(LoanOffer offer, int currentMonthIndex, int constructionMonths)
+    {
+        if (currentMonthIndex < 0) throw new ArgumentOutOfRangeException(nameof(currentMonthIndex));
+        if (constructionMonths < 1) throw new ArgumentOutOfRangeException(nameof(constructionMonths));
+        var firstDue = checked(currentMonthIndex + constructionMonths);
+        var loan = AcceptStandardOffer(offer, currentMonthIndex);
+        loan.NextDueMonthIndex = firstDue;
+        return loan;
+    }
+
     public IReadOnlyList<LoanPaymentInstruction> ProcessMonth(int monthIndex)
     {
         if (monthIndex < 0) throw new ArgumentOutOfRangeException(nameof(monthIndex));
         var instructions = new List<LoanPaymentInstruction>();
         foreach (var loan in _loans.Where(loan => !loan.IsClosed).OrderBy(loan => loan.LoanId, StringComparer.Ordinal))
         {
-            if (monthIndex < loan.NextDueMonthIndex || loan.LastProcessedMonthIndex >= monthIndex) continue;
+            if (loan.LastProcessedMonthIndex >= monthIndex) continue;
+            // Calendar age still matters for prepayment fees, even while installments are deferred.
+            loan.MonthsSinceOrigination = System.Math.Max(0, monthIndex - loan.OriginationMonthIndex);
+            if (monthIndex < loan.NextDueMonthIndex)
+            {
+                loan.LastProcessedMonthIndex = monthIndex;
+                continue;
+            }
             var interest = loan.MonthlyInterest;
             var principal = 0d;
             if (loan.IsEmergency && loan.EmergencyInterestOnlyMonthsRemaining > 0)
@@ -330,7 +356,6 @@ public sealed class LoanPortfolio
             loan.TotalInterestPaid = LoanBalance.RoundMoney(loan.TotalInterestPaid + interest);
             loan.TotalPrincipalPaid = LoanBalance.RoundMoney(loan.TotalPrincipalPaid + principal);
             loan.RemainingMonths = System.Math.Max(0, loan.RemainingMonths - 1);
-            loan.MonthsSinceOrigination++;
             loan.LastProcessedMonthIndex = monthIndex;
             loan.NextDueMonthIndex = monthIndex + 1;
             if (loan.OutstandingPrincipal <= 0.005d || loan.RemainingMonths == 0)
@@ -344,8 +369,8 @@ public sealed class LoanPortfolio
         return instructions;
     }
 
-    public double GetNextScheduledDebtService() =>
-        _loans.Where(loan => !loan.IsClosed).Sum(CalculateNextPayment);
+    public double GetNextScheduledDebtService(int? monthIndex = null) =>
+        _loans.Where(loan => !loan.IsClosed && (!monthIndex.HasValue || loan.NextDueMonthIndex <= monthIndex.Value)).Sum(CalculateNextPayment);
 
     public bool TryBuildPrepaymentQuote(
         string loanId,
@@ -529,6 +554,7 @@ public sealed class LoanPortfolio
                 RemainingMonths = loan.RemainingMonths,
                 MonthsSinceOrigination = loan.MonthsSinceOrigination,
                 NextDueMonthIndex = loan.NextDueMonthIndex,
+                OriginationMonthIndex = loan.OriginationMonthIndex,
                 LastProcessedMonthIndex = loan.LastProcessedMonthIndex,
                 ScheduledPayment = loan.ScheduledPayment,
                 RepaymentMode = (int)loan.RepaymentMode,
@@ -572,7 +598,11 @@ public sealed class LoanPortfolio
                 System.Math.Max(item.EmergencyInterestOnlyMonthsRemaining, 0),
                 System.Math.Max(item.TotalInterestPaid, 0d),
                 System.Math.Max(item.TotalPrincipalPaid, 0d),
-                item.IsClosed || item.OutstandingPrincipal <= 0.005d));
+                item.IsClosed || item.OutstandingPrincipal <= 0.005d)
+            {
+                OriginationMonthIndex = item.OriginationMonthIndex >= 0 ? item.OriginationMonthIndex
+                    : System.Math.Max(0, item.NextDueMonthIndex - item.MonthsSinceOrigination - 1),
+            });
         }
     }
 

@@ -19,8 +19,15 @@ public sealed record AirframePerformanceReport(
     double EffectiveDragAreaSquareMeters = 0d,
     double AerodynamicCleanlinessPercent = 0d,
     ProductionBreakdown? CostBreakdown = null,
-    ProductionBreakdown? ProductionManDaysBreakdown = null)
+    ProductionBreakdown? ProductionManDaysBreakdown = null,
+    double WingProfileDragCoefficient = 0d)
 {
+    // Neutral dry structure for sizing gear; excludes fuel, crew, precision and calendar technology.
+    public double LandingGearReferenceStructureKilograms { get; init; }
+    public double LandingGearSystemsTechnology { get; init; } = 1d;
+    public double LandingGearBodyTechnology { get; init; } = 1d;
+    public double LandingGearDragAdjustment { get; init; } = 1d;
+
     public double LaborCost => ProductionEconomyBalance.CalculateLaborCost(ProductionManDays);
 
     public double CompleteProductionCost => ProductionEconomyBalance.CalculateCompleteCost(ProductionCost, ProductionManDays);

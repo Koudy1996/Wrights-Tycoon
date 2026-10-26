@@ -24,7 +24,8 @@ public sealed class AirframeCalculator : IAirframeCalculator
     public AirframePerformanceReport Calculate(
         AirframeDefinition definition,
         AirframeParameters parameters,
-        HistoricalCampaignTechnologyModifiers? technologyModifiers = null)
+        HistoricalCampaignTechnologyModifiers? technologyModifiers = null,
+        AirframeTechnologyEffects? technologyEffects = null)
     {
         if (definition is null)
         {
@@ -38,8 +39,10 @@ public sealed class AirframeCalculator : IAirframeCalculator
 
         definition.Validate();
         parameters.Validate();
+        technologyEffects?.Validate();
         var effectiveTechnologyModifiers = HistoricalCampaignTechnologyModifiers.Sanitize(technologyModifiers);
         var constructionStandardEffects = AircraftConstructionStandardBalance.GetEffects(parameters.ConstructionStandard);
+        var modularProfile = parameters.UseModularWingProfile ? WingProfileCalculator.Calculate(parameters) : null;
 
         var materialCostFactor = parameters.MaterialType switch
         {
@@ -115,17 +118,26 @@ public sealed class AirframeCalculator : IAirframeCalculator
         var wingSystemsMass = parameters.WingAreaSquareMeters
             * (PlaneDesignerBalance.Airframe.WingSystemsMassBasePerSquareMeter
                + (parameters.EngineCount * PlaneDesignerBalance.Airframe.WingSystemsMassPerEnginePerSquareMeter));
+        // Profile manufacturing/strength premiums apply to spars, ribs and skin, not fuel, crew or engines.
+        var referenceWingStructuralMass = wingMass + wingReinforcementMass;
+        if (modularProfile is not null)
+        {
+            wingMass *= modularProfile.WingMassMultiplier;
+            wingReinforcementMass *= modularProfile.WingMassMultiplier;
+        }
+        var wingProductionShare = referenceWingStructuralMass / System.Math.Max(
+            structuralMass + referenceWingStructuralMass + wingSystemsMass, Numeric.Epsilon);
         var fuelTankAndSystemMass = (fuelMass * 0.11d) + (System.Math.Sqrt(System.Math.Max(fuelMass, 0d)) * 7.5d);
         var fuelLoadSupportMass = fuelMass * 0.34d;
         var systemsMass = (parameters.EngineCount * 52d) + (parameters.CrewCount * 26d);
+        var gearReferenceStructure = (structuralMass + wingMass + wingReinforcementMass + wingSystemsMass
+            + installationMass + parameters.EngineCount * 52d) * structureWeightFactor * GetWingPositionReferenceFactor(parameters.WingPosition);
+        gearReferenceStructure *= ResolveMaterialWeightFactor(parameters.MaterialType, gearReferenceStructure);
+        gearReferenceStructure = ApplySmallWoodTrussWeightModifier(gearReferenceStructure, parameters)
+            * constructionStandardEffects.WeightMultiplier;
+        if (parameters.HasBackupSystems) gearReferenceStructure *= PlaneDesignerBalance.Airframe.BackupSystemsWeightMultiplier;
 
-        var wingPositionMassFactor = parameters.WingPosition switch
-        {
-            WingPosition.Low => PlaneDesignerBalance.Airframe.WingPositionMassFactorLow,
-            WingPosition.High => PlaneDesignerBalance.Airframe.WingPositionMassFactorHigh,
-            WingPosition.Biplane => PlaneDesignerBalance.Airframe.WingPositionMassFactorBiplane,
-            _ => PlaneDesignerBalance.Airframe.WingPositionMassFactorLow,
-        };
+        var wingPositionMassFactor = GetWingPositionReferenceFactor(parameters.WingPosition);
 
         var precisionEligibleMass = structuralMass
             + wingMass
@@ -147,14 +159,31 @@ public sealed class AirframeCalculator : IAirframeCalculator
             totalWeightKg *= PlaneDesignerBalance.Airframe.BackupSystemsWeightMultiplier;
         }
 
-        if (parameters.WingProfile == WingProfileType.Naca4DigitLight)
+        if (modularProfile is null && parameters.WingProfile == WingProfileType.Naca4DigitLight)
         {
             totalWeightKg *= 1d - PlaneDesignerBalance.Airframe.Naca4DigitLightProfileWeightReductionRatio;
         }
 
         totalWeightKg = ApplySmallWoodTrussWeightModifier(totalWeightKg, parameters);
         totalWeightKg *= constructionStandardEffects.WeightMultiplier;
-        totalWeightKg /= effectiveTechnologyModifiers.AirframeEfficiencyMultiplier;
+        if (technologyEffects is null)
+        {
+            // Legacy reports retain the original combined fuel/crew calculation.
+            totalWeightKg /= effectiveTechnologyModifiers.AirframeEfficiencyMultiplier;
+        }
+        else
+        {
+            // Evaluate nonlinear material/small-aircraft effects once, against the same
+            // reference whole aircraft, then distribute that common structural factor.
+            var commonStructuralFactor = totalWeightKg / System.Math.Max(
+                precisionEligibleMass * precisionEffects.WeightMultiplier + fuelMass + crewMass, Numeric.Epsilon);
+            var weightedStructuralMass = structuralMass / technologyEffects.FuselageMass
+                + (wingMass + wingReinforcementMass) / technologyEffects.WingMass
+                + (wingSystemsMass + fuelTankAndSystemMass + fuelLoadSupportMass + installationMass + systemsMass)
+                    / technologyEffects.SystemsMass;
+            totalWeightKg = weightedStructuralMass * precisionEffects.WeightMultiplier * commonStructuralFactor
+                + fuelMass + crewMass;
+        }
         var totalWeight = Mass.FromKilograms(totalWeightKg);
 
         var aerodynamicCleanlinessPercent = parameters.AerodynamicCleanlinessPercent;
@@ -251,30 +280,6 @@ public sealed class AirframeCalculator : IAirframeCalculator
             flapDragDelta += 0.002d;
         }
 
-        var gearDragDelta = parameters.LandingGearType switch
-        {
-            LandingGearType.Fixed => 0.025d,
-            LandingGearType.SemiRetractable => 0.01d,
-            LandingGearType.Retractable => 0.003d,
-            _ => 0d,
-        };
-
-        var gearCostDelta = parameters.LandingGearType switch
-        {
-            LandingGearType.Fixed => 900d,
-            LandingGearType.SemiRetractable => 3700d,
-            LandingGearType.Retractable => 9100d,
-            _ => 0d,
-        };
-
-        var gearMdDelta = parameters.LandingGearType switch
-        {
-            LandingGearType.Fixed => 2.5d,
-            LandingGearType.SemiRetractable => 5.4d,
-            LandingGearType.Retractable => 8.1d,
-            _ => 0d,
-        };
-
         var gearReliability = parameters.LandingGearType switch
         {
             LandingGearType.Fixed => 1.03d,
@@ -309,7 +314,6 @@ public sealed class AirframeCalculator : IAirframeCalculator
             + wingShapeDragDelta
             + wingPositionDragDelta
             + flapDragDelta
-            + gearDragDelta
             + tailDragDelta
             + cowlingDragDelta
             + ((System.Math.Sqrt(System.Math.Max(referenceAreaRatio, 0.1d)) - 1d) * 0.0012d);
@@ -322,17 +326,21 @@ public sealed class AirframeCalculator : IAirframeCalculator
             dragCoefficient *= PlaneDesignerBalance.Airframe.BackupSystemsDragMultiplier;
         }
 
-        if (parameters.WingProfile == WingProfileType.Laminar6SeriesAerodynamic)
+        if (modularProfile is null && parameters.WingProfile == WingProfileType.Laminar6SeriesAerodynamic)
         {
             var laminarBlend = CalculateLaminarProfileAreaEffectBlend(parameters.WingAreaSquareMeters);
             dragCoefficient *= 1d - (PlaneDesignerBalance.Airframe.LaminarProfileDragReductionMaxRatio * laminarBlend);
         }
 
-        dragCoefficient /= effectiveTechnologyModifiers.AerodynamicsEfficiencyMultiplier;
+        dragCoefficient /= technologyEffects?.BodyDrag ?? effectiveTechnologyModifiers.AerodynamicsEfficiencyMultiplier;
         dragCoefficient = Numeric.Clamp(dragCoefficient, 0.014d, PlaneDesignerBalance.Performance.MaximumDragCoefficient);
-        var effectiveDragAreaSquareMeters = dragCoefficient * airframeFrontalAreaSquareMeters;
+        var profileDragCoefficient = modularProfile is null ? 0d : modularProfile.ProfileDragCoefficient
+            * constructionStandardEffects.DragMultiplier * aerodynamicCleanlinessDragFactor
+            * precisionEffects.DragMultiplier / (technologyEffects?.ProfileDrag ?? effectiveTechnologyModifiers.AerodynamicsEfficiencyMultiplier);
+        var effectiveDragAreaSquareMeters = dragCoefficient * airframeFrontalAreaSquareMeters
+            + profileDragCoefficient * parameters.WingAreaSquareMeters;
 
-        var liftCoefficient = (definition.BaseLiftCoefficient * wingShapeLiftFactor)
+        var liftCoefficient = ((modularProfile?.MaximumLiftCoefficient ?? definition.BaseLiftCoefficient) * wingShapeLiftFactor)
             + wingPositionLiftBonus
             + flapLiftBonus
             + ((referenceAreaRatio - 1d) * 0.012d);
@@ -341,18 +349,19 @@ public sealed class AirframeCalculator : IAirframeCalculator
             liftCoefficient *= PlaneDesignerBalance.Airframe.DeltaWingLiftMultiplier;
         }
 
-        if (parameters.WingProfile == WingProfileType.Laminar6SeriesAerodynamic)
+        if (modularProfile is null && parameters.WingProfile == WingProfileType.Laminar6SeriesAerodynamic)
         {
             var laminarBlend = CalculateLaminarProfileAreaEffectBlend(parameters.WingAreaSquareMeters);
             liftCoefficient *= 1d + (PlaneDesignerBalance.Airframe.LaminarProfileLiftBonusMaxRatio * laminarBlend);
         }
-        else if (parameters.WingProfile == WingProfileType.SymmetricalAcrobatic)
+        else if (modularProfile is null && parameters.WingProfile == WingProfileType.SymmetricalAcrobatic)
         {
             liftCoefficient *= 1d - PlaneDesignerBalance.Airframe.SymmetricalAcrobaticProfileLiftPenaltyRatio;
         }
 
-        liftCoefficient *= effectiveTechnologyModifiers.AerodynamicsEfficiencyMultiplier;
-        liftCoefficient = Numeric.Clamp(liftCoefficient, 0.5d, 1.8d);
+        liftCoefficient *= technologyEffects?.Lift ?? effectiveTechnologyModifiers.AerodynamicsEfficiencyMultiplier;
+        liftCoefficient = modularProfile is null ? Numeric.Clamp(liftCoefficient, 0.5d, 1.8d)
+            : System.Math.Max(0.1d, liftCoefficient);
 
         var wingLoading = totalWeightKg / System.Math.Max(parameters.WingAreaSquareMeters, 1d);
         var maneuverability = 92d - (wingLoading * 0.18d);
@@ -383,13 +392,18 @@ public sealed class AirframeCalculator : IAirframeCalculator
             TailType.Twin => 3d,
             _ => 0d,
         };
-        if (parameters.WingProfile == WingProfileType.SymmetricalAcrobatic)
+        if (modularProfile is null && parameters.WingProfile == WingProfileType.SymmetricalAcrobatic)
         {
             maneuverability *= 1d + PlaneDesignerBalance.Airframe.SymmetricalAcrobaticProfileManeuverabilityBonusRatio;
         }
 
         maneuverability *= aspectRatioEffects.ManeuverabilityMultiplier;
         maneuverability *= constructionStandardEffects.ManeuverabilityMultiplier;
+        if (modularProfile is not null)
+        {
+            // A rating, not a literal sustained-g prediction. Existing wing loading still matters.
+            maneuverability *= System.Math.Sqrt(modularProfile.DesignLoadFactor / 3.8d);
+        }
         maneuverability = Numeric.Clamp(maneuverability, 1d, 100d);
 
         var pricingPayloadKilograms = parameters.PayloadLimitKilograms
@@ -422,6 +436,9 @@ public sealed class AirframeCalculator : IAirframeCalculator
             ref productionCost,
             constructionStandardEffects.ProductionCostMultiplier);
         var productionCostAddonBase = productionCost;
+        if (modularProfile is not null)
+            AddRateAdjustment(productionCostItems, "Modular wing profile (wing structure only)", ref productionCost,
+                productionCostAddonBase, wingProductionShare * (modularProfile.WingCostMultiplier - 1d));
         AddAirframeProductionAddons(
             productionCostItems,
             ref productionCost,
@@ -433,7 +450,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
             productionCostItems,
             "Airframe technology",
             ref productionCost,
-            1d / effectiveTechnologyModifiers.AirframeEfficiencyMultiplier);
+            1d / (technologyEffects?.Materials ?? effectiveTechnologyModifiers.AirframeEfficiencyMultiplier));
         AddMinimumAdjustment(productionCostItems, "Minimum airframe cost", ref productionCost, 0d);
         var productionCostBreakdown = new ProductionBreakdown(productionCostItems);
 
@@ -459,6 +476,9 @@ public sealed class AirframeCalculator : IAirframeCalculator
             ref productionManDays,
             constructionStandardEffects.ProductionManDaysMultiplier);
         var productionManDaysAddonBase = productionManDays;
+        if (modularProfile is not null)
+            AddRateAdjustment(productionManDaysItems, "Modular wing profile (wing structure only)", ref productionManDays,
+                productionManDaysAddonBase, wingProductionShare * (modularProfile.WingWorkMultiplier - 1d));
         AddAirframeProductionAddons(
             productionManDaysItems,
             ref productionManDays,
@@ -470,7 +490,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
             productionManDaysItems,
             "Airframe technology",
             ref productionManDays,
-            1d / effectiveTechnologyModifiers.AirframeEfficiencyMultiplier);
+            1d / (technologyEffects?.Work ?? effectiveTechnologyModifiers.AirframeEfficiencyMultiplier));
         AddMinimumAdjustment(productionManDaysItems, "Minimum airframe production time", ref productionManDays, 0d);
         var productionManDaysBreakdown = new ProductionBreakdown(productionManDaysItems);
 
@@ -488,14 +508,17 @@ public sealed class AirframeCalculator : IAirframeCalculator
 
         reliabilityModifier += constructionStandardEffects.ReliabilityDelta;
         reliabilityModifier *= precisionEffects.ReliabilityMultiplier;
-        reliabilityModifier = Numeric.Clamp(reliabilityModifier, 0.65d, 1.2d);
+        reliabilityModifier = System.Math.Max(0.65d, reliabilityModifier);
 
         var seaLevelDensity = _atmosphereModel.GetDensityAtAltitude(0d);
         var referenceSpeed = Speed.FromMetersPerSecond(100d);
         var referenceArea = Area.FromSquareMeters(parameters.WingAreaSquareMeters);
         var referenceFrontalArea = Area.FromSquareMeters(airframeFrontalAreaSquareMeters);
         var referenceLift = _aerodynamicsCalculator.CalculateLift(seaLevelDensity, referenceSpeed, referenceArea, liftCoefficient);
-        var referenceDrag = _aerodynamicsCalculator.CalculateDrag(seaLevelDensity, referenceSpeed, referenceFrontalArea, dragCoefficient);
+        var referenceDrag = _aerodynamicsCalculator.CalculateDrag(seaLevelDensity, referenceSpeed, referenceFrontalArea,
+            dragCoefficient + (profileDragCoefficient * parameters.WingAreaSquareMeters
+                * (modularProfile is null ? 1d : WingProfileCalculator.CalculateSpeedDragMultiplier(360d, parameters.WingDesignSpeedKph))
+                / airframeFrontalAreaSquareMeters));
 
         return new AirframePerformanceReport(
             totalWeight,
@@ -512,8 +535,23 @@ public sealed class AirframeCalculator : IAirframeCalculator
             effectiveDragAreaSquareMeters,
             aerodynamicCleanlinessPercent,
             productionCostBreakdown,
-            productionManDaysBreakdown);
+            productionManDaysBreakdown,
+            profileDragCoefficient)
+        {
+            LandingGearReferenceStructureKilograms = gearReferenceStructure,
+            LandingGearSystemsTechnology = technologyEffects?.SystemsMass ?? effectiveTechnologyModifiers.AirframeEfficiencyMultiplier,
+            LandingGearBodyTechnology = technologyEffects?.BodyDrag ?? effectiveTechnologyModifiers.AerodynamicsEfficiencyMultiplier,
+            LandingGearDragAdjustment = aerodynamicCleanlinessDragFactor * precisionEffects.DragMultiplier,
+        };
     }
+
+    private static double GetWingPositionReferenceFactor(WingPosition position) => position switch
+    {
+        WingPosition.Low => PlaneDesignerBalance.Airframe.WingPositionMassFactorLow,
+        WingPosition.High => PlaneDesignerBalance.Airframe.WingPositionMassFactorHigh,
+        WingPosition.Biplane => PlaneDesignerBalance.Airframe.WingPositionMassFactorBiplane,
+        _ => PlaneDesignerBalance.Airframe.WingPositionMassFactorLow,
+    };
 
     private static void AddMultiplierAdjustment(
         List<ProductionBreakdownItem> items,
@@ -546,7 +584,7 @@ public sealed class AirframeCalculator : IAirframeCalculator
             WingPosition.Biplane => parts ? ProductionEconomyBalance.Airframe.BiplanePartsRate : ProductionEconomyBalance.Airframe.BiplaneManDaysRate,
             _ => 0d,
         });
-        AddRateAdjustment(items, "Wing profile", ref total, addonBase, parameters.WingProfile switch
+        AddRateAdjustment(items, "Wing profile", ref total, addonBase, parameters.UseModularWingProfile ? 0d : parameters.WingProfile switch
         {
             WingProfileType.Naca4DigitLight => parts ? ProductionEconomyBalance.Airframe.LightProfilePartsRate : ProductionEconomyBalance.Airframe.LightProfileManDaysRate,
             WingProfileType.Laminar6SeriesAerodynamic => parts ? ProductionEconomyBalance.Airframe.LaminarProfilePartsRate : ProductionEconomyBalance.Airframe.LaminarProfileManDaysRate,

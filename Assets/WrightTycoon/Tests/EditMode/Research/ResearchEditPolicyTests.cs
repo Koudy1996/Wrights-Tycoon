@@ -15,6 +15,7 @@ public sealed class ResearchEditPolicyTests
     }
 
     [Test]
+    [Category("Extended")]
     public void CanEdit_FallsBackToApprovalMetadataForLegacyRecordWithoutProject()
     {
         Assert.That(ResearchEditPolicy.CanEdit(status: null, hasApprovalMetadata: false), Is.True);

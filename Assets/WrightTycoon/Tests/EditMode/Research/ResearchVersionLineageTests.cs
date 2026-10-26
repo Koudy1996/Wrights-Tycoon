@@ -24,6 +24,7 @@ public sealed class ResearchVersionLineageTests
 
     [TestCase("type.orphan", "type.missing")]
     [TestCase("type.cycle.a", "type.cycle.b")]
+    [Category("Extended")]
     public void ResolveRootSubjectId_KeepsInvalidLegacyLineageVisible(string subjectId, string sourceId)
     {
         var sources = new Dictionary<string, string>

@@ -7,6 +7,37 @@ namespace WrightTycoon.Core.Tests.Accounting;
 [TestFixture]
 public sealed class LoanPortfolioTests
 {
+    [TestCase(false)]
+    [TestCase(true)]
+    public void LoanCountDoesNotRestrictStandardOrFactoryFinancingButCreditStillDoes(bool factoryFinancing)
+    {
+        var portfolio = new LoanPortfolio();
+        var context = CreateContext();
+        for (var index = 0; index < 12; index++)
+        {
+            var assessment = portfolio.CalculateCreditAssessment(context);
+            Assert.That(assessment.StandardFinancingAvailable, Is.True, $"Loan number {index + 1}");
+            LoanOffer? offer;
+            string message;
+            var available = factoryFinancing
+                ? portfolio.TryBuildFactoryConstructionOffer(LoanBalance.MinimumPrincipal, assessment, out offer, out message)
+                : portfolio.TryBuildStandardOffer(LoanBalance.MinimumPrincipal, 60, LoanRepaymentMode.Amortized, assessment, out offer, out message);
+            Assert.That(available, Is.True, message);
+            if (factoryFinancing) portfolio.AcceptFactoryConstructionOffer(offer!, 0, 18);
+            else portfolio.AcceptStandardOffer(offer!, 0);
+        }
+        Assert.That(portfolio.ActiveLoans.Count, Is.EqualTo(12));
+        var restored = new LoanPortfolio();
+        restored.RestoreSnapshot(portfolio.CreateSnapshot());
+        Assert.That(restored.ActiveLoans.Count, Is.EqualTo(12));
+        var nextAssessment = restored.CalculateCreditAssessment(context);
+        Assert.That(nextAssessment.StandardFinancingAvailable, Is.True);
+        Assert.That(nextAssessment.OutstandingPrincipal, Is.EqualTo(12 * LoanBalance.MinimumPrincipal));
+        Assert.That(restored.TryBuildStandardOffer(LoanBalance.MaximumCreditLimit + LoanBalance.PrincipalIncrement,
+            60, LoanRepaymentMode.Amortized, nextAssessment, out _, out _), Is.False,
+            "Removing the loan-count limit must not remove the financial credit limit.");
+    }
+
     [Test]
     public void StandardRepaymentModes_UseTheSameLimitsRateFeeAndTerms()
     {

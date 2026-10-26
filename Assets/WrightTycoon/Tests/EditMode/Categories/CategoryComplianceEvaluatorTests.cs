@@ -53,6 +53,7 @@ public sealed class CategoryComplianceEvaluatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Evaluate_RejectsSpeedWhenEveryAltitudeSampleIsBelowMinimum()
     {
         var evaluator = new CategoryComplianceEvaluator();
@@ -177,6 +178,7 @@ public sealed class CategoryComplianceEvaluatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void Evaluate_RejectsUltralightConstructionForCivilPassengerCategory()
     {
         var evaluator = new CategoryComplianceEvaluator();
@@ -220,6 +222,7 @@ public sealed class CategoryComplianceEvaluatorTests
     }
 
     [Test]
+    [Category("Extended")]
     public void QualificationEvaluator_IgnoresLegacyFamilyCategory_WhenPassengerTypeMatchesAnotherMarket()
     {
         var evaluator = new AircraftCategoryQualificationEvaluator();
@@ -312,6 +315,7 @@ public sealed class CategoryComplianceEvaluatorTests
     [TestCase(false, true, true)]
     [TestCase(false, false, false)]
     [TestCase(true, true, false)]
+    [Category("Extended")]
     public void Evaluate_MilitarySupport_AllowsExactlyCargoOrCombatModule(
         bool hasCargoSpace,
         bool hasCombatEquipment,

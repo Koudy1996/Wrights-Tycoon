@@ -14,7 +14,11 @@ public sealed class GovernmentDeliveryContract
         SimulationDate endsOn,
         int totalUnitsRequired,
         double unitPrice,
-        double totalContractValue)
+        double totalContractValue,
+        GovernmentContractRequirements? lifecycleRequirements = null,
+        GovernmentContractAircraftMetrics? lifecycleAircraftMetrics = null,
+        WrightTycoon.Core.Fleet.ServiceOfferSnapshot? serviceOffer = null,
+        WrightTycoon.Core.Contracts.LifecycleCostQuote? lifecycleCostQuote = null)
     {
         DeliveryId = string.IsNullOrWhiteSpace(deliveryId)
             ? throw new ArgumentException("Delivery id cannot be empty.", nameof(deliveryId))
@@ -30,6 +34,15 @@ public sealed class GovernmentDeliveryContract
         TotalUnitsRequired = totalUnitsRequired;
         UnitPrice = unitPrice;
         TotalContractValue = totalContractValue;
+        LifecycleRequirements = lifecycleRequirements;
+        LifecycleAircraftMetrics = lifecycleAircraftMetrics;
+        ServiceOffer = serviceOffer;
+        LifecycleCostQuote = lifecycleCostQuote;
+        if (ServiceOffer is null && lifecycleRequirements?.LifecycleModelVersion > 0 && lifecycleAircraftMetrics.HasValue)
+        {
+            var metrics = lifecycleAircraftMetrics.Value;
+            ServiceOffer = metrics.CreateServiceOffer();
+        }
         Status = GovernmentDeliveryContractStatus.Active;
 
         Validate();
@@ -52,6 +65,10 @@ public sealed class GovernmentDeliveryContract
     public int RemainingUnits => System.Math.Max(TotalUnitsRequired - DeliveredUnits, 0);
 
     public double UnitPrice { get; }
+    public GovernmentContractRequirements? LifecycleRequirements { get; }
+    public GovernmentContractAircraftMetrics? LifecycleAircraftMetrics { get; }
+    public WrightTycoon.Core.Fleet.ServiceOfferSnapshot? ServiceOffer { get; }
+    public WrightTycoon.Core.Contracts.LifecycleCostQuote? LifecycleCostQuote { get; }
 
     public double TotalContractValue { get; }
 
